@@ -936,7 +936,12 @@ Func _Run_FileClosing_UPS($Num)
     Sleep(300)
     ControlClick($hDef, "", "[TEXT:OK]")
     WinWaitClose($hDef, "", 5)
-    Sleep(500)
+
+    ; ── Attendre le script auto E.TMS (min 20s) ──────────────────────────────
+    _Spinner("FC-UPS [" & $Num & "] Script auto en cours... (20s)")
+    Sleep(20000)
+    _FC_WaitIfPaused()
+    If $bFC_Stop Then Return
 
     ; ── C'EST TOUT POUR UPS ──────────────────────────────────────────────────
     $iFC_StepCurrent = 0

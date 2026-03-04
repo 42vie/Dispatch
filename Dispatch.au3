@@ -591,7 +591,17 @@ Func _Mail_CP($sClient,$sCmds,$sPal,$sColis,$sPoids,$sConso,$sEmailTo,$sEmailCC,
             EndIf
         EndIf
     Next
-    If $sConso <> "" And Not FileExists($sCheminBase & $sConso & ".pdf") Then $bFichiersOK = False
+    ; Chercher le fichier consolidé : J_document Check List.pdf (prioritaire) ou J.pdf (fallback)
+    Local $sConsoPath = ""
+    If $sConso <> "" Then
+        If FileExists($sCheminBase & $sConso & "_document Check List.pdf") Then
+            $sConsoPath = $sCheminBase & $sConso & "_document Check List.pdf"
+        ElseIf FileExists($sCheminBase & $sConso & ".pdf") Then
+            $sConsoPath = $sCheminBase & $sConso & ".pdf"
+        Else
+            $bFichiersOK = False
+        EndIf
+    EndIf
     If $iNbCmd = 0 Or Not $bFichiersOK Then
         $sLogErr &= "Erreur (" & $sCmdListe & ") : PDF manquant." & @CRLF
         Return False
@@ -619,7 +629,7 @@ Func _Mail_CP($sClient,$sCmds,$sPal,$sColis,$sPoids,$sConso,$sEmailTo,$sEmailCC,
     For $f = 1 To $iNbCmd
         $oMail.Attachments.Add($aFichiers[$f])
     Next
-    If $sConso <> "" Then $oMail.Attachments.Add($sCheminBase & $sConso & ".pdf")
+    If $sConsoPath <> "" Then $oMail.Attachments.Add($sConsoPath)
     $oMail.Display
     Return True
 EndFunc

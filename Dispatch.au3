@@ -221,6 +221,26 @@ Func _HandleClient($iSocket)
                 TCPCloseSocket($iSocket)
                 Return
 
+            Case "CHECK_PDF"
+                $sData_a = _GetJsonValue($sBody, "data")
+                Local $sCheminCheck = "F:\CDG\PRODUCT\TRANSCON\Shared\Clients\HPE\Pre-alertes\"
+                ; Lire chemin personnalisé depuis config si disponible
+                Local $sIniCheck = @ScriptDir & "\dispatch_config.ini"
+                Local $sCfgPath = IniRead($sIniCheck, "PJ", "Path", "")
+                If $sCfgPath <> "" Then $sCheminCheck = $sCfgPath & "\"
+                Local $aCheckFiles = StringSplit($sData_a, "|")
+                Local $sMissing = ""
+                For $j = 1 To $aCheckFiles[0]
+                    Local $sF = StringStripWS($aCheckFiles[$j], 3)
+                    If $sF <> "" And Not FileExists($sCheminCheck & $sF & ".pdf") Then
+                        If $sMissing <> "" Then $sMissing &= "|"
+                        $sMissing &= $sF
+                    EndIf
+                Next
+                _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok","missing":"' & $sMissing & '"}')
+                TCPCloseSocket($iSocket)
+                Return
+
             Case "save-pj-config"
                 $sIni_a = @ScriptDir & "\dispatch_config.ini"
                 IniWrite($sIni_a, "PJ", "Path",         _GetJsonValue($sBody, "path"))
@@ -558,7 +578,7 @@ Func _Batch_Mails_CP($sData)
     Local $iErr = 0
     Local $sLogErr = ""
     For $i = 1 To $aJobs[0]
-        Local $aInfos = StringSplit($aJobs[$i], ";")
+        Local $aInfos = StringSplit($aJobs[$i], "§")
         If $aInfos[0] >= 8 Then
             If _Mail_CP($aInfos[1],$aInfos[2],$aInfos[3],$aInfos[4],$aInfos[5],$aInfos[6],$aInfos[7],$aInfos[8],$sLogErr) Then
                 $iOk += 1
@@ -591,7 +611,17 @@ Func _Mail_CP($sClient,$sCmds,$sPal,$sColis,$sPoids,$sConso,$sEmailTo,$sEmailCC,
             EndIf
         EndIf
     Next
-    If $sConso <> "" And Not FileExists($sCheminBase & $sConso & ".pdf") Then $bFichiersOK = False
+    ; Chercher le fichier consolidé : J_document Check List.pdf (prioritaire) ou J.pdf (fallback)
+    Local $sConsoPath = ""
+    If $sConso <> "" Then
+        If FileExists($sCheminBase & $sConso & "_document Check List.pdf") Then
+            $sConsoPath = $sCheminBase & $sConso & "_document Check List.pdf"
+        ElseIf FileExists($sCheminBase & $sConso & ".pdf") Then
+            $sConsoPath = $sCheminBase & $sConso & ".pdf"
+        Else
+            $bFichiersOK = False
+        EndIf
+    EndIf
     If $iNbCmd = 0 Or Not $bFichiersOK Then
         $sLogErr &= "Erreur (" & $sCmdListe & ") : PDF manquant." & @CRLF
         Return False
@@ -619,7 +649,7 @@ Func _Mail_CP($sClient,$sCmds,$sPal,$sColis,$sPoids,$sConso,$sEmailTo,$sEmailCC,
     For $f = 1 To $iNbCmd
         $oMail.Attachments.Add($aFichiers[$f])
     Next
-    If $sConso <> "" Then $oMail.Attachments.Add($sCheminBase & $sConso & ".pdf")
+    If $sConsoPath <> "" Then $oMail.Attachments.Add($sConsoPath)
     $oMail.Display
     Return True
 EndFunc

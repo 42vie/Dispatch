@@ -798,6 +798,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     </div>
     <button class="btn btn-success btn-sm" id="btn-add-manual">➕ Dossier manuel</button>
     <button class="btn btn-blue-out btn-sm" id="btn-add-group" onclick="openGroupManual()">🔗 Groupe manuel</button>
+    <button class="btn btn-ghost btn-sm" style="color:var(--orange)" onclick="checkMissingPDF()">📋 PDF manquants</button>
     <button class="btn btn-ghost btn-sm" id="btn-clear-done" style="color:var(--red)">🗑 Vider terminés</button>
   </div>
 </div>
@@ -1672,9 +1673,9 @@ function daysBadge(n) {
   if (n <= 2)  return `<span class="days-badge days-2">J+${n}</span>`;
   return `<span class="days-badge days-3">J+${n} ⚠</span>`;
 }
-function storeRaw(file, client, svct, poids, vol, taxable, dept, rdl) {
+function storeRaw(file, client, svct, poids, vol, taxable, dept, rdl, supplement) {
   if (!g_rawData[file]) {
-    g_rawData[file] = {client,svct,poids:+poids,vol:+vol,taxable:+taxable,dept,rdl};
+    g_rawData[file] = {client,svct,poids:+poids,vol:+vol,taxable:+taxable,dept,rdl,supplement:+(supplement||0)};
   }
 }
 function autoFillContact(file, client) {
@@ -2235,13 +2236,14 @@ function importRows(rows) {
     const poids =parseFloat(String(row[25]||'0').replace(',','.'))||0;
     const vol   =parseFloat(String(row[26]||'0').replace(',','.'))||0;
     const operator=String(row[27]||'').trim();
+    const supplement=parseFloat(String(row[28]||'0').replace(',','.'))||0;
     const tax   =calcTaxable(poids,vol);
     let isCons=false;
     for (let c=8;c<=14;c++){
       if ((String(row[c]||'')).includes('Consolidat')||(String(row[c]||'')).includes('Complete')){isCons=true;break;}
     }
     const dept=/^\d{2}/.test(city)?city.substring(0,2):'??';
-    storeRaw(file,client,svct,poids,vol,tax,dept,rdl);
+    storeRaw(file,client,svct,poids,vol,tax,dept,rdl,supplement);
     const key=(client+'|'+city).toLowerCase();
     if (!grouped[key]){
       // ccFiles = fichiers déjà CC (isCons), nonFiles = pas encore CC
@@ -2917,7 +2919,7 @@ document.getElementById('btn-rdv-cp').addEventListener('click', async () => {
     const cfg = g_cpConfig.find(c => cl.includes((c.nom||'').toLowerCase()) || (c.nom||'').toLowerCase().includes(cl)) || {};
     const cmds = cp.files.join(' + ');
     // Poids = somme brute (pas taxable)
-    return `${cp.client};${cmds};${cp.palettes||''};${cp.colis||''};${fmt(cp.poids)};${cp.doc||''};${cfg.emailTo||''};${cfg.emailCc||''}`;
+    return `${cp.client}§${cmds}§${cp.palettes||''}§${cp.colis||''}§${fmt(cp.poids)}§${cp.doc||''}§${cfg.emailTo||''}§${cfg.emailCc||''}`;
   });
 
   const strData = dataArr.join('|');
@@ -3357,6 +3359,8 @@ function ntoBatchLancer(affected) {
       const dept    = String(r.dept || '').replace(/^0/,'');
       const taxable = parseFloat(r.taxable) || 0;
       const isGroup = files.length > 1;
+      const rawF    = g_rawData[f] || {};
+      const suppl   = +(rawF.supplement || 0);
 
       // EFDS / Groussard → skip
       if (EFDS(transp)) {
@@ -3365,10 +3369,16 @@ function ntoBatchLancer(affected) {
         return;
       }
 
-      // Groupe : seul le 1er fichier porte la NTO, le reste à 0
+      // Groupe : seul le 1er fichier porte la NTO, le reste = frais camion individuels
       if (isGroup && fIdx > 0) {
-        rows += _ntoBatchRow(f, 'NTO', 'Groupe — inclus dans ' + files[0], '0', '#F8F9FA');
-        lines.push({ file: f, prix: '0' });
+        const supplStr = suppl ? suppl.toFixed(2) : '0';
+        const supplDetail = suppl
+          ? 'Groupe — frais camion import ' + suppl.toFixed(2) + ' €'
+          : 'Groupe — inclus dans ' + files[0];
+        totalCalc += suppl;
+        if (suppl) counted++;
+        rows += _ntoBatchRow(f, 'NTO', supplDetail, supplStr, '#F8F9FA');
+        lines.push({ file: f, prix: supplStr });
         return;
       }
 
@@ -3403,9 +3413,16 @@ function ntoBatchLancer(affected) {
         color  = 'var(--purple-bg)';
       }
 
+      // Ajouter le supplément camion import au prix NTO
+      if (suppl) {
+        detail += ' + camion ' + suppl.toFixed(2) + ' €';
+        prix += suppl;
+        prix = Math.round(prix * 100) / 100;
+      }
+
       totalCalc += prix;
       counted++;
-      const prixStr = isUPS(transp) ? '25' : prix.toFixed(2);
+      const prixStr = isUPS(transp) ? (25 + suppl).toFixed(2) : prix.toFixed(2);
       rows += _ntoBatchRow(f, 'NTO', detail, prixStr, color);
       lines.push({ file: f, prix: prixStr });
     });
@@ -3468,6 +3485,34 @@ function ntoBatchFermer() {
   window._ntoBatchLines = [];
 }
 
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  VÉRIFICATION PDF MANQUANTS                                               ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+async function checkMissingPDF() {
+  // Collecter tous les fichiers individuels des dossiers actifs (pas terminés/archivés)
+  const allFiles = [];
+  g_master.forEach(r => {
+    if (r.statut === '8') return;
+    const files = (r.file || '').split(' + ').map(s => s.trim()).filter(Boolean);
+    files.forEach(f => { if (!allFiles.includes(f)) allFiles.push(f); });
+  });
+  if (!allFiles.length) return toast('Aucun dossier actif.');
+  toast('Vérification de ' + allFiles.length + ' PDF en cours...');
+  const result = await apiCall('action', { action: 'CHECK_PDF', data: allFiles.join('|') });
+  if (!result || result.error) return toast('Erreur lors de la vérification PDF.');
+  const missing = (result.missing || '').split('|').filter(Boolean);
+  if (!missing.length) return toast('Tous les PDF sont présents (' + allFiles.length + '/' + allFiles.length + ').');
+  const txt = missing.join('\n');
+  navigator.clipboard.writeText(txt)
+    .then(() => toast('⚠ ' + missing.length + ' PDF manquant(s) sur ' + allFiles.length + ' — liste copiée dans le presse-papier.'))
+    .catch(() => {
+      const t = document.createElement('textarea');
+      t.value = txt;
+      document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t);
+      toast('⚠ ' + missing.length + ' PDF manquant(s) — liste copiée.');
+    });
+}
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  OPÉRATEUR / FILTRE PERSONNE                                             ║

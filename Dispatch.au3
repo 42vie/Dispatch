@@ -558,7 +558,7 @@ Func _Batch_Mails_CP($sData)
     Local $iErr = 0
     Local $sLogErr = ""
     For $i = 1 To $aJobs[0]
-        Local $aInfos = StringSplit($aJobs[$i], ";")
+        Local $aInfos = StringSplit($aJobs[$i], "§")
         If $aInfos[0] >= 8 Then
             If _Mail_CP($aInfos[1],$aInfos[2],$aInfos[3],$aInfos[4],$aInfos[5],$aInfos[6],$aInfos[7],$aInfos[8],$sLogErr) Then
                 $iOk += 1

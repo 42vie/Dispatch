@@ -286,6 +286,30 @@ table.t-master thead th {
 }
 table.t-master thead th:hover { color: var(--blue); }
 table.t-master thead th.sorted { color: var(--blue); }
+table.t-master thead th.filtered { color: var(--orange); }
+table.t-master thead th .col-filter-btn {
+  display: inline-block; margin-left: 3px; font-size: 9px; opacity: .5;
+  cursor: pointer; vertical-align: middle;
+}
+table.t-master thead th .col-filter-btn:hover { opacity: 1; }
+table.t-master thead th.filtered .col-filter-btn { opacity: 1; color: var(--orange); }
+.col-filter-popup {
+  position: absolute; z-index: 999; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.15); padding: 8px; min-width: 180px; max-width: 260px;
+  font-size: 11px; color: var(--text);
+}
+.col-filter-popup .cfp-search {
+  width: 100%; height: 26px; border: 1px solid var(--border2); border-radius: 4px;
+  background: var(--surface2); color: var(--text); font-size: 11px; padding: 0 8px; margin-bottom: 6px;
+}
+.col-filter-popup .cfp-list {
+  max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px;
+}
+.col-filter-popup .cfp-item { display: flex; align-items: center; gap: 5px; padding: 2px 4px; border-radius: 3px; cursor: pointer; }
+.col-filter-popup .cfp-item:hover { background: var(--blue-bg); }
+.col-filter-popup .cfp-item input { accent-color: var(--blue); }
+.col-filter-popup .cfp-actions { display: flex; gap: 6px; margin-top: 8px; }
+.col-filter-popup .cfp-actions button { flex: 1; height: 26px; font-size: 11px; }
 
 table.t-master tbody tr {
   background: var(--surface);
@@ -641,22 +665,22 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
         <thead>
           <tr>
             <th style="width:30px"></th>
-            <th style="width:115px" data-col="file">File J ↕</th>
-            <th style="width:145px" data-col="client">Client ↕</th>
+            <th style="width:115px" data-col="file">File J <span class="col-filter-btn" onclick="event.stopPropagation();openColFilter(this,'file')">▼</span></th>
+            <th style="width:145px" data-col="client">Client <span class="col-filter-btn" onclick="event.stopPropagation();openColFilter(this,'client')">▼</span></th>
             <th style="width:62px"  data-col="rdl">RDL</th>
-            <th style="width:54px"  data-col="svct">SVCT</th>
-            <th style="width:125px" data-col="transp">Transporteur</th>
+            <th style="width:54px"  data-col="svct">SVCT <span class="col-filter-btn" onclick="event.stopPropagation();openColFilter(this,'svct')">▼</span></th>
+            <th style="width:125px" data-col="transp">Transp. <span class="col-filter-btn" onclick="event.stopPropagation();openColFilter(this,'transp')">▼</span></th>
             <th style="width:66px"  data-col="poids">Poids kg</th>
             <th style="width:60px"  data-col="vol">Vol m³</th>
             <th style="width:72px"  data-col="taxable">Taxable</th>
-            <th style="width:44px"  data-col="dept">Dept</th>
+            <th style="width:44px"  data-col="dept">Dept <span class="col-filter-btn" onclick="event.stopPropagation();openColFilter(this,'dept')">▼</span></th>
             <th style="width:94px"  data-col="contact">Contact</th>
             <th style="width:90px"  data-col="tel">Tél</th>
             <th style="width:120px" data-col="email">Email</th>
-            <th style="width:44px"  data-col="cc">Cc</th>
+            <th style="width:44px"  data-col="cc">Cc <span class="col-filter-btn" onclick="event.stopPropagation();openColFilter(this,'cc')">▼</span></th>
             <th style="width:80px"  data-col="days">⏳ J+</th>
             <th style="width:155px" data-col="comment">Commentaire</th>
-            <th style="width:155px" data-col="statut">Statut ↕</th>
+            <th style="width:155px" data-col="statut">Statut <span class="col-filter-btn" onclick="event.stopPropagation();openColFilter(this,'statut')">▼</span></th>
           </tr>
         </thead>
         <tbody id="master-tbody"></tbody>
@@ -1424,6 +1448,7 @@ let g_conIdx   = -1;
 let g_dragFile = null;
 let g_sortCol  = null;
 let g_sortAsc  = true;
+let g_colFilters = {}; // {colName: Set of allowed values}
 
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 
@@ -1514,6 +1539,14 @@ function renderMaster(filter='') {
     (r.statut&&statutLabel(statutNum(r.statut)).toLowerCase().includes(fl))
   );
   if (g_operatorFilter) rows = rows.filter(r => (r.operator||'') === g_operatorFilter);
+  // Filtres colonnes (style Excel)
+  for (const [col, allowed] of Object.entries(g_colFilters)) {
+    if (!allowed || !allowed.size) continue;
+    rows = rows.filter(r => {
+      const v = col === 'statut' ? statutLabel(statutNum(r.statut)) : String(r[col]||'');
+      return allowed.has(v);
+    });
+  }
   if (g_sortCol) {
     rows = [...rows].sort((a,b) => {
       let va=a[g_sortCol]||'', vb=b[g_sortCol]||'';
@@ -1569,6 +1602,108 @@ document.querySelectorAll('table.t-master thead th[data-col]').forEach(th => {
   });
 });
 
+// ── Filtres colonnes (style Excel) ──────────────────────────────────────
+function getColValues(col) {
+  let vals;
+  if (col === 'statut') {
+    vals = g_master.map(r => statutLabel(statutNum(r.statut)));
+  } else {
+    vals = g_master.map(r => String(r[col]||''));
+  }
+  if (g_operatorFilter) {
+    const filtered = g_master.filter(r => (r.operator||'') === g_operatorFilter);
+    if (col === 'statut') vals = filtered.map(r => statutLabel(statutNum(r.statut)));
+    else vals = filtered.map(r => String(r[col]||''));
+  }
+  return [...new Set(vals)].sort((a,b) => a.localeCompare(b,'fr'));
+}
+
+function openColFilter(btn, col) {
+  closeColFilter();
+  const rect = btn.getBoundingClientRect();
+  const popup = document.createElement('div');
+  popup.className = 'col-filter-popup';
+  popup.id = 'col-filter-popup';
+  popup.style.left = Math.min(rect.left, window.innerWidth - 220) + 'px';
+  popup.style.top  = (rect.bottom + 4) + 'px';
+  popup.style.position = 'fixed';
+
+  const allVals = getColValues(col);
+  const active = g_colFilters[col]; // Set or undefined (undefined = all shown)
+
+  popup.innerHTML = `
+    <input class="cfp-search" type="text" placeholder="Rechercher..." oninput="filterColList(this.value)">
+    <div class="cfp-item" style="border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:4px">
+      <input type="checkbox" id="cfp-all" ${!active?'checked':allVals.every(v=>active.has(v))?'checked':''} onchange="cfpToggleAll(this.checked,'${col}')">
+      <label for="cfp-all" style="font-weight:600;cursor:pointer">(Tout sélectionner)</label>
+    </div>
+    <div class="cfp-list" id="cfp-list">
+      ${allVals.map((v,i) => `<div class="cfp-item" data-val="${v.replace(/"/g,'&quot;').toLowerCase()}">
+        <input type="checkbox" id="cfp-${i}" data-v="${v.replace(/"/g,'&quot;')}" ${!active||active.has(v)?'checked':''}>
+        <label for="cfp-${i}" style="cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${v||'(vide)'}">${v||'<i>(vide)</i>'}</label>
+      </div>`).join('')}
+    </div>
+    <div class="cfp-actions">
+      <button class="btn btn-purple-out" onclick="applyColFilter('${col}')">Appliquer</button>
+      <button class="btn btn-ghost" onclick="clearColFilter('${col}')">Effacer</button>
+    </div>`;
+  document.body.appendChild(popup);
+
+  // Close on outside click
+  setTimeout(() => document.addEventListener('click', _colFilterOutClick), 10);
+}
+
+function _colFilterOutClick(e) {
+  const popup = document.getElementById('col-filter-popup');
+  if (popup && !popup.contains(e.target)) closeColFilter();
+}
+
+function closeColFilter() {
+  const popup = document.getElementById('col-filter-popup');
+  if (popup) popup.remove();
+  document.removeEventListener('click', _colFilterOutClick);
+}
+
+function filterColList(q) {
+  const lq = q.toLowerCase();
+  document.querySelectorAll('#cfp-list .cfp-item').forEach(el => {
+    el.style.display = el.dataset.val.includes(lq) ? '' : 'none';
+  });
+}
+
+function cfpToggleAll(checked, col) {
+  document.querySelectorAll('#cfp-list input[type=checkbox]').forEach(cb => { cb.checked = checked; });
+}
+
+function applyColFilter(col) {
+  const checks = document.querySelectorAll('#cfp-list input[type=checkbox]');
+  const selected = new Set();
+  checks.forEach(cb => { if (cb.checked) selected.add(cb.dataset.v); });
+  const allVals = getColValues(col);
+  if (selected.size === allVals.length || selected.size === 0) {
+    delete g_colFilters[col];
+  } else {
+    g_colFilters[col] = selected;
+  }
+  // Update header highlight
+  document.querySelectorAll('th[data-col]').forEach(th => {
+    if (th.dataset.col === col) th.classList.toggle('filtered', !!g_colFilters[col]);
+  });
+  closeColFilter();
+  renderMaster(document.getElementById('inp-search').value);
+  renderKanban(); updateStats();
+}
+
+function clearColFilter(col) {
+  delete g_colFilters[col];
+  document.querySelectorAll('th[data-col]').forEach(th => {
+    if (th.dataset.col === col) th.classList.remove('filtered');
+  });
+  closeColFilter();
+  renderMaster(document.getElementById('inp-search').value);
+  renderKanban(); updateStats();
+}
+
 // Recherche
 document.getElementById('inp-search').addEventListener('input', e => renderMaster(e.target.value));
 document.addEventListener('keydown', e => {
@@ -1614,7 +1749,14 @@ let g_kabSelected = new Set(); // fichiers sélectionnés
 
 function renderKanban() {
   K_CFG.forEach(k => {
-    const items = g_master.filter(r => parseInt(statutNum(r.statut))===k.n && (!g_operatorFilter || (r.operator||'')===g_operatorFilter));
+    let items = g_master.filter(r => parseInt(statutNum(r.statut))===k.n && (!g_operatorFilter || (r.operator||'')===g_operatorFilter));
+    for (const [col, allowed] of Object.entries(g_colFilters)) {
+      if (!allowed || !allowed.size) continue;
+      items = items.filter(r => {
+        const v = col === 'statut' ? statutLabel(statutNum(r.statut)) : String(r[col]||'');
+        return allowed.has(v);
+      });
+    }
     document.getElementById(`k-cnt-${k.n}`).textContent = items.length;
     document.getElementById(`k-body-${k.n}`).innerHTML = items.map(r => {
       const idx = g_master.indexOf(r);
@@ -2828,16 +2970,14 @@ document.getElementById('btn-comat-multi').onclick = async (e) => {
   numsRaw.forEach(n => n.split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean).forEach(s => nums.push(s)));
   if (!nums.length) return toast('Aucun numéro valide.');
   if (!confirm('Lancer COMAT sur ' + nums.length + ' dossier(s) ?')) return;
-  // Construire la queue manuelle (pas de masterRef car saisie libre)
-  _comatQueue = nums.map(n => ({ num: n, masterRef: null }));
-  _comatTotalCount = nums.length;
-  _comatDoneCount = 0;
-  _comatPaused = false;
   _comatRunning = true;
-  _comatTargetStatus = '7';
-  _batchShowProgress('COMAT', 0, _comatTotalCount, false);
-  toast(`COMAT : ${nums.length} dossier(s) — traitement séquentiel lancé.`);
-  comatProcessNext();
+  _batchShowBar('COMAT', nums.length);
+  toast(`COMAT : ${nums.length} dossier(s) envoyé(s) — F9 = Pause, Echap = Stop`);
+  const data = nums.map(n => n + ';;;').join('|');
+  await apiCall('action', { action: 'COMAT_MULTI', data });
+  _comatRunning = false;
+  _batchHideBar();
+  toast(`COMAT terminé — ${nums.length} dossier(s) traité(s).`);
 };
 
 document.getElementById('btn-comat-solo').onclick = async (e) => {
@@ -2855,7 +2995,8 @@ document.getElementById('btn-comat-solo').onclick = async (e) => {
 document.getElementById('btn-comat-stop').onclick = async (e) => {
   e.stopPropagation();
   await apiCall('action', { action: 'COMAT_STOP' });
-  comatStopBatch();
+  _comatRunning = false;
+  _batchHideBar();
   toast('Signal STOP envoyé à AutoIt.');
 };
 
@@ -4056,16 +4197,12 @@ function fcRecalcDates() {
   toast('Dates recalculées.');
 }
 
-// ── FC : état séquentiel avec pause / reprise ──
-let _fcQueue = [];
+// ── FC : envoi batch à AutoIt (pause/stop gérés par hotkeys F9/Echap dans au3) ──
 let _fcRunning = false;
-let _fcPaused  = false;
-let _fcDoneCount = 0;
-let _fcTotalCount = 0;
 
 async function fcLancer() {
   closeModal('modal-fc-params');
-  _fcQueue = [];
+  const rows = [];
   _fcAffected.forEach((r, i) => {
     const contactStr = `${r.contact||''} ${r.tel||''}`.trim();
     const isUPS = (r.transp||'').toLowerCase().includes('ups');
@@ -4077,157 +4214,69 @@ async function fcLancer() {
     if (!isUPS) { r.fcDate = dateG; r.fcHoraire = horaire; r.fcDly = dly; r.fcDlyNotes = dlyNotes; }
     const subFiles = (r.file||'').split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean);
     subFiles.forEach(sf => {
-      const row = `${sf};${r.email||''};${r.client||''};${r.transp||''};${contactStr};${dateG};${horaire};${dly};${dlyNotes}`;
-      _fcQueue.push({ row, masterRef: r, file: sf, isUPS });
+      rows.push(`${sf};${r.email||''};${r.client||''};${r.transp||''};${contactStr};${dateG};${horaire};${dly};${dlyNotes}`);
     });
   });
-  _fcTotalCount = _fcQueue.length;
-  _fcDoneCount = 0;
-  _fcPaused = false;
+  if (!rows.length) return toast('Aucun dossier à traiter.');
   _fcRunning = true;
-  _batchShowProgress('FC', _fcDoneCount, _fcTotalCount, _fcPaused);
-  toast(`FC : ${_fcTotalCount} dossier(s) — traitement séquentiel lancé.`);
-  fcProcessNext();
-}
-
-async function fcProcessNext() {
-  while (_fcQueue.length > 0) {
-    if (_fcPaused) { _batchShowProgress('FC', _fcDoneCount, _fcTotalCount, _fcPaused); return; }
-    const job = _fcQueue[0];
-    _batchShowProgress('FC', _fcDoneCount, _fcTotalCount, false, job.file);
-    await apiCall('action', { action: 'KANBAN_5', data: job.row });
-    _fcQueue.shift();
-    _fcDoneCount++;
-    // Marquer le parent comme traité si tous ses sous-fichiers sont passés
-    const parentSubs = (job.masterRef.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean);
-    const allDone = parentSubs.every(sf => !_fcQueue.some(q => q.masterRef === job.masterRef));
-    if (allDone) job.masterRef.statut = '6';
-    renderMaster(); renderKanban(); updateStats(); autoSave();
-    _batchShowProgress('FC', _fcDoneCount, _fcTotalCount, false);
-  }
+  _batchShowBar('FC', rows.length);
+  toast(`FC : ${rows.length} dossier(s) envoyé(s) — F9 = Pause, Echap = Stop (dans AutoIt)`);
+  await apiCall('action', { action: 'KANBAN_5', data: rows.join('|') });
   _fcRunning = false;
-  _batchHideProgress();
-  toast(`FC terminé — ${_fcDoneCount}/${_fcTotalCount} dossier(s) traité(s).`);
+  _batchHideBar();
+  // Marquer tous les dossiers comme traités (statut 6)
+  _fcAffected.forEach(r => { r.statut = '6'; });
+  renderMaster(); renderKanban(); updateStats(); autoSave();
+  toast(`FC terminé — ${rows.length} dossier(s) traité(s).`);
 }
 
-function fcPauseToggle() {
-  if (!_fcRunning) return;
-  _fcPaused = !_fcPaused;
-  if (_fcPaused) {
-    toast(`FC en pause — ${_fcDoneCount}/${_fcTotalCount} traité(s).`);
-  } else {
-    toast('FC reprise...');
-    fcProcessNext();
-  }
-  _batchShowProgress('FC', _fcDoneCount, _fcTotalCount, _fcPaused);
-}
-
-function fcStopBatch() {
-  _fcPaused = false; _fcRunning = false; _fcQueue = [];
-  _batchHideProgress();
-  toast(`FC arrêté — ${_fcDoneCount}/${_fcTotalCount} traité(s).`);
-}
-
-// ── Barre de progression partagée FC / COMAT ──
-function _batchShowProgress(label, done, total, paused, currentFile) {
+// ── Barre d'info simple (le vrai suivi est dans le Tracker AutoIt) ──
+function _batchShowBar(label, total) {
   let bar = document.getElementById('batch-progress-bar');
   if (!bar) {
     bar = document.createElement('div');
     bar.id = 'batch-progress-bar';
-    bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9999;background:var(--surface2);border-top:2px solid var(--blue);padding:8px 16px;display:flex;align-items:center;gap:12px;font-size:12px;color:var(--text)';
+    bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9999;background:var(--surface2);border-top:2px solid var(--blue);padding:10px 16px;display:flex;align-items:center;gap:12px;font-size:12px;color:var(--text)';
     document.body.appendChild(bar);
   }
-  const pct = total ? Math.round(done/total*100) : 0;
-  const cur = currentFile ? ` — ${currentFile}` : '';
-  const isFC = label === 'FC';
-  const pauseFn = isFC ? 'fcPauseToggle' : 'comatPauseToggle';
-  const stopFn  = isFC ? 'fcStopBatch'   : 'comatStopBatch';
   bar.innerHTML = `
     <div style="flex:1;display:flex;align-items:center;gap:10px">
       <span style="font-weight:700;color:var(--blue)">${label}</span>
-      <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
-        <div style="width:${pct}%;height:100%;background:var(--blue);border-radius:3px;transition:width .3s"></div>
-      </div>
-      <span style="font-family:var(--mono);min-width:80px">${done} / ${total}${cur}</span>
-    </div>
-    <button class="btn btn-sm" onclick="${pauseFn}()" style="color:${paused?'var(--green)':'var(--orange)'};min-width:90px">
-      ${paused ? '▶ Reprendre' : '⏸ Pause'}
-    </button>
-    <button class="btn btn-sm" onclick="${stopFn}()" style="color:var(--red)">⛔ Stop</button>`;
+      <span>${total} dossier(s) en cours de traitement...</span>
+      <span style="color:var(--text3);font-size:11px">F9 = Pause/Reprendre | Echap = Arrêter (raccourcis AutoIt)</span>
+    </div>`;
   bar.style.display = 'flex';
 }
 
-function _batchHideProgress() {
+function _batchHideBar() {
   const bar = document.getElementById('batch-progress-bar');
   if (bar) bar.remove();
 }
 
-// ── COMAT : état séquentiel avec pause / reprise ──
-let _comatQueue = [];
+// ── COMAT : envoi batch à AutoIt (pause/stop gérés par hotkeys F9/Echap dans au3) ──
 let _comatRunning = false;
-let _comatPaused  = false;
-let _comatDoneCount = 0;
-let _comatTotalCount = 0;
-let _comatTargetStatus = '7';
 
-function comatStartBatch(affected, toStatus) {
-  _comatQueue = [];
-  _comatTargetStatus = String(toStatus);
+async function comatStartBatch(affected, toStatus) {
+  const nums = [];
+  const refs = [];
   affected.forEach(r => {
     (r.file||'').split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean).forEach(n => {
-      _comatQueue.push({ num: n, masterRef: r });
+      nums.push(n);
+      refs.push(r);
     });
   });
-  _comatTotalCount = _comatQueue.length;
-  _comatDoneCount = 0;
-  _comatPaused = false;
+  if (!nums.length) return toast('Aucun dossier à traiter.');
   _comatRunning = true;
-  _batchShowProgress('COMAT', 0, _comatTotalCount, false);
-  toast(`COMAT : ${_comatTotalCount} dossier(s) — traitement séquentiel lancé.`);
-  comatProcessNext();
-}
-
-async function comatProcessNext() {
-  while (_comatQueue.length > 0) {
-    if (_comatPaused) { _batchShowProgress('COMAT', _comatDoneCount, _comatTotalCount, true); return; }
-    const job = _comatQueue[0];
-    _batchShowProgress('COMAT', _comatDoneCount, _comatTotalCount, false, job.num);
-    const res = await apiCall('action', { action: 'COMAT_MULTI', data: job.num + ';;;' });
-    _comatQueue.shift();
-    _comatDoneCount++;
-    if (!res || res.error) {
-      toast(`Erreur COMAT sur ${job.num} — dossier ignoré.`);
-    }
-    // Marquer le parent comme traité si tous ses sous-fichiers sont passés
-    if (job.masterRef) {
-      const parentSubs = (job.masterRef.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean);
-      const allDone = parentSubs.every(sf => !_comatQueue.some(q => q.masterRef === job.masterRef));
-      if (allDone) job.masterRef.statut = _comatTargetStatus;
-    }
-    renderMaster(); renderKanban(); updateStats(); autoSave();
-    _batchShowProgress('COMAT', _comatDoneCount, _comatTotalCount, false);
-  }
+  _batchShowBar('COMAT', nums.length);
+  toast(`COMAT : ${nums.length} dossier(s) envoyé(s) — F9 = Pause, Echap = Stop (dans AutoIt)`);
+  const data = nums.map(n => n + ';;;').join('|');
+  await apiCall('action', { action: 'COMAT_MULTI', data });
   _comatRunning = false;
-  _batchHideProgress();
-  toast(`COMAT terminé — ${_comatDoneCount}/${_comatTotalCount} dossier(s) traité(s).`);
-}
-
-function comatPauseToggle() {
-  if (!_comatRunning) return;
-  _comatPaused = !_comatPaused;
-  if (_comatPaused) {
-    toast(`COMAT en pause — ${_comatDoneCount}/${_comatTotalCount} traité(s).`);
-  } else {
-    toast('COMAT reprise...');
-    comatProcessNext();
-  }
-  _batchShowProgress('COMAT', _comatDoneCount, _comatTotalCount, _comatPaused);
-}
-
-function comatStopBatch() {
-  _comatPaused = false; _comatRunning = false; _comatQueue = [];
-  _batchHideProgress();
-  toast(`COMAT arrêté — ${_comatDoneCount}/${_comatTotalCount} traité(s).`);
+  _batchHideBar();
+  // Marquer tous les dossiers comme traités
+  affected.forEach(r => { r.statut = String(toStatus); });
+  renderMaster(); renderKanban(); updateStats(); autoSave();
+  toast(`COMAT terminé — ${nums.length} dossier(s) traité(s).`);
 }
 
 

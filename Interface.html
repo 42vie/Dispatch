@@ -798,6 +798,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     </div>
     <button class="btn btn-success btn-sm" id="btn-add-manual">➕ Dossier manuel</button>
     <button class="btn btn-blue-out btn-sm" id="btn-add-group" onclick="openGroupManual()">🔗 Groupe manuel</button>
+    <button class="btn btn-ghost btn-sm" style="color:var(--orange)" onclick="checkMissingPDF()">📋 PDF manquants</button>
     <button class="btn btn-ghost btn-sm" id="btn-clear-done" style="color:var(--red)">🗑 Vider terminés</button>
   </div>
 </div>
@@ -3484,6 +3485,34 @@ function ntoBatchFermer() {
   window._ntoBatchLines = [];
 }
 
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  VÉRIFICATION PDF MANQUANTS                                               ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+async function checkMissingPDF() {
+  // Collecter tous les fichiers individuels des dossiers actifs (pas terminés/archivés)
+  const allFiles = [];
+  g_master.forEach(r => {
+    if (r.statut === '8') return;
+    const files = (r.file || '').split(' + ').map(s => s.trim()).filter(Boolean);
+    files.forEach(f => { if (!allFiles.includes(f)) allFiles.push(f); });
+  });
+  if (!allFiles.length) return toast('Aucun dossier actif.');
+  toast('Vérification de ' + allFiles.length + ' PDF en cours...');
+  const result = await apiCall('action', { action: 'CHECK_PDF', data: allFiles.join('|') });
+  if (!result || result.error) return toast('Erreur lors de la vérification PDF.');
+  const missing = (result.missing || '').split('|').filter(Boolean);
+  if (!missing.length) return toast('Tous les PDF sont présents (' + allFiles.length + '/' + allFiles.length + ').');
+  const txt = missing.join('\n');
+  navigator.clipboard.writeText(txt)
+    .then(() => toast('⚠ ' + missing.length + ' PDF manquant(s) sur ' + allFiles.length + ' — liste copiée dans le presse-papier.'))
+    .catch(() => {
+      const t = document.createElement('textarea');
+      t.value = txt;
+      document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t);
+      toast('⚠ ' + missing.length + ' PDF manquant(s) — liste copiée.');
+    });
+}
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  OPÉRATEUR / FILTRE PERSONNE                                             ║

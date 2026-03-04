@@ -221,6 +221,26 @@ Func _HandleClient($iSocket)
                 TCPCloseSocket($iSocket)
                 Return
 
+            Case "CHECK_PDF"
+                $sData_a = _GetJsonValue($sBody, "data")
+                Local $sCheminCheck = "F:\CDG\PRODUCT\TRANSCON\Shared\Clients\HPE\Pre-alertes\"
+                ; Lire chemin personnalisé depuis config si disponible
+                Local $sIniCheck = @ScriptDir & "\dispatch_config.ini"
+                Local $sCfgPath = IniRead($sIniCheck, "PJ", "Path", "")
+                If $sCfgPath <> "" Then $sCheminCheck = $sCfgPath & "\"
+                Local $aCheckFiles = StringSplit($sData_a, "|")
+                Local $sMissing = ""
+                For $j = 1 To $aCheckFiles[0]
+                    Local $sF = StringStripWS($aCheckFiles[$j], 3)
+                    If $sF <> "" And Not FileExists($sCheminCheck & $sF & ".pdf") Then
+                        If $sMissing <> "" Then $sMissing &= "|"
+                        $sMissing &= $sF
+                    EndIf
+                Next
+                _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok","missing":"' & $sMissing & '"}')
+                TCPCloseSocket($iSocket)
+                Return
+
             Case "save-pj-config"
                 $sIni_a = @ScriptDir & "\dispatch_config.ini"
                 IniWrite($sIni_a, "PJ", "Path",         _GetJsonValue($sBody, "path"))

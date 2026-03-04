@@ -1846,7 +1846,8 @@ async function kanbanAction(from) {
 
   const strData = affected.map(r => {
     const contactStr = `${r.contact || ''} ${r.tel || ''}`.trim();
-    return `${r.file};${r.email};${r.client};${r.transp || ''};${contactStr}`;
+    const cleanFile = (r.file||'').replace(/[^\x20-\x7E+]/g, '').trim();
+    return `${cleanFile};${r.email};${r.client};${r.transp || ''};${contactStr}`;
   }).join('|');
 
   if (from === 7) {
@@ -2016,7 +2017,7 @@ function importRows(rows) {
 
   for (let i=1;i<rows.length;i++) {
     const row=rows[i];
-    const file=String(row[0]||'').trim();
+    const file=String(row[0]||'').replace(/[^\x20-\x7E]/g, '').trim();
     if (!file) continue;
     // Déjà présent → on met à jour les champs vides seulement
     const existing = g_master.find(r => r.file===file || (r.file||'').includes(file));
@@ -2725,9 +2726,10 @@ document.getElementById('btn-rdv-cp').addEventListener('click', async () => {
     // Matching partiel : "Arrow" trouve "Arrow ECS SAS"
     const cl = (cp.client||'').toLowerCase();
     const cfg = g_cpConfig.find(c => cl.includes((c.nom||'').toLowerCase()) || (c.nom||'').toLowerCase().includes(cl)) || {};
-    const cmds = cp.files.join(' + ');
+    const cmds = cp.files.map(f => f.replace(/[^\x20-\x7E]/g, '').trim()).join(' + ');
+    const doc  = (cp.doc||'').replace(/[^\x20-\x7E]/g, '').trim();
     // Poids = somme brute (pas taxable)
-    return `${cp.client}§${cmds}§${cp.palettes||''}§${cp.colis||''}§${fmt(cp.poids)}§${cp.doc||''}§${cfg.emailTo||''}§${cfg.emailCc||''}`;
+    return `${cp.client}§${cmds}§${cp.palettes||''}§${cp.colis||''}§${fmt(cp.poids)}§${doc}§${cfg.emailTo||''}§${cfg.emailCc||''}`;
   });
 
   const strData = dataArr.join('|');

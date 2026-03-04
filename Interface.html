@@ -581,6 +581,7 @@ table.t-master tbody td {
 }
 .k-item .k-chk { opacity: 0; transition: opacity .12s; }
 .k-item:hover .k-chk, .k-item.k-selected .k-chk { opacity: 1; }
+.k-item.k-drop-target { outline: 2px dashed var(--green); outline-offset: -2px; background: var(--green-bg) !important; }
 /* Barre d'actions flottante */
 #kanban-action-bar {
   display: none; position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
@@ -1831,6 +1832,9 @@ function renderKanban() {
       return `<div class="k-item${sel?' k-selected':''}${isGrp?' k-group':''}" style="border-left-color:var(${k.c})"
         draggable="true"
         ondragstart="g_dragFile='${fileE}'"
+        ondragover="event.preventDefault();event.stopPropagation();this.classList.add('k-drop-target')"
+        ondragleave="this.classList.remove('k-drop-target')"
+        ondrop="event.stopPropagation();this.classList.remove('k-drop-target');onCardDrop(event,'${fileE}')"
         onclick="kabToggle(event,'${fileE}')"
         ondblclick="openEdit(${idx})">
         <input type="checkbox" class="k-chk" ${sel?'checked':''} onclick="event.stopPropagation();kabToggle(event,'${fileE}')">
@@ -1945,7 +1949,11 @@ Continuer pour les autres ?`)) return;
     return `${r.file};${r.email};${r.client};${r.transp||''};${contactStr}`;
   }).join('|');
   toast(`📧 Envoi mail RDV pour ${withEmail.length} dossier(s)...`);
-  await apiCall('action', { action: 'KANBAN_2', data: strData });
+  const mailResult = await apiCall('action', { action: 'KANBAN_2', data: strData });
+  if (!mailResult || mailResult.error) {
+    toast('Erreur lors de l\'envoi des mails. Les dossiers restent à leur statut actuel.');
+    return;
+  }
   withEmail.forEach(r => { if (parseInt(statutNum(r.statut)) < 3) r.statut = '3'; });
   kabClearSel();
   renderMaster(); renderKanban(); updateStats(); autoSave();
@@ -1961,6 +1969,46 @@ function onKDrop(event, status) {
   g_master[idx].statut = String(status);
   if (status>=2 && g_master[idx].cc!=='Cc') g_master[idx].cc='Cc';
   renderMaster(); renderKanban(); updateStats(); g_dragFile=null;
+}
+
+function onCardDrop(event, targetFile) {
+  event.preventDefault();
+  if (!g_dragFile || g_dragFile === targetFile) { g_dragFile = null; return; }
+  const srcIdx = g_master.findIndex(r => r.file === g_dragFile);
+  const tgtIdx = g_master.findIndex(r => r.file === targetFile);
+  if (srcIdx < 0 || tgtIdx < 0) { g_dragFile = null; return; }
+  const src = g_master[srcIdx], tgt = g_master[tgtIdx];
+  // Collecter tous les fichiers individuels
+  const srcFiles = (src.file||'').split(' + ').map(s=>s.trim()).filter(Boolean);
+  const tgtFiles = (tgt.file||'').split(' + ').map(s=>s.trim()).filter(Boolean);
+  const allFiles = [...tgtFiles, ...srcFiles];
+  // Vérifier pas de doublons
+  const uniq = [...new Set(allFiles)];
+  if (uniq.length < 2) { g_dragFile = null; return; }
+  // Agréger poids, vol
+  const newPoids = +(tgt.poids + src.poids).toFixed(2);
+  const newVol   = +(tgt.vol + src.vol).toFixed(3);
+  const newTax   = +calcTaxable(newPoids, newVol).toFixed(2);
+  const newSvct  = mergeSVCT(tgt.svct, src.svct);
+  const cpFlag   = isCP(tgt.client);
+  const newTransp = calcTransp(newSvct, newTax, tgt.dept, cpFlag);
+  // Créer la nouvelle ligne groupée
+  const merged = {
+    file: uniq.join(' + '), client: tgt.client, rdl: tgt.rdl, svct: newSvct,
+    transp: newTransp, poids: newPoids, vol: newVol, taxable: newTax,
+    dept: tgt.dept, contact: tgt.contact||'', tel: tgt.tel||'', email: tgt.email||'',
+    cc: tgt.cc, comment: tgt.comment||'', statut: tgt.statut,
+    operator: tgt.operator||'',
+    _dateCreated: tgt._dateCreated || new Date().toISOString().slice(0,10)
+  };
+  // Supprimer les deux lignes originales (plus grand index en premier)
+  const idxs = [srcIdx, tgtIdx].sort((a,b) => b-a);
+  idxs.forEach(i => g_master.splice(i, 1));
+  g_master.push(merged);
+  g_dragFile = null;
+  g_kabSelected.clear();
+  renderMaster(); renderKanban(); updateStats(); autoSave();
+  toast(`Groupe créé : ${uniq.length} dossiers fusionnés.`);
 }
 
 async function kanbanAction(from) {
@@ -2013,9 +2061,13 @@ async function kanbanAction(from) {
     document.getElementById('comat-status-txt').textContent = `Traitement de ${comatNums.length} dossier(s) en cours...`;
     const comatData = comatNums.map(n => n + ';;;').join('|');
     toast(`COMAT : ${comatNums.length} dossier(s) envoyés à AutoIt...`);
-    await apiCall('action', { action: 'COMAT_MULTI', data: comatData });
-    affected.forEach(r => { r.statut = String(to); });
+    const comatResult = await apiCall('action', { action: 'COMAT_MULTI', data: comatData });
     document.getElementById('comat-status').style.display = 'none';
+    if (!comatResult || comatResult.error) {
+      toast('Erreur COMAT — les dossiers restent à leur statut actuel.');
+      return;
+    }
+    affected.forEach(r => { r.statut = String(to); });
     toast(`COMAT terminé — ${comatNums.length} dossier(s) passés au statut ${to}.`);
   } else if (from === 5) {
     // FC : ouvrir la modale de paramétrage dates/horaires
@@ -2023,7 +2075,11 @@ async function kanbanAction(from) {
     return; // fcLancer() gère la suite
   } else {
     toast(`Ordre envoyé à AutoIt pour ${affected.length} dossier(s)...`);
-    await apiCall('action', { action: 'KANBAN_' + from, data: strData });
+    const kanResult = await apiCall('action', { action: 'KANBAN_' + from, data: strData });
+    if (!kanResult || kanResult.error) {
+      toast('Erreur lors de l\'envoi. Les dossiers restent à leur statut actuel.');
+      return;
+    }
     if (to === 'mixed' || from === 3) {
       // Colonne 3 : S5 → 4 (pré-alerte), non-S5 → 5 (FC prêt)
       affected.forEach(r => {
@@ -2267,9 +2323,13 @@ function importRows(rows) {
 function addOrUpdateCP(client, file, poids, vol, taxable, operator) {
   const idx=g_cpData.findIndex(c=>c.client===client && (c.operator||'')===(operator||''));
   if (idx>=0) {
-    if (!g_cpData[idx].files.includes(file)) g_cpData[idx].files.push(file);
-    g_cpData[idx].poids+=+poids; g_cpData[idx].vol+=+vol;
-    g_cpData[idx].taxable=calcTaxable(g_cpData[idx].poids,g_cpData[idx].vol);
+    if (!g_cpData[idx].files.includes(file)) {
+      g_cpData[idx].files.push(file);
+      if (!g_cpData[idx]._poidsManual) {
+        g_cpData[idx].poids+=+poids; g_cpData[idx].vol+=+vol;
+        g_cpData[idx].taxable=calcTaxable(g_cpData[idx].poids,g_cpData[idx].vol);
+      }
+    }
   } else {
     g_cpData.push({client,files:[file],palettes:'',colis:'',
       poids:+poids,vol:+vol,taxable:+taxable,doc:'',operator:operator||''});
@@ -2290,8 +2350,8 @@ function renderCP() {
       <td style="font-family:var(--mono);font-size:11px;color:var(--text2)">${cp.files.join(' + ')}</td>
       <td><input class="inline-inp" style="width:55px" value="${cp.palettes||''}" oninput="g_cpData[${i}].palettes=this.value"></td>
       <td><input class="inline-inp" style="width:55px" value="${cp.colis||''}" oninput="g_cpData[${i}].colis=this.value"></td>
-      <td><input class="inline-inp" style="width:65px;text-align:right" type="number" step="0.01" value="${cp.poids||0}" oninput="g_cpData[${i}].poids=+this.value;g_cpData[${i}].taxable=+calcTaxable(+this.value,g_cpData[${i}].vol).toFixed(2);renderCP()"></td>
-      <td><input class="inline-inp" style="width:60px;text-align:right" type="number" step="0.001" value="${cp.vol||0}" oninput="g_cpData[${i}].vol=+this.value;g_cpData[${i}].taxable=+calcTaxable(g_cpData[${i}].poids,+this.value).toFixed(2);renderCP()"></td>
+      <td><input class="inline-inp" style="width:65px;text-align:right" type="number" step="0.01" value="${cp.poids||0}" oninput="g_cpData[${i}].poids=+this.value;g_cpData[${i}]._poidsManual=true;g_cpData[${i}].taxable=+calcTaxable(+this.value,g_cpData[${i}].vol).toFixed(2);renderCP()"></td>
+      <td><input class="inline-inp" style="width:60px;text-align:right" type="number" step="0.001" value="${cp.vol||0}" oninput="g_cpData[${i}].vol=+this.value;g_cpData[${i}]._poidsManual=true;g_cpData[${i}].taxable=+calcTaxable(g_cpData[${i}].poids,+this.value).toFixed(2);renderCP()"></td>
       <td class="taxable-val" style="text-align:right;font-weight:600">${fmt(cp.taxable)}</td>
       <td><input class="inline-inp" value="${cp.doc||''}" oninput="g_cpData[${i}].doc=this.value"></td>
     </tr>`).join('');
@@ -2862,7 +2922,11 @@ document.getElementById('btn-rdv-cp').addEventListener('click', async () => {
 
   const strData = dataArr.join('|');
   toast(`Préparation de ${checkedCps.length} e-mail(s) CP en cours...`);
-  await apiCall('action', { action: 'BATCH_CP', data: strData });
+  const cpResult = await apiCall('action', { action: 'BATCH_CP', data: strData });
+  if (!cpResult || cpResult.error) {
+    toast('Erreur lors de l\'envoi des mails CP. Les dossiers restent à leur statut actuel.');
+    return;
+  }
 
   // Passer les dossiers CP au statut 3 + nettoyer g_cpData
   const idxToRemove = checkedCps.map(({i}) => i).sort((a,b) => b-a);
@@ -3288,15 +3352,23 @@ function ntoBatchLancer(affected) {
       ? r.file.split(' + ').map(s => s.trim())
       : [r.file.trim()];
 
-    files.forEach(f => {
+    files.forEach((f, fIdx) => {
       const transp  = (r.transp || '').trim();
       const dept    = String(r.dept || '').replace(/^0/,'');
       const taxable = parseFloat(r.taxable) || 0;
+      const isGroup = files.length > 1;
 
       // EFDS / Groussard → skip
       if (EFDS(transp)) {
         skipped++;
         rows += _ntoBatchRow(f, transp, '<span style="color:var(--text3);font-style:italic">Sur cotation — ignoré</span>', '—', '#FAFBFC');
+        return;
+      }
+
+      // Groupe : seul le 1er fichier porte la NTO, le reste à 0
+      if (isGroup && fIdx > 0) {
+        rows += _ntoBatchRow(f, 'NTO', 'Groupe — inclus dans ' + files[0], '0', '#F8F9FA');
+        lines.push({ file: f, prix: '0' });
         return;
       }
 

@@ -1346,6 +1346,10 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
         <label>Poids taxable</label>
         <span id="ed-taxable-display" style="font-family:var(--mono);font-weight:600;color:var(--orange);padding-left:10px"></span>
       </div>
+      <div class="form-row">
+        <label>Supplément camion (€)</label>
+        <input id="ed-supplement" type="number" step="0.01" min="0" style="max-width:110px;flex:unset">
+      </div>
 
       <div class="form-section">Contact livraison</div>
       <div class="form-row"><label>Nom contact</label><input id="ed-contact" type="text"></div>
@@ -2442,6 +2446,8 @@ function openEdit(idx) {
   document.getElementById('ed-poids').value=r.poids||0;
   document.getElementById('ed-vol').value=r.vol||0;
   document.getElementById('ed-taxable-display').textContent=fmt(r.taxable)+' kg taxable';
+  const rawEdit = g_rawData[r.file] || {};
+  document.getElementById('ed-supplement').value = rawEdit.supplement || 0;
   document.getElementById('ed-contact').value=r.contact||'';
   document.getElementById('ed-tel').value=r.tel||'';
   document.getElementById('ed-email').value=r.email||'';
@@ -2482,6 +2488,10 @@ function saveEdit() {
   r.poids=parseFloat(document.getElementById('ed-poids').value)||0;
   r.vol=parseFloat(document.getElementById('ed-vol').value)||0;
   r.taxable=calcTaxable(r.poids,r.vol);
+  // Sauvegarder le supplément camion dans g_rawData
+  const supplVal = parseFloat(document.getElementById('ed-supplement').value) || 0;
+  if (!g_rawData[r.file]) g_rawData[r.file] = {};
+  g_rawData[r.file].supplement = supplVal;
   r.contact=document.getElementById('ed-contact').value;
   r.tel=document.getElementById('ed-tel').value;
   r.email=document.getElementById('ed-email').value;
@@ -2520,6 +2530,7 @@ function openGroup(idx) {
     const raw=g_rawData[sf]||{};
     const p=raw.poids||0,v=raw.vol||0,t=calcTaxable(p,v);
     const sv=raw.svct||r.svct,d=raw.dept||r.dept;
+    const suppl=raw.supplement||0;
     totP+=p; totV+=v;
     return `<tr>
       <td style="text-align:center"><input type="checkbox" id="grpchk${i}" style="accent-color:var(--green)"></td>
@@ -2529,6 +2540,7 @@ function openGroup(idx) {
       <td style="text-align:right;color:var(--orange)">${fmt(t)} kg</td>
       <td>${calcTransp(sv,t,d,isCP(r.client))}</td>
       <td style="color:var(--text2)">${sv}</td>
+      <td><input type="number" step="0.01" min="0" value="${suppl}" style="width:70px;text-align:right;font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:3px;padding:2px 4px" onchange="grpSupplUpdate('${sf}',this.value)"></td>
     </tr>`;
   }).join('');
   document.getElementById('mgrp-body').innerHTML=`
@@ -2541,6 +2553,7 @@ function openGroup(idx) {
         <th style="padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">Taxable</th>
         <th style="padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">Transporteur</th>
         <th style="padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">SVCT</th>
+        <th style="padding:5px 6px;font-size:11px;color:var(--teal);border-bottom:1px solid var(--border)">Camion €</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -2554,6 +2567,12 @@ function openGroup(idx) {
       Cochez les fichiers avant d'utiliser les boutons.
     </p>`;
   openModal('modal-group');
+}
+
+function grpSupplUpdate(file, val) {
+  if (!g_rawData[file]) g_rawData[file] = {};
+  g_rawData[file].supplement = parseFloat(val) || 0;
+  autoSave();
 }
 
 function retirerCochesGroupe() {

@@ -3521,15 +3521,37 @@ async function checkMissingPDF() {
   const result = await apiCall('action', { action: 'CHECK_PDF', data: allFiles.join('|') });
   if (!result || result.error) return toast('Erreur lors de la vérification PDF.');
   const missing = (result.missing || '').split('|').filter(Boolean);
-  if (!missing.length) return toast('Tous les PDF sont présents (' + allFiles.length + '/' + allFiles.length + ').');
+
+  // PDF présent = CC : marquer automatiquement les dossiers dont le PDF existe
+  const missingSet = new Set(missing);
+  const presentFiles = allFiles.filter(f => !missingSet.has(f));
+  let ccCount = 0;
+  presentFiles.forEach(f => {
+    g_master.forEach(r => {
+      if (r.cc === 'Cc') return; // déjà CC
+      const subs = (r.file || '').split(' + ').map(s => s.trim()).filter(Boolean);
+      if (!subs.includes(f)) return;
+      // Dossier solo dont le PDF est présent → passer en CC
+      if (subs.length === 1) {
+        r.cc = 'Cc';
+        if (r.statut === '1') r.statut = '2'; // passer de "Pas encore CC" à "RDV à envoyer"
+        ccCount++;
+      }
+    });
+  });
+  if (ccCount) {
+    renderMaster(); renderKanban(); updateStats();
+  }
+
+  if (!missing.length) return toast('✓ Tous les PDF présents (' + allFiles.length + '/' + allFiles.length + ') — ' + ccCount + ' dossier(s) passé(s) en CC.');
   const txt = missing.join('\n');
   navigator.clipboard.writeText(txt)
-    .then(() => toast('⚠ ' + missing.length + ' PDF manquant(s) sur ' + allFiles.length + ' — liste copiée dans le presse-papier.'))
+    .then(() => toast('⚠ ' + missing.length + ' PDF manquant(s) sur ' + allFiles.length + (ccCount ? ' — ' + ccCount + ' passé(s) en CC' : '') + ' — liste copiée.'))
     .catch(() => {
       const t = document.createElement('textarea');
       t.value = txt;
       document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t);
-      toast('⚠ ' + missing.length + ' PDF manquant(s) — liste copiée.');
+      toast('⚠ ' + missing.length + ' PDF manquant(s)' + (ccCount ? ' — ' + ccCount + ' passé(s) en CC' : '') + ' — liste copiée.');
     });
 }
 

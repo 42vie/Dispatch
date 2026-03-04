@@ -2729,7 +2729,7 @@ document.getElementById('btn-rdv-cp').addEventListener('click', async () => {
     const cmds = cp.files.map(f => f.replace(/[^\x20-\x7E]/g, '').trim()).join(' + ');
     const doc  = (cp.doc||'').replace(/[^\x20-\x7E]/g, '').trim();
     // Poids = somme brute (pas taxable)
-    return `${cp.client}§${cmds}§${cp.palettes||''}§${cp.colis||''}§${fmt(cp.poids)}§${doc}§${cfg.emailTo||''}§${cfg.emailCc||''}`;
+    return `${cp.client}~${cmds}~${cp.palettes||''}~${cp.colis||''}~${fmt(cp.poids)}~${doc}~${cfg.emailTo||''}~${cfg.emailCc||''}`;
   });
 
   const strData = dataArr.join('|');

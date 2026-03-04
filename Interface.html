@@ -1907,11 +1907,17 @@ function processCC(idx) {
       const sv=raw.svct||r.svct, d=raw.dept||r.dept, t=calcTaxable(p,v);
       const cp=isCP(r.client), tr=calcTransp(sv,t,d,cp);
       const st=transpTarget(sv,r.client);
-      g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,transp:tr,
-        poids:p,vol:v,taxable:t,dept:d,contact:r.contact||'',tel:r.tel||'',
-        email:r.email||'',cc:'Cc',comment:'[Solo depuis groupe]',statut:st,
-        operator:r.operator||'',
-        _dateCreated:r._dateCreated||new Date().toISOString().slice(0,10)});
+      const dup=g_master.find(x=>x.file===sf);
+      if (dup) {
+        Object.assign(dup,{client:r.client,rdl:r.rdl,svct:sv,transp:tr,
+          poids:p,vol:v,taxable:t,dept:d,cc:'Cc',statut:st,operator:r.operator||''});
+      } else {
+        g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,transp:tr,
+          poids:p,vol:v,taxable:t,dept:d,contact:r.contact||'',tel:r.tel||'',
+          email:r.email||'',cc:'Cc',comment:'[Solo depuis groupe]',statut:st,
+          operator:r.operator||'',
+          _dateCreated:r._dateCreated||new Date().toISOString().slice(0,10)});
+      }
       storeRaw(sf,r.client,sv,p,v,t,d,r.rdl);
       autoFillContact(sf,r.client);
       if (cp) addOrUpdateCP(r.client,sf,p,v,t,r.operator);
@@ -2068,9 +2074,15 @@ function importRows(rows) {
           const raw=g_rawData[sf]||{};
           const p=raw.poids||0, v=raw.vol||0, t=calcTaxable(p,v);
           const tr=calcTransp(g.svct,t,g.dept,cpFlag);
-          g_master.push({file:sf,client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
-            poids:p,vol:v,taxable:t,dept:g.dept,contact:'',tel:'',email:'',
-            cc:'Cc',comment:'[Solo import]',statut:'2',operator,_dateCreated:today});
+          const dup=g_master.find(x=>x.file===sf);
+          if (dup) {
+            Object.assign(dup,{client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
+              poids:p,vol:v,taxable:t,dept:g.dept,cc:'Cc',statut:'2',operator});
+          } else {
+            g_master.push({file:sf,client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
+              poids:p,vol:v,taxable:t,dept:g.dept,contact:'',tel:'',email:'',
+              cc:'Cc',comment:'[Solo import]',statut:'2',operator,_dateCreated:today});
+          }
           autoFillContact(sf,g.client);
           if (cpFlag) addOrUpdateCP(g.client,sf,p,v,t,operator);
         });
@@ -2095,9 +2107,15 @@ function importRows(rows) {
         const raw=g_rawData[sf]||{};
         const p=raw.poids||0, v=raw.vol||0, t=calcTaxable(p,v);
         const tr=calcTransp(g.svct,t,g.dept,cpFlag);
-        g_master.push({file:sf,client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
-          poids:p,vol:v,taxable:t,dept:g.dept,contact:'',tel:'',email:'',
-          cc:'Non',comment:'',statut:'1',operator,_dateCreated:today});
+        const dup=g_master.find(x=>x.file===sf);
+        if (dup) {
+          Object.assign(dup,{client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
+            poids:p,vol:v,taxable:t,dept:g.dept,operator});
+        } else {
+          g_master.push({file:sf,client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
+            poids:p,vol:v,taxable:t,dept:g.dept,contact:'',tel:'',email:'',
+            cc:'Non',comment:'',statut:'1',operator,_dateCreated:today});
+        }
         autoFillContact(sf,g.client);
       });
       added++;
@@ -2407,10 +2425,17 @@ function retirerCochesGroupe() {
     const raw=g_rawData[sf]||{};
     const p=raw.poids||0,v=raw.vol||0,sv=raw.svct||r.svct,d=raw.dept||r.dept,t=calcTaxable(p,v);
     const st=r.cc==='Cc'?transpTarget(sv,r.client):'1';
-    g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,
-      transp:calcTransp(sv,t,d,isCP(r.client)),poids:p,vol:v,taxable:t,dept:d,
-      contact:r.contact||'',tel:r.tel||'',email:r.email||'',
-      cc:r.cc==='Cc'?'Cc':'Non',comment:'[Retiré du groupe]',statut:st,_dateCreated:today});
+    const dup=g_master.find(x=>x.file===sf);
+    if (dup) {
+      Object.assign(dup,{client:r.client,rdl:r.rdl,svct:sv,
+        transp:calcTransp(sv,t,d,isCP(r.client)),poids:p,vol:v,taxable:t,dept:d,
+        cc:r.cc==='Cc'?'Cc':'Non',statut:st});
+    } else {
+      g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,
+        transp:calcTransp(sv,t,d,isCP(r.client)),poids:p,vol:v,taxable:t,dept:d,
+        contact:r.contact||'',tel:r.tel||'',email:r.email||'',
+        cc:r.cc==='Cc'?'Cc':'Non',comment:'[Retiré du groupe]',statut:st,_dateCreated:today});
+    }
   });
   closeModal('modal-group');
   renderMaster(); renderKanban(); updateStats();
@@ -2433,10 +2458,17 @@ function validerCCPartiels() {
     const raw=g_rawData[sf]||{};
     const p=raw.poids||0,v=raw.vol||0,sv=raw.svct||r.svct,d=raw.dept||r.dept,t=calcTaxable(p,v);
     const cp=isCP(r.client);
-    g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,
-      transp:calcTransp(sv,t,d,cp),poids:p,vol:v,taxable:t,dept:d,
-      contact:'',tel:'',email:'',cc:'Cc',comment:'[CC partielle]',
-      statut:transpTarget(sv,r.client),_dateCreated:today});
+    const dup=g_master.find(x=>x.file===sf);
+    if (dup) {
+      Object.assign(dup,{client:r.client,rdl:r.rdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp),poids:p,vol:v,taxable:t,dept:d,
+        cc:'Cc',statut:transpTarget(sv,r.client)});
+    } else {
+      g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp),poids:p,vol:v,taxable:t,dept:d,
+        contact:'',tel:'',email:'',cc:'Cc',comment:'[CC partielle]',
+        statut:transpTarget(sv,r.client),_dateCreated:today});
+    }
     if (cp) addOrUpdateCP(r.client,sf,p,v,t,r.operator);
   });
   if (ccN.length){

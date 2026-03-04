@@ -202,8 +202,19 @@ Func _HandleClient($iSocket)
                 $sFile_a = _GetJsonValue($sBody, "file")
                 _Action_COMAT_Solo($sFile_a)
 
+            Case "FC_PAUSE"
+                $bFC_Pause = Not $bFC_Pause
+
+            Case "FC_STOP"
+                $bFC_Stop = True
+                $bFC_Pause = False
+
+            Case "COMAT_PAUSE"
+                $bCOMAT_Pause = Not $bCOMAT_Pause
+
             Case "COMAT_STOP"
                 $bCOMAT_Stop = True
+                $bCOMAT_Pause = False
 
             Case "BATCH_CP"
                 $sData_a = _GetJsonValue($sBody, "data")
@@ -307,9 +318,39 @@ EndFunc
 
 Func _FC_WaitIfPaused()
     While $bFC_Pause
-        _Spinner("EN PAUSE...")
+        _Spinner("FC EN PAUSE — F9 pour reprendre, Echap pour arrêter")
         Sleep(500)
     WEnd
+EndFunc
+
+Func _HK_FC_PauseToggle()
+    $bFC_Pause = Not $bFC_Pause
+    If $bFC_Pause Then
+        ToolTip("FC EN PAUSE — F9 pour reprendre", 0, 0, "Dispatch", 1)
+    Else
+        ToolTip("")
+    EndIf
+EndFunc
+
+Func _HK_FC_Stop()
+    $bFC_Stop = True
+    $bFC_Pause = False
+    ToolTip("FC ARRÊTÉ", 0, 0, "Dispatch", 3)
+EndFunc
+
+Func _HK_COMAT_PauseToggle()
+    $bCOMAT_Pause = Not $bCOMAT_Pause
+    If $bCOMAT_Pause Then
+        ToolTip("COMAT EN PAUSE — F9 pour reprendre", 0, 0, "Dispatch", 1)
+    Else
+        ToolTip("")
+    EndIf
+EndFunc
+
+Func _HK_COMAT_Stop()
+    $bCOMAT_Stop = True
+    $bCOMAT_Pause = False
+    ToolTip("COMAT ARRÊTÉ", 0, 0, "Dispatch", 3)
 EndFunc
 
 ; ==============================================================================
@@ -692,6 +733,11 @@ EndFunc
 ; ==============================================================================
 Func _Batch_FC($sData)
     If $sData = "" Then Return
+    $bFC_Stop = False
+    $bFC_Pause = False
+    HotKeySet("{F9}", "_HK_FC_PauseToggle")
+    HotKeySet("{ESCAPE}", "_HK_FC_Stop")
+
     Local $aJobs = StringSplit($sData, "|")
 
     ; Pré-calculer la liste complète des numéros individuels pour le tracker
@@ -755,7 +801,11 @@ Func _Batch_FC($sData)
             Next
         EndIf
     Next
+    HotKeySet("{F9}")
+    HotKeySet("{ESCAPE}")
     _Tracker_End()
+    $bFC_Stop = False
+    $bFC_Pause = False
 EndFunc
 
 ; ==============================================================================
@@ -1210,6 +1260,11 @@ EndFunc
 ; ==============================================================================
 Func _Batch_COMAT($sData)
     If $sData = "" Then Return
+    $bCOMAT_Stop = False
+    $bCOMAT_Pause = False
+    HotKeySet("{F9}", "_HK_COMAT_PauseToggle")
+    HotKeySet("{ESCAPE}", "_HK_COMAT_Stop")
+
     Local $aJobs = StringSplit($sData, "|")
     Local $aValid[$aJobs[0]]
     For $i = 1 To $aJobs[0]
@@ -1231,6 +1286,8 @@ Func _Batch_COMAT($sData)
             Sleep(500)
         EndIf
     Next
+    HotKeySet("{F9}")
+    HotKeySet("{ESCAPE}")
     _Tracker_End()
     $bCOMAT_Stop = False
     $bCOMAT_Pause = False

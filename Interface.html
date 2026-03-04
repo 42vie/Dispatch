@@ -81,199 +81,7 @@ function fcToggleDly(i, checked) {
   if (row) row.style.display = checked ? '' : 'none';
 }
 
-// Mise à jour inline depuis la carte kanban
-function kabFcUpdate(file, field, val) {
-  const r = g_master.find(x => x.file === file);
-  if (!r) return;
-  if (field === 'date')   r.fcDate    = val.trim();
-  if (field === 'transp') r.transp    = val.trim();
-  autoSave();
-}
 
-function fcOpenModal(affected) {
-  _fcAffected = affected;
-  const list = document.getElementById('fc-dossier-list');
-  list.innerHTML = affected.map((r, i) => {
-    const dateG = r.fcDate || fcCalcDateG(r.transp);
-    const isUPS = (r.transp||'').toLowerCase().includes('ups');
-    // DLY auto : comparer date livraison avec RDL
-    const hasDLY = r.fcDly === 'Y' || (!isUPS && fcDateAfterRdl(dateG, r.rdl));
-    const dlyNotes = r.fcDlyNotes || '';
-    return `<div style="padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <span style="font-family:var(--mono);font-size:12px;font-weight:600">${r.file.length>20?r.file.substring(0,20)+'…':r.file}</span>
-        <span style="font-size:10px;color:var(--text3)">${r.client||''}</span>
-        ${r.rdl ? `<span style="font-size:10px;color:var(--orange);margin-left:auto">RDL: ${r.rdl}</span>` : ''}
-        <span style="font-size:10px;color:var(--purple)${r.rdl?'':';margin-left:auto'}">${r.transp||'?'}</span>
-      </div>
-      ${isUPS ? '<div style="font-size:11px;color:var(--text3);font-style:italic">UPS — pas de date de garantie</div>' : `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div>
-          <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Date garantie</label>
-          <input id="fc-date-${i}" type="text" value="${dateG}" maxlength="8"
-            style="width:100%;height:24px;font-family:var(--mono);font-size:11px;
-                   border:1px solid var(--border2);border-radius:3px;
-                   background:var(--surface);color:var(--text);padding:0 6px"
-            oninput="fcCheckDly(${i})">
-        </div>
-        <div>
-          <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Horaire</label>
-          <input id="fc-horaire-${i}" type="text" value="09h et 12h" placeholder="09h et 12h"
-            style="width:100%;height:24px;font-size:11px;
-                   border:1px solid var(--border2);border-radius:3px;
-                   background:var(--surface);color:var(--text);padding:0 6px">
-        </div>
-      </div>
-      <div id="fc-dly-row-${i}" style="margin-top:7px;padding:7px;background:var(--red-bg,#2a1a1a);border:1px solid var(--red,#e74c3c);border-radius:4px;${hasDLY?'':'display:none'}">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-          <span style="font-size:11px;font-weight:700;color:var(--red,#e74c3c)">⚠ DLY</span>
-          <label style="font-size:10px;color:var(--text3)">Date livraison après RDL — retard à justifier</label>
-          <input type="checkbox" id="fc-dly-chk-${i}" ${hasDLY?'checked':''} onchange="fcToggleDly(${i},this.checked)"
-            style="margin-left:auto;width:14px;height:14px;accent-color:var(--red,#e74c3c)">
-        </div>
-        <div style="display:flex;gap:6px;align-items:center">
-          <label style="font-size:10px;color:var(--text3);white-space:nowrap">Code DLY</label>
-          <input id="fc-dly-notes-${i}" type="text" value="${dlyNotes}" placeholder="Code interne DLY..."
-            style="flex:1;height:24px;font-size:11px;font-family:var(--mono);
-                   border:1px solid var(--border2);border-radius:3px;
-                   background:var(--surface);color:var(--text);padding:0 6px">
-        </div>
-      </div>`}
-    </div>`;
-  }).join('');
-  // Vider les globaux
-  document.getElementById('fc-global-date').value = '';
-  document.getElementById('fc-global-horaire').value = '09h et 12h';
-  openModal('modal-fc-params');
-}
-
-function fcApplyGlobal() {
-  const gDate = document.getElementById('fc-global-date').value.trim();
-  const gHor  = document.getElementById('fc-global-horaire').value;
-  _fcAffected.forEach((r, i) => {
-    const isUPS = (r.transp||'').toLowerCase().includes('ups');
-    if (!isUPS) {
-      if (gDate) document.getElementById(`fc-date-${i}`).value = gDate;
-      document.getElementById(`fc-horaire-${i}`).value = gHor;
-    }
-  });
-}
-
-function fcRecalcDates() {
-  _fcAffected.forEach((r, i) => {
-    const isUPS = (r.transp||'').toLowerCase().includes('ups');
-    if (!isUPS) {
-      document.getElementById(`fc-date-${i}`).value = fcCalcDateG(r.transp);
-    }
-  });
-  toast('Dates recalculées.');
-}
-
-async function fcLancer() {
-  closeModal('modal-fc-params');
-  // Éclater les groupes : chaque dossier individuel devient une ligne séparée
-  const allRows = [];
-  _fcAffected.forEach((r, i) => {
-    const contactStr = `${r.contact||''} ${r.tel||''}`.trim();
-    const isUPS = (r.transp||'').toLowerCase().includes('ups');
-    const dateG   = isUPS ? '' : (document.getElementById(`fc-date-${i}`)?.value || r.fcDate || '');
-    const horaire = isUPS ? '' : (document.getElementById(`fc-horaire-${i}`)?.value || r.fcHoraire || '09h et 12h');
-    const dlyChk  = document.getElementById(`fc-dly-chk-${i}`);
-    const dly     = (!isUPS && dlyChk && dlyChk.checked) ? 'Y' : '';
-    const dlyNotes = dly ? (document.getElementById(`fc-dly-notes-${i}`)?.value || '') : '';
-    if (!isUPS) { r.fcDate = dateG; r.fcHoraire = horaire; r.fcDly = dly; r.fcDlyNotes = dlyNotes; }
-    // Séparer "J1A001 + J1A002 + J1A003" en dossiers individuels
-    const subFiles = (r.file||'').split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean);
-    subFiles.forEach(sf => {
-      allRows.push(`${sf};${r.email||''};${r.client||''};${r.transp||''};${contactStr};${dateG};${horaire};${dly};${dlyNotes}`);
-    });
-  });
-  const strData = allRows.join('|');
-  toast(`FC : ${_fcAffected.length} dossier(s) envoyés à AutoIt...`);
-  await apiCall('action', { action: 'KANBAN_5', data: strData });
-  _fcAffected.forEach(r => { r.statut = '6'; });
-  renderMaster(); renderKanban(); updateStats(); autoSave();
-  toast(`FC terminé — ${_fcAffected.length} dossier(s) passés au statut 6.`);
-}
-
-
-// ╔══════════════════════════════════════════════════════════════════════════╗
-// ║  HISTORIQUE                                                              ║
-// ╚══════════════════════════════════════════════════════════════════════════╝
-let _histSortCol = '_dateCreated';
-let _histSortDir = -1;
-const STATUT_LABELS = {'1':'Import','2':'CC','3':'Attente','4':'Pré-alerte','5':'Prêt FC','6':'COMAT','7':'NTO','8':'Terminé','9':'En attente'};
-const STATUT_COLORS = {'1':'var(--text3)','2':'var(--blue)','3':'var(--orange)','4':'var(--purple)','5':'#00c08b','6':'#ff6b35','7':'var(--teal)','8':'var(--green)','9':'#d4a017'};
-
-function histRender() {
-  const search  = (document.getElementById('hist-search')?.value||'').toLowerCase();
-  const fStatut = document.getElementById('hist-filter-statut')?.value||'';
-  const fTransp = document.getElementById('hist-filter-transp')?.value||'';
-  let rows = [...g_archive];
-  if (fStatut) rows = rows.filter(r => String(r.statut||'') === fStatut);
-  if (fTransp) rows = rows.filter(r => (r.transp||'').includes(fTransp));
-  if (search)  rows = rows.filter(r =>
-    (r.file||'').toLowerCase().includes(search) ||
-    (r.client||'').toLowerCase().includes(search) ||
-    (r.comment||'').toLowerCase().includes(search) ||
-    (r.rdl||'').includes(search)
-  );
-  rows.sort((a, b) => {
-    let va = a[_histSortCol]||'', vb = b[_histSortCol]||'';
-    if (_histSortCol === 'statut') { va = parseInt(va)||0; vb = parseInt(vb)||0; }
-    return va < vb ? -_histSortDir : va > vb ? _histSortDir : 0;
-  });
-  const tbody = document.getElementById('hist-tbody');
-  const empty = document.getElementById('hist-empty');
-  if (!tbody) return;
-  if (!rows.length) { tbody.innerHTML = ''; if (empty) empty.style.display='block'; return; }
-  if (empty) empty.style.display = 'none';
-  tbody.innerHTML = rows.map((r, idx) => {
-    const statLabel = STATUT_LABELS[String(r.statut||'')] || ('Statut '+r.statut);
-    const statColor = STATUT_COLORS[String(r.statut||'')] || 'var(--text3)';
-    const safeCom   = (r.comment||'').replace(/"/g,'&quot;').replace(/</g,'&lt;');
-    const rowBg     = idx % 2 === 0 ? 'var(--surface)' : 'var(--surface2)';
-    return `<tr style="background:${rowBg};border-bottom:1px solid var(--border)">
-      <td style="padding:7px 10px;font-family:var(--mono);font-size:11px;font-weight:600;white-space:nowrap">${r.file||''}</td>
-      <td style="padding:7px 10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.client||''}">${r.client||''}</td>
-      <td style="padding:7px 10px;font-family:var(--mono);font-size:11px;white-space:nowrap">${r.rdl||''}</td>
-      <td style="padding:7px 10px;font-size:11px;white-space:nowrap">${r.transp||''}</td>
-      <td style="padding:7px 10px;white-space:nowrap">
-        <span style="font-size:10px;font-weight:700;color:${statColor};background:${statColor}22;padding:2px 7px;border-radius:10px">${statLabel}</span>
-      </td>
-      <td style="padding:7px 10px;font-family:var(--mono);font-size:11px;white-space:nowrap">${r._dateCreated||''}</td>
-      <td style="padding:7px 10px;font-family:var(--mono);font-size:11px;white-space:nowrap;color:var(--text3)">${r._dateArchived||''}</td>
-      <td style="padding:7px 10px;min-width:200px">
-        <input type="text" value="${safeCom}" placeholder="Ajouter un commentaire..."
-          style="width:100%;height:24px;font-size:11px;border:1px solid transparent;border-radius:3px;background:transparent;color:var(--text);padding:0 6px;outline:none;cursor:text"
-          onfocus="this.style.borderColor='var(--border2)';this.style.background='var(--surface2)'"
-          onblur="this.style.borderColor='transparent';this.style.background='transparent';histSaveComment('${(r.file||'').replace(/'/g,"\'")}',this.value)"
-          onkeydown="if(event.key==='Enter')this.blur()">
-      </td>
-    </tr>`;
-  }).join('');
-}
-function histFilter()  { histRender(); }
-function histClearFilters() {
-  document.getElementById('hist-search').value = '';
-  document.getElementById('hist-filter-statut').value = '';
-  document.getElementById('hist-filter-transp').value = '';
-  histRender();
-}
-function histSort(col) {
-  if (_histSortCol === col) _histSortDir *= -1;
-  else { _histSortCol = col; _histSortDir = -1; }
-  histRender();
-}
-function histSaveComment(file, val) {
-  const r = g_archive.find(x => x.file === file);
-  if (!r) return;
-  r.comment = val;
-  autoSave();
-}
-document.querySelectorAll('.tab').forEach(t => {
-  t.addEventListener('click', () => { if (t.dataset.tab === 'historique') setTimeout(histRender, 50); });
-});
 
 </script>
 <style>
@@ -2052,28 +1860,9 @@ async function kanbanAction(from) {
   }
 
   if (from === 6) {
-    // CAS COMAT : éclater les groupes "A + B + C" en dossiers individuels
-    const comatNums = [];
-    affected.forEach(r => {
-      (r.file||'').split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean).forEach(n => comatNums.push(n));
-    });
-    document.getElementById('comat-list').value = comatNums.join('\n');
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tabpane').forEach(p => p.classList.remove('active'));
-    document.querySelector('[data-tab="comat"]').classList.add('active');
-    document.getElementById('tab-comat').classList.add('active');
-    document.getElementById('comat-status').style.display = 'block';
-    document.getElementById('comat-status-txt').textContent = `Traitement de ${comatNums.length} dossier(s) en cours...`;
-    const comatData = comatNums.map(n => n + ';;;').join('|');
-    toast(`COMAT : ${comatNums.length} dossier(s) envoyés à AutoIt...`);
-    const comatResult = await apiCall('action', { action: 'COMAT_MULTI', data: comatData });
-    document.getElementById('comat-status').style.display = 'none';
-    if (!comatResult || comatResult.error) {
-      toast('Erreur COMAT — les dossiers restent à leur statut actuel.');
-      return;
-    }
-    affected.forEach(r => { r.statut = String(to); });
-    toast(`COMAT terminé — ${comatNums.length} dossier(s) passés au statut ${to}.`);
+    // CAS COMAT : traitement séquentiel avec pause/reprise
+    comatStartBatch(affected, to);
+    return;
   } else if (from === 5) {
     // FC : ouvrir la modale de paramétrage dates/horaires
     fcOpenModal(affected);
@@ -2969,19 +2758,21 @@ document.getElementById('btn-comat-multi').onclick = async (e) => {
   e.stopPropagation();
   const raw = document.getElementById('comat-list').value.trim();
   if (!raw) return toast('Liste vide — saisir des N° de dossier.');
-  // Éclater aussi les lignes avec "+" (groupes collés)
   const numsRaw = raw.split('\n').map(s => s.trim()).filter(Boolean);
   const nums = [];
   numsRaw.forEach(n => n.split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean).forEach(s => nums.push(s)));
   if (!nums.length) return toast('Aucun numéro valide.');
   if (!confirm('Lancer COMAT sur ' + nums.length + ' dossier(s) ?')) return;
-  const strData = nums.map(n => n + ';;;').join('|');
-  document.getElementById('comat-status').style.display = 'block';
-  document.getElementById('comat-status-txt').textContent = 'Traitement de ' + nums.length + ' dossier(s) en cours...';
-  toast('COMAT Multi : ' + nums.length + ' dossier(s) envoyés à AutoIt...');
-  await apiCall('action', { action: 'COMAT_MULTI', data: strData });
-  document.getElementById('comat-status').style.display = 'none';
-  toast('COMAT Multi terminé.');
+  // Construire la queue manuelle (pas de masterRef car saisie libre)
+  _comatQueue = nums.map(n => ({ num: n, masterRef: null }));
+  _comatTotalCount = nums.length;
+  _comatDoneCount = 0;
+  _comatPaused = false;
+  _comatRunning = true;
+  _comatTargetStatus = '7';
+  _batchShowProgress('COMAT', 0, _comatTotalCount, false);
+  toast(`COMAT : ${nums.length} dossier(s) — traitement séquentiel lancé.`);
+  comatProcessNext();
 };
 
 document.getElementById('btn-comat-solo').onclick = async (e) => {
@@ -2999,7 +2790,7 @@ document.getElementById('btn-comat-solo').onclick = async (e) => {
 document.getElementById('btn-comat-stop').onclick = async (e) => {
   e.stopPropagation();
   await apiCall('action', { action: 'COMAT_STOP' });
-  document.getElementById('comat-status').style.display = 'none';
+  comatStopBatch();
   toast('Signal STOP envoyé à AutoIt.');
 };
 
@@ -4136,7 +3927,7 @@ function fcOpenModal(affected) {
         ${r.rdl ? `<span style="font-size:10px;color:var(--orange);margin-left:auto">RDL: ${r.rdl}</span>` : ''}
         <span style="font-size:10px;color:var(--purple)${r.rdl?'':';margin-left:auto'}">${r.transp||'?'}</span>
       </div>
-      ${isUPS ? '<div style="font-size:11px;color:var(--text3);font-style:italic">UPS — pas de date de garantie</div>' : `
+      ${isUPS ? '<div style="font-size:11px;color:var(--teal);font-style:italic">UPS — FC simplifié (N° dossier + DEF uniquement)</div>' : `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div>
           <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Date garantie</label>
@@ -4199,10 +3990,16 @@ function fcRecalcDates() {
   toast('Dates recalculées.');
 }
 
+// ── FC : état séquentiel avec pause / reprise ──
+let _fcQueue = [];
+let _fcRunning = false;
+let _fcPaused  = false;
+let _fcDoneCount = 0;
+let _fcTotalCount = 0;
+
 async function fcLancer() {
   closeModal('modal-fc-params');
-  // Éclater les groupes : chaque dossier individuel devient une ligne séparée
-  const allRows = [];
+  _fcQueue = [];
   _fcAffected.forEach((r, i) => {
     const contactStr = `${r.contact||''} ${r.tel||''}`.trim();
     const isUPS = (r.transp||'').toLowerCase().includes('ups');
@@ -4212,18 +4009,159 @@ async function fcLancer() {
     const dly     = (!isUPS && dlyChk && dlyChk.checked) ? 'Y' : '';
     const dlyNotes = dly ? (document.getElementById(`fc-dly-notes-${i}`)?.value || '') : '';
     if (!isUPS) { r.fcDate = dateG; r.fcHoraire = horaire; r.fcDly = dly; r.fcDlyNotes = dlyNotes; }
-    // Séparer "J1A001 + J1A002 + J1A003" en dossiers individuels
     const subFiles = (r.file||'').split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean);
     subFiles.forEach(sf => {
-      allRows.push(`${sf};${r.email||''};${r.client||''};${r.transp||''};${contactStr};${dateG};${horaire};${dly};${dlyNotes}`);
+      const row = `${sf};${r.email||''};${r.client||''};${r.transp||''};${contactStr};${dateG};${horaire};${dly};${dlyNotes}`;
+      _fcQueue.push({ row, masterRef: r, file: sf, isUPS });
     });
   });
-  const strData = allRows.join('|');
-  toast(`FC : ${_fcAffected.length} dossier(s) envoyés à AutoIt...`);
-  await apiCall('action', { action: 'KANBAN_5', data: strData });
-  _fcAffected.forEach(r => { r.statut = '6'; });
-  renderMaster(); renderKanban(); updateStats(); autoSave();
-  toast(`FC terminé — ${_fcAffected.length} dossier(s) passés au statut 6.`);
+  _fcTotalCount = _fcQueue.length;
+  _fcDoneCount = 0;
+  _fcPaused = false;
+  _fcRunning = true;
+  _batchShowProgress('FC', _fcDoneCount, _fcTotalCount, _fcPaused);
+  toast(`FC : ${_fcTotalCount} dossier(s) — traitement séquentiel lancé.`);
+  fcProcessNext();
+}
+
+async function fcProcessNext() {
+  while (_fcQueue.length > 0) {
+    if (_fcPaused) { _batchShowProgress('FC', _fcDoneCount, _fcTotalCount, _fcPaused); return; }
+    const job = _fcQueue[0];
+    _batchShowProgress('FC', _fcDoneCount, _fcTotalCount, false, job.file);
+    await apiCall('action', { action: 'KANBAN_5', data: job.row });
+    _fcQueue.shift();
+    _fcDoneCount++;
+    // Marquer le parent comme traité si tous ses sous-fichiers sont passés
+    const parentSubs = (job.masterRef.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean);
+    const allDone = parentSubs.every(sf => !_fcQueue.some(q => q.masterRef === job.masterRef));
+    if (allDone) job.masterRef.statut = '6';
+    renderMaster(); renderKanban(); updateStats(); autoSave();
+    _batchShowProgress('FC', _fcDoneCount, _fcTotalCount, false);
+  }
+  _fcRunning = false;
+  _batchHideProgress();
+  toast(`FC terminé — ${_fcDoneCount}/${_fcTotalCount} dossier(s) traité(s).`);
+}
+
+function fcPauseToggle() {
+  if (!_fcRunning) return;
+  _fcPaused = !_fcPaused;
+  if (_fcPaused) {
+    toast(`FC en pause — ${_fcDoneCount}/${_fcTotalCount} traité(s).`);
+  } else {
+    toast('FC reprise...');
+    fcProcessNext();
+  }
+  _batchShowProgress('FC', _fcDoneCount, _fcTotalCount, _fcPaused);
+}
+
+function fcStopBatch() {
+  _fcPaused = false; _fcRunning = false; _fcQueue = [];
+  _batchHideProgress();
+  toast(`FC arrêté — ${_fcDoneCount}/${_fcTotalCount} traité(s).`);
+}
+
+// ── Barre de progression partagée FC / COMAT ──
+function _batchShowProgress(label, done, total, paused, currentFile) {
+  let bar = document.getElementById('batch-progress-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'batch-progress-bar';
+    bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9999;background:var(--surface2);border-top:2px solid var(--blue);padding:8px 16px;display:flex;align-items:center;gap:12px;font-size:12px;color:var(--text)';
+    document.body.appendChild(bar);
+  }
+  const pct = total ? Math.round(done/total*100) : 0;
+  const cur = currentFile ? ` — ${currentFile}` : '';
+  const isFC = label === 'FC';
+  const pauseFn = isFC ? 'fcPauseToggle' : 'comatPauseToggle';
+  const stopFn  = isFC ? 'fcStopBatch'   : 'comatStopBatch';
+  bar.innerHTML = `
+    <div style="flex:1;display:flex;align-items:center;gap:10px">
+      <span style="font-weight:700;color:var(--blue)">${label}</span>
+      <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:var(--blue);border-radius:3px;transition:width .3s"></div>
+      </div>
+      <span style="font-family:var(--mono);min-width:80px">${done} / ${total}${cur}</span>
+    </div>
+    <button class="btn btn-sm" onclick="${pauseFn}()" style="color:${paused?'var(--green)':'var(--orange)'};min-width:90px">
+      ${paused ? '▶ Reprendre' : '⏸ Pause'}
+    </button>
+    <button class="btn btn-sm" onclick="${stopFn}()" style="color:var(--red)">⛔ Stop</button>`;
+  bar.style.display = 'flex';
+}
+
+function _batchHideProgress() {
+  const bar = document.getElementById('batch-progress-bar');
+  if (bar) bar.remove();
+}
+
+// ── COMAT : état séquentiel avec pause / reprise ──
+let _comatQueue = [];
+let _comatRunning = false;
+let _comatPaused  = false;
+let _comatDoneCount = 0;
+let _comatTotalCount = 0;
+let _comatTargetStatus = '7';
+
+function comatStartBatch(affected, toStatus) {
+  _comatQueue = [];
+  _comatTargetStatus = String(toStatus);
+  affected.forEach(r => {
+    (r.file||'').split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean).forEach(n => {
+      _comatQueue.push({ num: n, masterRef: r });
+    });
+  });
+  _comatTotalCount = _comatQueue.length;
+  _comatDoneCount = 0;
+  _comatPaused = false;
+  _comatRunning = true;
+  _batchShowProgress('COMAT', 0, _comatTotalCount, false);
+  toast(`COMAT : ${_comatTotalCount} dossier(s) — traitement séquentiel lancé.`);
+  comatProcessNext();
+}
+
+async function comatProcessNext() {
+  while (_comatQueue.length > 0) {
+    if (_comatPaused) { _batchShowProgress('COMAT', _comatDoneCount, _comatTotalCount, true); return; }
+    const job = _comatQueue[0];
+    _batchShowProgress('COMAT', _comatDoneCount, _comatTotalCount, false, job.num);
+    const res = await apiCall('action', { action: 'COMAT_MULTI', data: job.num + ';;;' });
+    _comatQueue.shift();
+    _comatDoneCount++;
+    if (!res || res.error) {
+      toast(`Erreur COMAT sur ${job.num} — dossier ignoré.`);
+    }
+    // Marquer le parent comme traité si tous ses sous-fichiers sont passés
+    if (job.masterRef) {
+      const parentSubs = (job.masterRef.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean);
+      const allDone = parentSubs.every(sf => !_comatQueue.some(q => q.masterRef === job.masterRef));
+      if (allDone) job.masterRef.statut = _comatTargetStatus;
+    }
+    renderMaster(); renderKanban(); updateStats(); autoSave();
+    _batchShowProgress('COMAT', _comatDoneCount, _comatTotalCount, false);
+  }
+  _comatRunning = false;
+  _batchHideProgress();
+  toast(`COMAT terminé — ${_comatDoneCount}/${_comatTotalCount} dossier(s) traité(s).`);
+}
+
+function comatPauseToggle() {
+  if (!_comatRunning) return;
+  _comatPaused = !_comatPaused;
+  if (_comatPaused) {
+    toast(`COMAT en pause — ${_comatDoneCount}/${_comatTotalCount} traité(s).`);
+  } else {
+    toast('COMAT reprise...');
+    comatProcessNext();
+  }
+  _batchShowProgress('COMAT', _comatDoneCount, _comatTotalCount, _comatPaused);
+}
+
+function comatStopBatch() {
+  _comatPaused = false; _comatRunning = false; _comatQueue = [];
+  _batchHideProgress();
+  toast(`COMAT arrêté — ${_comatDoneCount}/${_comatTotalCount} traité(s).`);
 }
 
 

@@ -576,9 +576,13 @@ Func _Batch_Mails_CP($sData)
     Local $aJobs = StringSplit($sData, "|")
     Local $iOk = 0
     Local $iErr = 0
+    Local $iSkip = 0
     Local $sLogErr = ""
     For $i = 1 To $aJobs[0]
+        ; Auto-détection séparateur : tester ;  ~  et chr(167)=§ reçu en ANSI
         Local $aInfos = StringSplit($aJobs[$i], ";")
+        If $aInfos[0] < 8 Then $aInfos = StringSplit($aJobs[$i], "~")
+        If $aInfos[0] < 8 Then $aInfos = StringSplit($aJobs[$i], Chr(167))
         If $aInfos[0] >= 8 Then
             If _Mail_CP($aInfos[1],$aInfos[2],$aInfos[3],$aInfos[4],$aInfos[5],$aInfos[6],$aInfos[7],$aInfos[8],$sLogErr) Then
                 $iOk += 1
@@ -586,9 +590,12 @@ Func _Batch_Mails_CP($sData)
             Else
                 $iErr += 1
             EndIf
+        Else
+            $iSkip += 1
+            $sLogErr &= "Ignoré (champs:" & $aInfos[0] & "): " & StringLeft($aJobs[$i], 50) & @CRLF
         EndIf
     Next
-    MsgBox(64+262144, "Bilan CP", $iOk & " mail(s)." & @CRLF & $iErr & " erreur(s)." & @CRLF & $sLogErr)
+    MsgBox(64+262144, "Bilan CP", $iOk & " mail(s)." & @CRLF & $iErr & " erreur(s)." & @CRLF & $iSkip & " ignoré(s)." & @CRLF & $sLogErr)
 EndFunc
 
 Func _Mail_CP($sClient,$sCmds,$sPal,$sColis,$sPoids,$sConso,$sEmailTo,$sEmailCC, ByRef $sLogErr)

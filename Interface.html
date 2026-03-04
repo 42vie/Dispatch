@@ -674,6 +674,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
   <!-- CHANNEL PARTNERS -->
   <div class="tabpane" id="tab-cp">
     <div class="tab-toolbar">
+      <button class="btn btn-success btn-sm" onclick="cpAddManual()">+ Ajouter CP</button>
       <button class="btn btn-danger" id="btn-rdv-cp">⚡ Envoyer Demandes RDV (cochés)</button>
       <button class="btn btn-purple-out" id="btn-retirer-cp">↗ Retirer fichiers du groupe</button>
     </div>
@@ -689,6 +690,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
           <th style="width:72px">Vol m³</th>
           <th style="width:82px">Taxable kg</th>
           <th style="width:200px">Doc. Consolidé</th>
+          <th style="width:40px"></th>
         </tr></thead>
         <tbody id="cp-tbody"></tbody>
       </table>
@@ -1905,11 +1907,17 @@ function processCC(idx) {
       const sv=raw.svct||r.svct, d=raw.dept||r.dept, t=calcTaxable(p,v);
       const cp=isCP(r.client), tr=calcTransp(sv,t,d,cp);
       const st=transpTarget(sv,r.client);
-      g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,transp:tr,
-        poids:p,vol:v,taxable:t,dept:d,contact:r.contact||'',tel:r.tel||'',
-        email:r.email||'',cc:'Cc',comment:'[Solo depuis groupe]',statut:st,
-        operator:r.operator||'',
-        _dateCreated:r._dateCreated||new Date().toISOString().slice(0,10)});
+      const dup=g_master.find(x=>x.file===sf);
+      if (dup) {
+        Object.assign(dup,{client:r.client,rdl:r.rdl,svct:sv,transp:tr,
+          poids:p,vol:v,taxable:t,dept:d,cc:'Cc',statut:st,operator:r.operator||''});
+      } else {
+        g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,transp:tr,
+          poids:p,vol:v,taxable:t,dept:d,contact:r.contact||'',tel:r.tel||'',
+          email:r.email||'',cc:'Cc',comment:'[Solo depuis groupe]',statut:st,
+          operator:r.operator||'',
+          _dateCreated:r._dateCreated||new Date().toISOString().slice(0,10)});
+      }
       storeRaw(sf,r.client,sv,p,v,t,d,r.rdl);
       autoFillContact(sf,r.client);
       if (cp) addOrUpdateCP(r.client,sf,p,v,t,r.operator);
@@ -2066,9 +2074,15 @@ function importRows(rows) {
           const raw=g_rawData[sf]||{};
           const p=raw.poids||0, v=raw.vol||0, t=calcTaxable(p,v);
           const tr=calcTransp(g.svct,t,g.dept,cpFlag);
-          g_master.push({file:sf,client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
-            poids:p,vol:v,taxable:t,dept:g.dept,contact:'',tel:'',email:'',
-            cc:'Cc',comment:'[Solo import]',statut:'2',operator,_dateCreated:today});
+          const dup=g_master.find(x=>x.file===sf);
+          if (dup) {
+            Object.assign(dup,{client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
+              poids:p,vol:v,taxable:t,dept:g.dept,cc:'Cc',statut:'2',operator});
+          } else {
+            g_master.push({file:sf,client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
+              poids:p,vol:v,taxable:t,dept:g.dept,contact:'',tel:'',email:'',
+              cc:'Cc',comment:'[Solo import]',statut:'2',operator,_dateCreated:today});
+          }
           autoFillContact(sf,g.client);
           if (cpFlag) addOrUpdateCP(g.client,sf,p,v,t,operator);
         });
@@ -2093,9 +2107,15 @@ function importRows(rows) {
         const raw=g_rawData[sf]||{};
         const p=raw.poids||0, v=raw.vol||0, t=calcTaxable(p,v);
         const tr=calcTransp(g.svct,t,g.dept,cpFlag);
-        g_master.push({file:sf,client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
-          poids:p,vol:v,taxable:t,dept:g.dept,contact:'',tel:'',email:'',
-          cc:'Non',comment:'',statut:'1',operator,_dateCreated:today});
+        const dup=g_master.find(x=>x.file===sf);
+        if (dup) {
+          Object.assign(dup,{client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
+            poids:p,vol:v,taxable:t,dept:g.dept,operator});
+        } else {
+          g_master.push({file:sf,client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
+            poids:p,vol:v,taxable:t,dept:g.dept,contact:'',tel:'',email:'',
+            cc:'Non',comment:'',statut:'1',operator,_dateCreated:today});
+        }
         autoFillContact(sf,g.client);
       });
       added++;
@@ -2135,22 +2155,43 @@ function addOrUpdateCP(client, file, poids, vol, taxable, operator) {
 
 function renderCP() {
   const tbody=document.getElementById('cp-tbody');
-  // Filtrer par opérateur si un filtre est actif
   const visible = g_cpData
     .map((cp,i) => ({cp,i}))
     .filter(({cp}) => !g_operatorFilter || (cp.operator||'') === g_operatorFilter);
   tbody.innerHTML=visible.map(({cp,i})=>`
     <tr>
       <td style="text-align:center"><input type="checkbox" id="chk-cp-${i}" style="accent-color:var(--green)"></td>
-      <td><strong style="color:var(--k2-c)">${cp.client}</strong></td>
-      <td style="font-family:var(--mono);font-size:11px;color:var(--text2)">${cp.files.join(' + ')}</td>
+      <td><input class="inline-inp" style="width:140px;font-weight:600;color:var(--k2-c)" value="${cp.client||''}" oninput="g_cpData[${i}].client=this.value"></td>
+      <td><input class="inline-inp" style="width:100%;font-family:var(--mono);font-size:11px" value="${cp.files.join(' + ')}" oninput="g_cpData[${i}].files=this.value.split(/\\s*\\+\\s*/).map(s=>s.trim()).filter(Boolean)"></td>
       <td><input class="inline-inp" style="width:55px" value="${cp.palettes||''}" oninput="g_cpData[${i}].palettes=this.value"></td>
       <td><input class="inline-inp" style="width:55px" value="${cp.colis||''}" oninput="g_cpData[${i}].colis=this.value"></td>
       <td><input class="inline-inp" style="width:65px;text-align:right" type="number" step="0.01" value="${cp.poids||0}" oninput="g_cpData[${i}].poids=+this.value;g_cpData[${i}]._poidsManual=true;g_cpData[${i}].taxable=+calcTaxable(+this.value,g_cpData[${i}].vol).toFixed(2);renderCP()"></td>
       <td><input class="inline-inp" style="width:60px;text-align:right" type="number" step="0.001" value="${cp.vol||0}" oninput="g_cpData[${i}].vol=+this.value;g_cpData[${i}]._poidsManual=true;g_cpData[${i}].taxable=+calcTaxable(g_cpData[${i}].poids,+this.value).toFixed(2);renderCP()"></td>
       <td class="taxable-val" style="text-align:right;font-weight:600">${fmt(cp.taxable)}</td>
       <td><input class="inline-inp" value="${cp.doc||''}" oninput="g_cpData[${i}].doc=this.value"></td>
+      <td style="text-align:center"><button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="cpDelete(${i})">✕</button></td>
     </tr>`).join('');
+}
+
+function cpAddManual() {
+  const client = prompt('Nom du client CP :');
+  if (!client) return;
+  const files = prompt('Numéro(s) de dossier (séparés par +) :');
+  if (!files) return;
+  const fileArr = files.split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean);
+  g_cpData.push({
+    client, files: fileArr, palettes: '', colis: '',
+    poids: 0, vol: 0, taxable: 0, doc: '', operator: g_operatorFilter || ''
+  });
+  renderCP(); autoSave();
+  toast('CP ajouté : ' + client + ' — ' + fileArr.length + ' dossier(s).');
+}
+
+function cpDelete(i) {
+  if (!confirm('Supprimer ce CP (' + (g_cpData[i]?.client||'') + ') ?')) return;
+  g_cpData.splice(i, 1);
+  renderCP(); autoSave();
+  toast('CP supprimé.');
 }
 
 // btn-rdv-cp géré par addEventListener ci-dessous
@@ -2384,10 +2425,17 @@ function retirerCochesGroupe() {
     const raw=g_rawData[sf]||{};
     const p=raw.poids||0,v=raw.vol||0,sv=raw.svct||r.svct,d=raw.dept||r.dept,t=calcTaxable(p,v);
     const st=r.cc==='Cc'?transpTarget(sv,r.client):'1';
-    g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,
-      transp:calcTransp(sv,t,d,isCP(r.client)),poids:p,vol:v,taxable:t,dept:d,
-      contact:r.contact||'',tel:r.tel||'',email:r.email||'',
-      cc:r.cc==='Cc'?'Cc':'Non',comment:'[Retiré du groupe]',statut:st,_dateCreated:today});
+    const dup=g_master.find(x=>x.file===sf);
+    if (dup) {
+      Object.assign(dup,{client:r.client,rdl:r.rdl,svct:sv,
+        transp:calcTransp(sv,t,d,isCP(r.client)),poids:p,vol:v,taxable:t,dept:d,
+        cc:r.cc==='Cc'?'Cc':'Non',statut:st});
+    } else {
+      g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,
+        transp:calcTransp(sv,t,d,isCP(r.client)),poids:p,vol:v,taxable:t,dept:d,
+        contact:r.contact||'',tel:r.tel||'',email:r.email||'',
+        cc:r.cc==='Cc'?'Cc':'Non',comment:'[Retiré du groupe]',statut:st,_dateCreated:today});
+    }
   });
   closeModal('modal-group');
   renderMaster(); renderKanban(); updateStats();
@@ -2410,10 +2458,17 @@ function validerCCPartiels() {
     const raw=g_rawData[sf]||{};
     const p=raw.poids||0,v=raw.vol||0,sv=raw.svct||r.svct,d=raw.dept||r.dept,t=calcTaxable(p,v);
     const cp=isCP(r.client);
-    g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,
-      transp:calcTransp(sv,t,d,cp),poids:p,vol:v,taxable:t,dept:d,
-      contact:'',tel:'',email:'',cc:'Cc',comment:'[CC partielle]',
-      statut:transpTarget(sv,r.client),_dateCreated:today});
+    const dup=g_master.find(x=>x.file===sf);
+    if (dup) {
+      Object.assign(dup,{client:r.client,rdl:r.rdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp),poids:p,vol:v,taxable:t,dept:d,
+        cc:'Cc',statut:transpTarget(sv,r.client)});
+    } else {
+      g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp),poids:p,vol:v,taxable:t,dept:d,
+        contact:'',tel:'',email:'',cc:'Cc',comment:'[CC partielle]',
+        statut:transpTarget(sv,r.client),_dateCreated:today});
+    }
     if (cp) addOrUpdateCP(r.client,sf,p,v,t,r.operator);
   });
   if (ccN.length){
@@ -2640,6 +2695,14 @@ window.onload = async () => {
       g_cpData = d.cpData || [];
       g_contacts = d.contacts || [];
       g_archive = d.archive || [];
+      // Sync : s'assurer que tous les dossiers CP en statut 2 (CC) sont dans g_cpData
+      g_master.forEach(r => {
+        if (isCP(r.client) && r.cc === 'Cc' && ['2'].includes(String(r.statut))) {
+          (r.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean).forEach(sf => {
+            addOrUpdateCP(r.client, sf, r.poids, r.vol, r.taxable, r.operator);
+          });
+        }
+      });
       renderMaster(); renderKanban(); renderCP(); renderContacts(); updateStats();
       populateOperatorFilter();
       toast('Historique chargé depuis AutoIt.');
@@ -3328,6 +3391,7 @@ async function checkMissingPDF() {
       if (subs.length === 1) {
         r.cc = 'Cc';
         if (r.statut === '1') r.statut = transpTarget(r.svct, r.client);
+        if (isCP(r.client)) addOrUpdateCP(r.client, r.file, r.poids, r.vol, r.taxable, r.operator);
         ccCount++;
       }
     });

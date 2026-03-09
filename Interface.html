@@ -1081,9 +1081,11 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
         <button class="etms-btn" onclick="sendAction('ETMS_CMD', 'LOG')">LOG</button>
         <button class="etms-btn" onclick="sendAction('ETMS_CMD', 'DIMS')">DIMS</button>
         <button class="etms-btn" onclick="sendAction('ETMS_CMD', 'NOTES')">NOTES</button>
+        <button class="etms-btn" onclick="sendAction('ETMS_CMD', 'HIST')">HIST</button>
+        <button class="etms-btn" onclick="sendAction('ETMS_CMD', 'REFS')">REFS</button>
         <button class="etms-btn warn" onclick="sendAction('ETMS_CMD', 'LOG X')">LOG X</button>
         <div class="etms-sep" style="margin-top:4px"></div>
-        <button class="etms-btn" style="color:var(--teal); border-color:var(--teal);" onclick="sendAction('MAIL_RDV')">📧 Mail RDV</button>
+        <button class="etms-btn" style="color:var(--teal); border-color:var(--teal);" onclick="sendAction('MAIL_RDV')">📧</button>
       </div>
       <div class="form-row"><label>N° Dossier (J)*</label><input id="ed-file" type="text"><button class="btn btn-sm btn-ghost" onclick="copyDossier()" title="Copier le numéro" style="margin-left:4px;min-width:32px;padding:2px 6px">📋</button></div>
       <div class="form-row"><label>Client</label><input id="ed-client" type="text"></div>

@@ -1085,7 +1085,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
         <div class="etms-sep" style="margin-top:4px"></div>
         <button class="etms-btn" style="color:var(--teal); border-color:var(--teal);" onclick="sendAction('MAIL_RDV')">📧 Mail RDV</button>
       </div>
-      <div class="form-row"><label>N° Dossier (J)*</label><input id="ed-file" type="text"></div>
+      <div class="form-row"><label>N° Dossier (J)*</label><input id="ed-file" type="text"><button class="btn btn-sm btn-ghost" onclick="copyDossier()" title="Copier le numéro" style="margin-left:4px;min-width:32px;padding:2px 6px">📋</button></div>
       <div class="form-row"><label>Client</label><input id="ed-client" type="text"></div>
       <div class="form-row"><label>RDL</label><input id="ed-rdl" type="text"></div>
       <div class="form-row"><label>SVCT</label><input id="ed-svct" type="text"></div>
@@ -1153,6 +1153,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     <div class="modal-body" id="mgrp-body"></div>
     <div class="modal-ft">
       <button class="btn btn-ghost" onclick="closeModal('modal-group')">Fermer</button>
+      <button class="btn btn-sm btn-ghost" onclick="copyGroupDossiers()" title="Copier tous les numéros">📋 Copier n°</button>
       <button class="btn btn-danger" onclick="retirerCochesGroupe()">⬆ Retirer cochés → Solo</button>
       <button class="btn btn-success" onclick="validerCCPartiels()">✓ Valider CC (cochés seulement)</button>
     </div>
@@ -2459,6 +2460,18 @@ function openGroup(idx) {
       ${fmt(totV,3)} m³ &nbsp;·&nbsp;
       <span style="color:var(--orange);font-weight:600">${fmt(calcTaxable(totP,totV))} kg taxable</span>
     </div>
+    <div style="margin-top:12px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px">
+      <div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:8px">MODIFIER LE GROUPE</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <label style="font-size:11px;color:var(--text2)">Transporteur</label>
+        <input id="grp-transp" type="text" value="${r.transp||''}" style="width:140px;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:4px 6px">
+        <label style="font-size:11px;color:var(--text2)">Poids (kg)</label>
+        <input id="grp-poids" type="number" step="0.01" value="${r.poids||0}" style="width:90px;font-size:12px;font-family:var(--mono);border:1px solid var(--border);border-radius:4px;padding:4px 6px;text-align:right">
+        <label style="font-size:11px;color:var(--text2)">Vol (m³)</label>
+        <input id="grp-vol" type="number" step="0.001" value="${r.vol||0}" style="width:90px;font-size:12px;font-family:var(--mono);border:1px solid var(--border);border-radius:4px;padding:4px 6px;text-align:right">
+        <button class="btn btn-sm btn-purple-out" onclick="grpSaveFields()">💾 Appliquer</button>
+      </div>
+    </div>
     <p style="margin-top:8px;font-size:11px;color:var(--text3)">
       Cochez les fichiers avant d'utiliser les boutons.
     </p>`;
@@ -2469,6 +2482,33 @@ function grpSupplUpdate(file, val) {
   if (!g_rawData[file]) g_rawData[file] = {};
   g_rawData[file].supplement = parseFloat(val) || 0;
   autoSave();
+}
+
+// ── Copier numéro(s) de dossier ──────────────────────────────────────────
+function copyDossier() {
+  const v = document.getElementById('ed-file').value.trim();
+  if (!v) return;
+  navigator.clipboard.writeText(v).then(() => toast('Numéro copié : ' + v));
+}
+
+function copyGroupDossiers() {
+  if (g_groupIdx < 0) return;
+  const r = g_master[g_groupIdx];
+  const subs = (r.file || '').split(' + ').map(s => s.trim()).filter(Boolean);
+  const text = subs.join('\n');
+  navigator.clipboard.writeText(text).then(() => toast(subs.length + ' numéro(s) copié(s)'));
+}
+
+// ── Modifier transporteur / poids / vol du groupe ────────────────────────
+function grpSaveFields() {
+  if (g_groupIdx < 0) return;
+  const r = g_master[g_groupIdx];
+  r.transp = document.getElementById('grp-transp').value.trim();
+  r.poids = parseFloat(document.getElementById('grp-poids').value) || 0;
+  r.vol = parseFloat(document.getElementById('grp-vol').value) || 0;
+  r.taxable = calcTaxable(r.poids, r.vol);
+  renderMaster(); renderKanban(); updateStats(); autoSave();
+  toast('Groupe mis à jour — ' + r.transp + ' / ' + fmt(r.poids) + ' kg');
 }
 
 function retirerCochesGroupe() {

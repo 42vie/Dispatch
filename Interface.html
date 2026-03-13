@@ -524,6 +524,9 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     <button class="btn btn-ghost btn-sm" id="btn-export-wf" title="Exporter les dossiers en cours (workflow) pour les ré-importer plus tard ou les transmettre">📤 Workflow</button>
     <button class="btn btn-ghost btn-sm" id="btn-import-wf" title="Importer un workflow exporté précédemment">📥 Workflow</button>
     <input type="file" id="wf-input" accept=".json" style="display:none">
+    <div class="header-sep"></div>
+    <button class="btn btn-purple-out btn-sm" onclick="reseauForceSave()" title="Sauvegarder sur le réseau partagé">⬆ Réseau</button>
+    <button class="btn btn-purple-out btn-sm" onclick="reseauForceLoad()" title="Recharger depuis le réseau partagé">⬇ Réseau</button>
   </div>
 
   <div id="header-actions">
@@ -2943,6 +2946,14 @@ async function apiCall(endpoint, data = {}) {
   }
 }
 
+// Raccourcis réseau — passent par /api/action (pas des endpoints séparés)
+async function netSave(path, state) {
+  return apiCall('action', { action: 'save-network-state', path, state });
+}
+async function netLoad(path) {
+  return apiCall('action', { action: 'load-network-state', path });
+}
+
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  INDEXEDDB — Stockage local haute capacité (remplace JSON/localStorage) ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
@@ -3972,9 +3983,8 @@ function optsLoadReseau() {
 async function reseauForceSave() {
   const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
   if (!path) return toast('Chemin réseau non configuré. Aller dans Options → Réseau partagé.');
-  const payload = { path, state: buildSaveState() };
   try {
-    await apiCall('save-network-state', payload);
+    await netSave(path, buildSaveState());
     const st = document.getElementById('opts-reseau-status');
     if (st) st.textContent = '✓ Sauvegardé sur réseau — ' + new Date().toLocaleTimeString();
     toast('État sauvegardé sur ' + path);
@@ -3985,11 +3995,11 @@ async function reseauForceLoad() {
   const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
   if (!path) return toast('Chemin réseau non configuré.');
   try {
-    const data = await apiCall('load-network-state', { path });
+    const data = await netLoad(path);
     if (data && data.state) {
       applyLoadedState(data.state);
       // Réécrire le fichier fusionné sur le réseau
-      await apiCall('save-network-state', { path, state: buildSaveState() });
+      await netSave(path, buildSaveState());
       toast('État synchronisé avec ' + path);
       const st = document.getElementById('opts-reseau-status');
       if (st) st.textContent = '✓ Synchronisé — ' + new Date().toLocaleTimeString();
@@ -4065,7 +4075,7 @@ function autoSaveWithNetwork() {
   if (_origAutoSave) _origAutoSave();
   const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
   if (path) {
-    apiCall('save-network-state', { path, state: buildSaveState() }).catch(() => {});
+    netSave(path, buildSaveState()).catch(() => {});
   }
 }
 

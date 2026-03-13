@@ -652,7 +652,11 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
   <div class="tabpane" id="tab-contacts">
     <div class="tab-toolbar">
       <button class="btn btn-success btn-sm" id="btn-add-contact">➕ Ajouter Contact</button>
-      <span style="font-size:11px;color:var(--text3);margin-left:8px">Les contacts sont sauvegardés dans le fichier JSON — ils persistent d'un jour à l'autre.</span>
+      <div style="flex:1"></div>
+      <span style="font-size:11px;color:var(--text3)">Fichier indépendant — partageable entre collègues</span>
+      <button class="btn btn-ghost btn-sm" id="btn-export-contacts" title="Exporter les contacts dans un fichier séparé">📤 Exporter</button>
+      <button class="btn btn-ghost btn-sm" id="btn-import-contacts" title="Importer des contacts depuis un fichier">📥 Importer</button>
+      <input type="file" id="contacts-input" accept=".json" style="display:none">
     </div>
     <div class="contacts-wrap">
       <table class="t-contacts" id="contacts-table">
@@ -2313,6 +2317,7 @@ function deleteContact(i) {
   if (!confirm('Supprimer ce contact ?')) return;
   g_contacts.splice(i,1);
   renderContacts();
+  saveContacts();
 }
 
 function saveContact() {
@@ -2328,8 +2333,50 @@ function saveContact() {
   else g_contacts.push(c);
   closeModal('modal-contact');
   renderContacts();
+  saveContacts();
   toast('Contact sauvegardé.');
 }
+
+// ── Export / Import Contacts (fichier séparé, partageable) ──
+document.getElementById('btn-export-contacts').onclick = () => {
+  if (!g_contacts.length) return toast('Aucun contact à exporter.');
+  const payload = {
+    _type: 'dispatch_contacts',
+    _exportDate: new Date().toISOString(),
+    _count: g_contacts.length,
+    contacts: g_contacts
+  };
+  const ts = new Date().toISOString().slice(0,10);
+  downloadText(`Contacts_${g_contacts.length}_${ts}.json`, JSON.stringify(payload, null, 2));
+  toast(`${g_contacts.length} contact(s) exportés.`);
+};
+
+document.getElementById('btn-import-contacts').onclick = () => document.getElementById('contacts-input').click();
+document.getElementById('contacts-input').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const d = JSON.parse(ev.target.result);
+      const imported = d.contacts || (Array.isArray(d) ? d : []);
+      if (!imported.length) return toast('Aucun contact trouvé dans ce fichier.');
+      let added = 0, skipped = 0;
+      imported.forEach(c => {
+        const exists = g_contacts.find(x =>
+          (x.societe||'').toLowerCase() === (c.societe||'').toLowerCase() &&
+          (x.nom||'').toLowerCase() === (c.nom||'').toLowerCase()
+        );
+        if (exists) { skipped++; }
+        else { g_contacts.push(c); added++; }
+      });
+      renderContacts();
+      saveContacts();
+      toast(`Contacts importés : +${added} nouveau(x), ${skipped} déjà existant(s).`);
+    } catch(err) { alert('Erreur lecture contacts : ' + err.message); }
+  };
+  reader.readAsText(f);
+  e.target.value = '';
+});
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  EDIT MODAL                                                              ║
@@ -2406,6 +2453,7 @@ function saveEdit() {
     if (!existing) {
       g_contacts.push({societe:r.client,nom:r.contact,tel:r.tel,email:r.email,cp:'',notes:''});
       renderContacts();
+      saveContacts();
     }
   }
   if (document.getElementById('ed-cc').checked&&ccWas!=='Cc') {
@@ -2877,38 +2925,49 @@ async function apiCall(endpoint, data = {}) {
 // ║  INDEXEDDB — Stockage local haute capacité (remplace JSON/localStorage) ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 const IDB_NAME = 'DispatchDB';
-const IDB_VERSION = 1;
+const IDB_VERSION = 2;
 const IDB_STORE = 'state';
+const IDB_CONTACTS = 'contacts';
 let _idb = null;
 
 function idbOpen() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(IDB_NAME, IDB_VERSION);
-    req.onupgradeneeded = e => { e.target.result.createObjectStore(IDB_STORE); };
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+      if (!db.objectStoreNames.contains(IDB_CONTACTS)) db.createObjectStore(IDB_CONTACTS);
+    };
     req.onsuccess = e => { _idb = e.target.result; resolve(_idb); };
     req.onerror = e => { console.warn('IndexedDB:', e.target.error); reject(e.target.error); };
   });
 }
 
-function idbSave(data) {
+function idbPut(store, key, data) {
   if (!_idb) return Promise.resolve();
   return new Promise((resolve, reject) => {
-    const tx = _idb.transaction(IDB_STORE, 'readwrite');
-    tx.objectStore(IDB_STORE).put(data, 'dispatch_state');
+    const tx = _idb.transaction(store, 'readwrite');
+    tx.objectStore(store).put(data, key);
     tx.oncomplete = () => resolve();
     tx.onerror = e => { console.warn('IDB save:', e.target.error); reject(e.target.error); };
   });
 }
 
-function idbLoad() {
+function idbGet(store, key) {
   if (!_idb) return Promise.resolve(null);
   return new Promise((resolve, reject) => {
-    const tx = _idb.transaction(IDB_STORE, 'readonly');
-    const req = tx.objectStore(IDB_STORE).get('dispatch_state');
+    const tx = _idb.transaction(store, 'readonly');
+    const req = tx.objectStore(store).get(key);
     req.onsuccess = () => resolve(req.result || null);
     req.onerror = e => reject(e.target.error);
   });
 }
+
+// Raccourcis pour compatibilité
+function idbSave(data) { return idbPut(IDB_STORE, 'dispatch_state', data); }
+function idbLoad() { return idbGet(IDB_STORE, 'dispatch_state'); }
+function idbSaveContacts() { return idbPut(IDB_CONTACTS, 'contacts', g_contacts); }
+function idbLoadContacts() { return idbGet(IDB_CONTACTS, 'contacts'); }
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  AUTO-SAVE — dirty flag + debounce (ne sauvegarde que si changement)    ║
@@ -2929,8 +2988,14 @@ async function autoSave() {
   _dirty = false;
   const data = { master: g_master, rawData: g_rawData, cpData: g_cpData, contacts: g_contacts, archive: g_archive };
   // Sauvegarder en parallèle : IndexedDB (local rapide) + API AutoIt (backend)
-  try { await Promise.all([ idbSave(data), apiCall('save', data) ]); }
+  // Contacts sauvés séparément dans IndexedDB (store dédié)
+  try { await Promise.all([ idbSave(data), idbSaveContacts(), apiCall('save', data) ]); }
   catch(e) { console.warn('autoSave error:', e); }
+}
+
+// Sauvegarde contacts uniquement (après ajout/modif/suppression)
+async function saveContacts() {
+  try { await idbSaveContacts(); } catch(e) { console.warn('contacts save:', e); }
 }
 
 // Écoute intelligente : ne marque dirty que sur vrais changements
@@ -2959,21 +3024,31 @@ window.onload = async () => {
 
   let loaded = false;
 
-  // 2. Essayer IndexedDB d'abord (instantané, pas de réseau)
+  // 2. Charger contacts depuis leur store dédié (indépendant)
+  try {
+    const idbContacts = await idbLoadContacts();
+    if (idbContacts && idbContacts.length > 0) {
+      g_contacts = idbContacts;
+      console.log(`Contacts chargés depuis IndexedDB : ${g_contacts.length}`);
+    }
+  } catch(e) { console.warn('IDB contacts load:', e); }
+
+  // 3. Essayer IndexedDB d'abord pour les dossiers (instantané, pas de réseau)
   try {
     const idbData = await idbLoad();
     if (idbData && idbData.master && idbData.master.length > 0) {
       g_master = idbData.master || [];
       g_rawData = idbData.rawData || {};
       g_cpData = idbData.cpData || [];
-      g_contacts = idbData.contacts || [];
+      // Contacts : prendre IDB dédié en priorité, sinon ceux du state global
+      if (!g_contacts.length && idbData.contacts) g_contacts = idbData.contacts;
       g_archive = idbData.archive || [];
       loaded = true;
       console.log('Chargé depuis IndexedDB (local).');
     }
   } catch(e) { console.warn('IDB load error:', e); }
 
-  // 3. Fallback : charger depuis API AutoIt
+  // 4. Fallback : charger depuis API AutoIt
   if (!loaded) {
     try {
       const response = await fetch(`${API_URL}/load`);
@@ -2982,11 +3057,12 @@ window.onload = async () => {
         g_master = d.master || [];
         g_rawData = d.rawData || {};
         g_cpData = d.cpData || [];
-        g_contacts = d.contacts || [];
+        if (!g_contacts.length && d.contacts) g_contacts = d.contacts;
         g_archive = d.archive || [];
         loaded = true;
         // Syncer vers IndexedDB pour la prochaine fois
         idbSave({ master: g_master, rawData: g_rawData, cpData: g_cpData, contacts: g_contacts, archive: g_archive });
+        idbSaveContacts();
       }
     } catch (err) {
       console.log("Serveur hors ligne ou premier démarrage.");

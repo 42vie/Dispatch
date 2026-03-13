@@ -3996,8 +3996,11 @@ async function reseauForceLoad() {
   if (!path) return toast('Chemin réseau non configuré.');
   try {
     const data = await netLoad(path);
-    if (data && data.state) {
-      applyLoadedState(data.state);
+    console.log('Réseau load brut:', data);
+    let state = data && data.state ? data.state : null;
+    if (typeof state === 'string') try { state = JSON.parse(state); } catch(e) {}
+    if (state && state.master) {
+      applyLoadedState(state);
       // Réécrire le fichier fusionné sur le réseau
       await netSave(path, buildSaveState());
       toast('État synchronisé avec ' + path);

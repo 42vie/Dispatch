@@ -1047,7 +1047,8 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
         <div class="form-row">
           <label style="min-width:190px">Chemin fichier état</label>
           <input id="opts-state-path" type="text" placeholder="F:\dispatch\state.json"
-            style="flex:1;font-family:var(--mono)">
+            style="flex:1;font-family:var(--mono)"
+            value="F:\CDG\PRODUCT\TRANSCON\Shared\Clients\HPE\Workboard\dispatch_state.json">
         </div>
         <div style="font-size:11px;color:var(--text3)">
           Fichier JSON partagé sur le réseau. Toutes les personnes pointant vers le même fichier<br>
@@ -1076,7 +1077,8 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
         <div class="form-row">
           <label style="min-width:190px">Chemin fichier contacts</label>
           <input id="opts-contacts-path" type="text" placeholder="F:\dispatch\contacts.json"
-            style="flex:1;font-family:var(--mono)">
+            style="flex:1;font-family:var(--mono)"
+            value="F:\CDG\PRODUCT\TRANSCON\Shared\Clients\HPE\Workboard\dispatch_contacts.json">
         </div>
         <div style="font-size:11px;color:var(--text3)">
           Fichier JSON partagé sur le réseau. Tous les collègues pointant vers le même fichier<br>
@@ -1388,6 +1390,10 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  STATE                                                                   ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
+// ── Chemins réseau par défaut (hardcodés) ──
+const DEFAULT_STATE_PATH    = 'F:\\CDG\\PRODUCT\\TRANSCON\\Shared\\Clients\\HPE\\Workboard\\dispatch_state.json';
+const DEFAULT_CONTACTS_PATH = 'F:\\CDG\\PRODUCT\\TRANSCON\\Shared\\Clients\\HPE\\Workboard\\dispatch_contacts.json';
+
 let g_master   = [];  // dossiers actifs
 let g_archive  = [];  // dossiers terminés archivés
 let g_operatorFilter = localStorage.getItem('dispatch_operator') || ''; // restauré immédiatement
@@ -3968,7 +3974,7 @@ function optsSaveReseau() {
 }
 
 function optsLoadReseau() {
-  const path = localStorage.getItem('dispatch_state_path') || '';
+  const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
   const name = localStorage.getItem('dispatch_operator') || '';
   const el1 = document.getElementById('opts-state-path');
   const el2 = document.getElementById('opts-my-name');
@@ -3980,7 +3986,7 @@ function optsLoadReseau() {
 // ║  RÉSEAU — SAVE / LOAD SUR F:\                                            ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 async function reseauForceSave() {
-  const path = localStorage.getItem('dispatch_state_path') || '';
+  const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
   if (!path) return toast('Chemin réseau non configuré. Aller dans Options → Réseau partagé.');
   const payload = { path, state: buildSaveState() };
   try {
@@ -3992,7 +3998,7 @@ async function reseauForceSave() {
 }
 
 async function reseauForceLoad() {
-  const path = localStorage.getItem('dispatch_state_path') || '';
+  const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
   if (!path) return toast('Chemin réseau non configuré.');
   try {
     const data = await apiCall('load-network-state', { path });
@@ -4063,7 +4069,7 @@ function buildFullSaveState() {
 const _origAutoSave = typeof autoSave === 'function' ? autoSave : null;
 function autoSaveWithNetwork() {
   if (_origAutoSave) _origAutoSave();
-  const path = localStorage.getItem('dispatch_state_path') || '';
+  const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
   if (path) {
     apiCall('save-network-state', { path, state: buildSaveState() }).catch(() => {});
   }
@@ -4083,7 +4089,7 @@ function contactsReseauSaveOpts() {
 }
 
 function contactsReseauLoadOpts() {
-  const path = localStorage.getItem('dispatch_contacts_path') || '';
+  const path = localStorage.getItem('dispatch_contacts_path') || DEFAULT_CONTACTS_PATH;
   const el = document.getElementById('opts-contacts-path');
   if (el && path) el.value = path;
 }
@@ -4108,7 +4114,7 @@ function _mergeContacts(local, remote) {
 }
 
 async function contactsReseauSync() {
-  const path = localStorage.getItem('dispatch_contacts_path') || '';
+  const path = localStorage.getItem('dispatch_contacts_path') || DEFAULT_CONTACTS_PATH;
   if (!path) return toast('Chemin contacts réseau non configuré. Aller dans Options → Réseau.');
   const st = document.getElementById('opts-contacts-reseau-status');
 
@@ -4154,7 +4160,7 @@ async function contactsReseauSync() {
 // Auto-sync contacts réseau (appelé périodiquement, silencieux)
 let _contactsSyncTimer = null;
 function contactsReseauAutoSync() {
-  const path = localStorage.getItem('dispatch_contacts_path') || '';
+  const path = localStorage.getItem('dispatch_contacts_path') || DEFAULT_CONTACTS_PATH;
   if (!path) return;
   // Debounce : max 1 sync toutes les 30s
   if (_contactsSyncTimer) return;
@@ -4185,10 +4191,10 @@ window.addEventListener('load', () => {
     populateOperatorFilter();
     showIdentityModal();
     // Charger l'état réseau au démarrage
-    const path = localStorage.getItem('dispatch_state_path') || '';
+    const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
     if (path) reseauForceLoad();
     // Sync contacts réseau au démarrage
-    const cPath = localStorage.getItem('dispatch_contacts_path') || '';
+    const cPath = localStorage.getItem('dispatch_contacts_path') || DEFAULT_CONTACTS_PATH;
     if (cPath) contactsReseauSync();
   }, 800); // après que g_master soit peuplé depuis AutoIt
 });

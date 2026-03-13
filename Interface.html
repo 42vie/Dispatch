@@ -1070,6 +1070,24 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
         </div>
         <div id="opts-reseau-status" style="font-size:11px;color:var(--text3)">—</div>
       </div>
+
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin:20px 0 14px">Contacts partagés — Fichier réseau</div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:11px">
+        <div class="form-row">
+          <label style="min-width:190px">Chemin fichier contacts</label>
+          <input id="opts-contacts-path" type="text" placeholder="F:\dispatch\contacts.json"
+            style="flex:1;font-family:var(--mono)">
+        </div>
+        <div style="font-size:11px;color:var(--text3)">
+          Fichier JSON partagé sur le réseau. Tous les collègues pointant vers le même fichier<br>
+          partageront la même base de contacts. La fusion est automatique (pas de doublons).
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-purple-out" onclick="contactsReseauSaveOpts()" style="height:32px">💾 Enregistrer</button>
+          <button class="btn btn-ghost" onclick="contactsReseauSync()" style="height:32px">🔄 Synchroniser</button>
+        </div>
+        <div id="opts-contacts-reseau-status" style="font-size:11px;color:var(--text3)">—</div>
+      </div>
     </div>
   </div>
 </div><!-- /content -->
@@ -3966,33 +3984,65 @@ async function reseauForceLoad() {
     const data = await apiCall('load-network-state', { path });
     if (data && data.state) {
       applyLoadedState(data.state);
-      toast('État rechargé depuis ' + path);
+      // Réécrire le fichier fusionné sur le réseau
+      await apiCall('save-network-state', { path, state: buildSaveState() });
+      toast('État synchronisé avec ' + path);
       const st = document.getElementById('opts-reseau-status');
-      if (st) st.textContent = '✓ Rechargé depuis réseau — ' + new Date().toLocaleTimeString();
+      if (st) st.textContent = '✓ Synchronisé — ' + new Date().toLocaleTimeString();
     }
   } catch(e) { toast('Erreur chargement réseau : ' + e.message); }
 }
 
 function buildSaveState() {
-  return {
-    master: g_master,
-    contacts: typeof g_contacts !== 'undefined' ? g_contacts : [],
-    savedAt: new Date().toISOString()
-  };
+  return buildFullSaveState();
 }
 
 function applyLoadedState(state) {
   if (state.master) {
-    // Fusionner : on garde les statuts du réseau, mais on garde les dossiers locaux non présents
+    // Fusion bidirectionnelle : réseau → local (met à jour les existants, ajoute les absents)
+    let added = 0, updated = 0;
     state.master.forEach(remote => {
       const local = g_master.find(r => r.file === remote.file);
       if (local) {
-        // Mettre à jour le statut et les champs editables depuis le réseau
-        ['statut','contact','tel','email','comment','cc'].forEach(k => { if (remote[k]) local[k] = remote[k]; });
+        // Mettre à jour : prendre la version la plus récente (statut le plus avancé, ou dernier modifié)
+        const remoteStatut = parseInt(remote.statut) || 0;
+        const localStatut = parseInt(local.statut) || 0;
+        // Si le distant est plus avancé dans le workflow, on prend son statut
+        if (remoteStatut > localStatut && remoteStatut !== 9) {
+          local.statut = remote.statut;
+        }
+        // Toujours syncer les champs éditables depuis le réseau s'ils sont renseignés
+        ['contact','tel','email','comment','cc','operator','fcDate','fcHoraire','transp'].forEach(k => {
+          if (remote[k] && !local[k]) local[k] = remote[k];
+        });
+        updated++;
+      } else {
+        // Dossier absent localement → l'ajouter (un collègue l'a importé)
+        g_master.push(remote);
+        added++;
       }
     });
+    if (added > 0) console.log(`Réseau : +${added} dossier(s) ajouté(s), ${updated} mis à jour.`);
   }
-  renderMaster(); renderKanban(); updateStats();
+  // Fusionner rawData (ajout des clés absentes)
+  if (state.rawData) {
+    Object.keys(state.rawData).forEach(k => {
+      if (!g_rawData[k]) g_rawData[k] = state.rawData[k];
+    });
+  }
+  renderMaster(); renderKanban(); renderCP(); updateStats();
+}
+
+// Construit l'état complet pour sauvegarde réseau (dossiers + contacts)
+function buildFullSaveState() {
+  return {
+    master: g_master,
+    rawData: g_rawData,
+    cpData: g_cpData,
+    contacts: typeof g_contacts !== 'undefined' ? g_contacts : [],
+    savedAt: new Date().toISOString(),
+    operator: localStorage.getItem('dispatch_operator') || ''
+  };
 }
 
 // Auto-save réseau lors de chaque autoSave
@@ -4003,6 +4053,111 @@ function autoSaveWithNetwork() {
   if (path) {
     apiCall('save-network-state', { path, state: buildSaveState() }).catch(() => {});
   }
+  // Auto-sync contacts réseau
+  contactsReseauAutoSync();
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  CONTACTS RÉSEAU — Fichier partagé avec fusion automatique              ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function contactsReseauSaveOpts() {
+  const path = (document.getElementById('opts-contacts-path')?.value || '').trim();
+  localStorage.setItem('dispatch_contacts_path', path);
+  const st = document.getElementById('opts-contacts-reseau-status');
+  if (st) st.textContent = '✓ Chemin enregistré — ' + new Date().toLocaleTimeString();
+  if (path) contactsReseauSync();
+}
+
+function contactsReseauLoadOpts() {
+  const path = localStorage.getItem('dispatch_contacts_path') || '';
+  const el = document.getElementById('opts-contacts-path');
+  if (el && path) el.value = path;
+}
+
+// Clé unique pour un contact (évite doublons)
+function _contactKey(c) {
+  return ((c.societe||'') + '|' + (c.nom||'') + '|' + (c.email||'')).toLowerCase().trim();
+}
+
+// Fusion bidirectionnelle : local + réseau → pas de doublons
+function _mergeContacts(local, remote) {
+  const map = new Map();
+  // D'abord les locaux
+  local.forEach(c => map.set(_contactKey(c), c));
+  // Puis les distants (ajoute les absents, ne remplace pas)
+  let added = 0;
+  remote.forEach(c => {
+    const key = _contactKey(c);
+    if (!map.has(key)) { map.set(key, c); added++; }
+  });
+  return { merged: Array.from(map.values()), added };
+}
+
+async function contactsReseauSync() {
+  const path = localStorage.getItem('dispatch_contacts_path') || '';
+  if (!path) return toast('Chemin contacts réseau non configuré. Aller dans Options → Réseau.');
+  const st = document.getElementById('opts-contacts-reseau-status');
+
+  try {
+    // 1. Charger le fichier réseau existant
+    let remoteContacts = [];
+    try {
+      const data = await apiCall('load-network-state', { path });
+      if (data && data.state && data.state.contacts) {
+        remoteContacts = data.state.contacts;
+      }
+    } catch(e) { /* fichier n'existe pas encore, on va le créer */ }
+
+    // 2. Fusionner local + réseau
+    const { merged, added } = _mergeContacts(g_contacts, remoteContacts);
+    const newFromRemote = added;
+    const newForRemote = merged.length - remoteContacts.length;
+
+    // 3. Appliquer localement
+    g_contacts = merged;
+    renderContacts();
+    saveContacts();
+
+    // 4. Écrire le résultat fusionné sur le réseau
+    const payload = {
+      path,
+      state: {
+        contacts: g_contacts,
+        savedAt: new Date().toISOString(),
+        count: g_contacts.length
+      }
+    };
+    await apiCall('save-network-state', payload);
+
+    if (st) st.textContent = `✓ Sync — ${g_contacts.length} contacts (${newFromRemote > 0 ? '+' + newFromRemote + ' du réseau' : 'à jour'}) — ${new Date().toLocaleTimeString()}`;
+    if (newFromRemote > 0) toast(`${newFromRemote} nouveau(x) contact(s) récupéré(s) depuis le réseau.`);
+  } catch(e) {
+    if (st) st.textContent = '✕ Erreur sync : ' + e.message;
+    toast('Erreur synchronisation contacts : ' + e.message);
+  }
+}
+
+// Auto-sync contacts réseau (appelé périodiquement, silencieux)
+let _contactsSyncTimer = null;
+function contactsReseauAutoSync() {
+  const path = localStorage.getItem('dispatch_contacts_path') || '';
+  if (!path) return;
+  // Debounce : max 1 sync toutes les 30s
+  if (_contactsSyncTimer) return;
+  _contactsSyncTimer = setTimeout(() => { _contactsSyncTimer = null; }, 30000);
+  // Sync silencieux (pas de toast)
+  apiCall('load-network-state', { path }).then(data => {
+    if (data && data.state && data.state.contacts) {
+      const { merged, added } = _mergeContacts(g_contacts, data.state.contacts);
+      if (added > 0) {
+        g_contacts = merged;
+        renderContacts();
+        saveContacts();
+        // Réécrire le fichier réseau avec la fusion
+        apiCall('save-network-state', { path, state: { contacts: g_contacts, savedAt: new Date().toISOString(), count: g_contacts.length } }).catch(() => {});
+      }
+    }
+  }).catch(() => {});
 }
 
 // Init au chargement
@@ -4010,6 +4165,7 @@ window.addEventListener('load', () => {
   setTimeout(() => {
     optsLoadPJ();
     optsLoadReseau();
+    contactsReseauLoadOpts();
     optsLoadFuel();
     cpCfgLoad();
     populateOperatorFilter();
@@ -4017,6 +4173,9 @@ window.addEventListener('load', () => {
     // Charger l'état réseau au démarrage
     const path = localStorage.getItem('dispatch_state_path') || '';
     if (path) reseauForceLoad();
+    // Sync contacts réseau au démarrage
+    const cPath = localStorage.getItem('dispatch_contacts_path') || '';
+    if (cPath) contactsReseauSync();
   }, 800); // après que g_master soit peuplé depuis AutoIt
 });
 

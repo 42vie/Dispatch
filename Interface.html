@@ -2764,12 +2764,17 @@ function downloadText(filename, text) {
 // ║  EXPORT / IMPORT WORKFLOW — dossiers actifs uniquement                  ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 document.getElementById('btn-export-wf').onclick = () => {
+  const myName = localStorage.getItem('dispatch_operator') || '';
+
   // Exporter uniquement les dossiers en cours (pas les terminés/archivés)
   const active = g_master.filter(r => {
     const s = parseInt(statutNum(r.statut));
     return s >= 1 && s <= 9 && s !== 8; // Tout sauf "Terminé"
   });
   if (!active.length) return toast('Aucun dossier actif à exporter.');
+
+  // S'assurer que chaque dossier a un opérateur (tag avec le nom si absent)
+  active.forEach(r => { if (!r.operator && myName) r.operator = myName; });
 
   // Exporter aussi les rawData correspondants
   const activeRaw = {};
@@ -2779,10 +2784,16 @@ document.getElementById('btn-export-wf').onclick = () => {
     });
   });
 
+  // Résumé par opérateur pour le header
+  const byOp = {};
+  active.forEach(r => { const op = r.operator || 'Non assigné'; byOp[op] = (byOp[op]||0) + 1; });
+
   const payload = {
     _type: 'dispatch_workflow',
     _exportDate: new Date().toISOString(),
-    _version: 2,
+    _exportedBy: myName || 'inconnu',
+    _version: 3,
+    _summary: byOp,
     master: active,
     rawData: activeRaw,
     cpData: g_cpData,
@@ -2790,8 +2801,9 @@ document.getElementById('btn-export-wf').onclick = () => {
   };
 
   const ts = new Date().toISOString().slice(0,16).replace('T','_').replace(':','-');
-  downloadText(`Workflow_${active.length}dossiers_${ts}.json`, JSON.stringify(payload, null, 2));
-  toast(`${active.length} dossier(s) actifs exportés. Fichier prêt à transmettre.`);
+  const nameTag = myName ? `_${myName}` : '';
+  downloadText(`Workflow${nameTag}_${active.length}dossiers_${ts}.json`, JSON.stringify(payload, null, 2));
+  toast(`${active.length} dossier(s) exportés par ${myName || '?'}. Fichier prêt à transmettre.`);
 };
 
 document.getElementById('btn-import-wf').onclick = () => document.getElementById('wf-input').click();
@@ -2841,8 +2853,10 @@ document.getElementById('wf-input').addEventListener('change', e => {
       }
 
       renderMaster(); renderKanban(); renderCP(); renderContacts(); updateStats();
+      populateOperatorFilter(); // Rafraîchir le filtre avec les nouveaux opérateurs
       markDirty();
-      toast(`Workflow importé : +${added} nouveau(x), ${updated} mis à jour.`);
+      const from = d._exportedBy ? ` (de ${d._exportedBy})` : '';
+      toast(`Workflow importé${from} : +${added} nouveau(x), ${updated} mis à jour.`);
     } catch(err) { alert('Erreur lecture workflow : ' + err.message); }
   };
   reader.readAsText(f);

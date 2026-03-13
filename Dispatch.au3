@@ -298,8 +298,37 @@ EndFunc
 ; UTILITAIRES
 ; ==============================================================================
 Func _GetJsonValue($sJson, $sKey)
+    ; 1. Essayer valeur string : "key":"value"
     Local $aMatch = StringRegExp($sJson, '(?i)"' & $sKey & '"\s*:\s*"([^"]*)"', 3)
     If IsArray($aMatch) Then Return $aMatch[0]
+    ; 2. Essayer objet/array JSON : "key":{...} ou "key":[...]
+    Local $iPos = StringInStr($sJson, '"' & $sKey & '"')
+    If $iPos > 0 Then
+        Local $iColon = StringInStr($sJson, ":", 0, 1, $iPos)
+        If $iColon > 0 Then
+            Local $sAfter = StringStripWS(StringMid($sJson, $iColon + 1), 1)
+            Local $sFirst = StringLeft($sAfter, 1)
+            If $sFirst = "{" Or $sFirst = "[" Then
+                ; Trouver la fermeture correspondante en comptant les niveaux
+                Local $sOpen = $sFirst, $sClose = ($sFirst = "{") ? "}" : "]"
+                Local $iDepth = 0, $bInStr = False
+                For $i = 1 To StringLen($sAfter)
+                    Local $c = StringMid($sAfter, $i, 1)
+                    If $c = '"' And ($i = 1 Or StringMid($sAfter, $i - 1, 1) <> "\") Then $bInStr = Not $bInStr
+                    If Not $bInStr Then
+                        If $c = $sOpen Then $iDepth += 1
+                        If $c = $sClose Then
+                            $iDepth -= 1
+                            If $iDepth = 0 Then Return StringLeft($sAfter, $i)
+                        EndIf
+                    EndIf
+                Next
+            EndIf
+            ; 3. Essayer valeur numérique/booléenne
+            Local $aNum = StringRegExp($sAfter, '^([0-9.eE+\-]+|true|false|null)', 3)
+            If IsArray($aNum) Then Return $aNum[0]
+        EndIf
+    EndIf
     Return ""
 EndFunc
 

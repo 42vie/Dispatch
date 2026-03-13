@@ -4005,96 +4005,38 @@ async function reseauForceLoad() {
   try {
     const data = await netLoad(path);
     if (!data) return;
-    // netLoad retourne soit {status,state} (ancien format) soit directement {master,contacts,...}
-    let state = data.state ? data.state : (data.master ? data : null);
-    if (typeof state === 'string') try { state = JSON.parse(state); } catch(e) {}
-    if (state && state.master) {
-      applyLoadedState(state);
-      // Réécrire le fichier fusionné sur le réseau
-      await netSave(path, buildSaveState());
-      toast('État synchronisé avec ' + path);
-      const st = document.getElementById('opts-reseau-status');
-      if (st) st.textContent = '✓ Synchronisé — ' + new Date().toLocaleTimeString();
-    }
+    // Le fichier réseau est un array [{file,statut,operator}, ...]
+    applyLoadedState(data);
+    toast('Statuts synchronisés depuis le réseau.');
   } catch(e) { toast('Erreur chargement réseau : ' + e.message); }
 }
 
+// ── État réseau = tableau de bord : juste file + statut + operator ──
+// S'écrase à chaque save (pas de fusion, pas de cumul)
 function buildSaveState() {
-  return buildFullSaveState();
-}
-
-function applyLoadedState(state) {
-  if (state.master) {
-    // Fusion bidirectionnelle : réseau → local (met à jour les existants, ajoute les absents)
-    let added = 0, updated = 0;
-    state.master.forEach(remote => {
-      const local = g_master.find(r => r.file === remote.file);
-      if (local) {
-        // Mettre à jour : prendre la version la plus récente (statut le plus avancé, ou dernier modifié)
-        const remoteStatut = parseInt(remote.statut) || 0;
-        const localStatut = parseInt(local.statut) || 0;
-        // Si le distant est plus avancé dans le workflow, on prend son statut
-        if (remoteStatut > localStatut && remoteStatut !== 9) {
-          local.statut = remote.statut;
-        }
-        // Toujours syncer les champs éditables depuis le réseau s'ils sont renseignés
-        ['contact','tel','email','comment','cc','operator','fcDate','fcHoraire','transp'].forEach(k => {
-          if (remote[k] && !local[k]) local[k] = remote[k];
-        });
-        updated++;
-      } else {
-        // Dossier absent localement → l'ajouter (un collègue l'a importé)
-        g_master.push(remote);
-        added++;
-      }
-    });
-    if (added > 0) console.log(`Réseau : +${added} dossier(s) ajouté(s), ${updated} mis à jour.`);
-  }
-  // Fusionner rawData (ajout des clés absentes)
-  if (state.rawData) {
-    Object.keys(state.rawData).forEach(k => {
-      if (!g_rawData[k]) g_rawData[k] = state.rawData[k];
-    });
-  }
-  // Fusionner contacts depuis le réseau (même fichier)
-  if (state.contacts && state.contacts.length) {
-    let cAdded = 0;
-    state.contacts.forEach(c => {
-      const key = ((c.societe||'') + '|' + (c.nom||'') + '|' + (c.email||'')).toLowerCase().trim();
-      const exists = g_contacts.find(x => ((x.societe||'') + '|' + (x.nom||'') + '|' + (x.email||'')).toLowerCase().trim() === key);
-      if (!exists) { g_contacts.push(c); cAdded++; }
-    });
-    if (cAdded > 0) { renderContacts(); saveContacts(); }
-  }
-  renderMaster(); renderKanban(); renderCP(); updateStats();
-}
-
-// Construit l'état LÉGER pour le réseau : seulement dossiers actifs + contacts
-// Pas de rawData, pas d'archives → fichier petit = sync rapide
-function buildFullSaveState() {
-  // Seulement les dossiers dans le workflow (statut 1-9, pas les terminés archivés)
-  const activeMaster = g_master.map(r => ({
-    file: r.file, client: r.client, rdl: r.rdl, svct: r.svct,
-    transp: r.transp, poids: r.poids, vol: r.vol, taxable: r.taxable,
-    dept: r.dept, contact: r.contact, tel: r.tel, email: r.email,
-    cc: r.cc, comment: r.comment, statut: r.statut, operator: r.operator,
-    _dateCreated: r._dateCreated, fcDate: r.fcDate, fcHoraire: r.fcHoraire
+  return g_master.map(r => ({
+    file: r.file,
+    statut: r.statut,
+    operator: r.operator || ''
   }));
-  return {
-    master: activeMaster,
-    contacts: typeof g_contacts !== 'undefined' ? g_contacts : [],
-    savedAt: new Date().toISOString(),
-    operator: localStorage.getItem('dispatch_operator') || ''
-  };
 }
 
-// Auto-save réseau lors de chaque autoSave
-const _origAutoSave = typeof autoSave === 'function' ? autoSave : null;
-function autoSaveWithNetwork() {
-  if (_origAutoSave) _origAutoSave();
-  const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
-  if (path) {
-    netSave(path, buildSaveState()).catch(() => {});
+// Au load : on écrase le statut local avec celui du réseau (si le dossier existe)
+// On n'ajoute rien, on ne touche à rien d'autre
+function applyLoadedState(state) {
+  const board = Array.isArray(state) ? state : (state.board || state.master || []);
+  let synced = 0;
+  board.forEach(remote => {
+    const local = g_master.find(r => r.file === remote.file);
+    if (local && local.statut !== remote.statut) {
+      local.statut = remote.statut;
+      if (remote.operator) local.operator = remote.operator;
+      synced++;
+    }
+  });
+  if (synced > 0) {
+    renderMaster(); renderKanban(); updateStats();
+    console.log(`Réseau : ${synced} statut(s) mis à jour.`);
   }
 }
 

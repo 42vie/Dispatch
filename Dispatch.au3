@@ -221,8 +221,19 @@ Func _HandleClient($iSocket)
                 _Batch_Mails_CP($sData_a)
 
             Case "save-network-state"
-                $sPath_a  = _GetJsonValue($sBody, "path")
-                $sState_a = _GetJsonValue($sBody, "state")
+                $sPath_a = _GetJsonValue($sBody, "path")
+                ; Extraire tout ce qui est après "state": directement (évite le parsing lent)
+                Local $iStatePos = StringInStr($sBody, '"state"')
+                If $iStatePos > 0 Then
+                    Local $iColonPos = StringInStr($sBody, ":", 0, 1, $iStatePos)
+                    If $iColonPos > 0 Then
+                        ; Prendre tout après "state": et retirer la dernière } du body
+                        $sState_a = StringStripWS(StringMid($sBody, $iColonPos + 1), 3)
+                        ; Retirer la } fermante du body JSON parent
+                        If StringRight($sState_a, 1) = "}" Then $sState_a = StringTrimRight($sState_a, 1)
+                        $sState_a = StringStripWS($sState_a, 2)
+                    EndIf
+                EndIf
                 If $sPath_a <> "" And $sState_a <> "" Then _Net_SaveState($sPath_a, $sState_a)
 
             Case "load-network-state"

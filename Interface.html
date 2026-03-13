@@ -1134,6 +1134,10 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
       <div class="form-section">Suivi</div>
       <div class="form-row"><label>Commentaire</label><input id="ed-comment" type="text"></div>
       <div class="form-row">
+        <label>Opérateur</label>
+        <input id="ed-operator" type="text" placeholder="Prénom">
+      </div>
+      <div class="form-row">
         <label>Statut</label>
         <select id="ed-statut">
           <option value="1">1. Pas encore CC</option>
@@ -2413,6 +2417,7 @@ function openEdit(idx) {
   document.getElementById('ed-tel').value=r.tel||'';
   document.getElementById('ed-email').value=r.email||'';
   document.getElementById('ed-comment').value=r.comment||'';
+  document.getElementById('ed-operator').value=r.operator||'';
   document.getElementById('ed-statut').value=statutNum(r.statut);
   document.getElementById('ed-cc').checked=r.cc==='Cc';
   openModal('modal-edit');
@@ -2457,6 +2462,7 @@ function saveEdit() {
   r.tel=document.getElementById('ed-tel').value;
   r.email=document.getElementById('ed-email').value;
   r.comment=document.getElementById('ed-comment').value;
+  r.operator=document.getElementById('ed-operator').value.trim();
   r.statut=document.getElementById('ed-statut').value;
   // Si contact renseigné → enrichir g_contacts auto
   if (r.contact&&r.email) {
@@ -2946,12 +2952,20 @@ async function apiCall(endpoint, data = {}) {
   }
 }
 
-// Raccourcis réseau — passent par /api/action (pas des endpoints séparés)
+// Raccourcis réseau — endpoints dédiés (le body EST le JSON, pas de parsing côté AutoIt)
 async function netSave(path, state) {
-  return apiCall('action', { action: 'save-network-state', path, state });
+  try {
+    const url = `${API_URL}/net-save?path=${encodeURIComponent(path)}`;
+    const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(state) });
+    return await resp.json();
+  } catch(e) { console.warn('netSave:', e); }
 }
 async function netLoad(path) {
-  return apiCall('action', { action: 'load-network-state', path });
+  try {
+    const url = `${API_URL}/net-load?path=${encodeURIComponent(path)}`;
+    const resp = await fetch(url, { method:'POST' });
+    return await resp.json();
+  } catch(e) { console.warn('netLoad:', e); return null; }
 }
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -3020,9 +3034,14 @@ async function autoSave() {
   if (!_dirty) return;
   _dirty = false;
   const data = { master: g_master, rawData: g_rawData, cpData: g_cpData, contacts: g_contacts, archive: g_archive };
-  // Sauvegarder en parallèle : IndexedDB (local rapide) + API AutoIt (backend)
-  // Contacts sauvés séparément dans IndexedDB (store dédié)
-  try { await Promise.all([ idbSave(data), idbSaveContacts(), apiCall('save', data) ]); }
+  // Sauvegarder en parallèle : IndexedDB + API AutoIt + Réseau partagé
+  const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
+  try { await Promise.all([
+    idbSave(data),
+    idbSaveContacts(),
+    apiCall('save', data),
+    path ? netSave(path, buildSaveState()) : Promise.resolve()
+  ]); }
   catch(e) { console.warn('autoSave error:', e); }
 }
 
@@ -3996,89 +4015,39 @@ async function reseauForceLoad() {
   if (!path) return toast('Chemin réseau non configuré.');
   try {
     const data = await netLoad(path);
-    console.log('Réseau load brut:', data);
-    let state = data && data.state ? data.state : null;
-    if (typeof state === 'string') try { state = JSON.parse(state); } catch(e) {}
-    if (state && state.master) {
-      applyLoadedState(state);
-      // Réécrire le fichier fusionné sur le réseau
-      await netSave(path, buildSaveState());
-      toast('État synchronisé avec ' + path);
-      const st = document.getElementById('opts-reseau-status');
-      if (st) st.textContent = '✓ Synchronisé — ' + new Date().toLocaleTimeString();
-    }
+    if (!data) return;
+    // Le fichier réseau est un array [{file,statut,operator}, ...]
+    applyLoadedState(data);
+    toast('Statuts synchronisés depuis le réseau.');
   } catch(e) { toast('Erreur chargement réseau : ' + e.message); }
 }
 
+// ── État réseau = tableau de bord : juste file + statut + operator ──
+// S'écrase à chaque save (pas de fusion, pas de cumul)
 function buildSaveState() {
-  return buildFullSaveState();
+  return g_master.map(r => ({
+    file: r.file,
+    statut: r.statut,
+    operator: r.operator || ''
+  }));
 }
 
+// Au load : on écrase le statut local avec celui du réseau (si le dossier existe)
+// On n'ajoute rien, on ne touche à rien d'autre
 function applyLoadedState(state) {
-  if (state.master) {
-    // Fusion bidirectionnelle : réseau → local (met à jour les existants, ajoute les absents)
-    let added = 0, updated = 0;
-    state.master.forEach(remote => {
-      const local = g_master.find(r => r.file === remote.file);
-      if (local) {
-        // Mettre à jour : prendre la version la plus récente (statut le plus avancé, ou dernier modifié)
-        const remoteStatut = parseInt(remote.statut) || 0;
-        const localStatut = parseInt(local.statut) || 0;
-        // Si le distant est plus avancé dans le workflow, on prend son statut
-        if (remoteStatut > localStatut && remoteStatut !== 9) {
-          local.statut = remote.statut;
-        }
-        // Toujours syncer les champs éditables depuis le réseau s'ils sont renseignés
-        ['contact','tel','email','comment','cc','operator','fcDate','fcHoraire','transp'].forEach(k => {
-          if (remote[k] && !local[k]) local[k] = remote[k];
-        });
-        updated++;
-      } else {
-        // Dossier absent localement → l'ajouter (un collègue l'a importé)
-        g_master.push(remote);
-        added++;
-      }
-    });
-    if (added > 0) console.log(`Réseau : +${added} dossier(s) ajouté(s), ${updated} mis à jour.`);
-  }
-  // Fusionner rawData (ajout des clés absentes)
-  if (state.rawData) {
-    Object.keys(state.rawData).forEach(k => {
-      if (!g_rawData[k]) g_rawData[k] = state.rawData[k];
-    });
-  }
-  // Fusionner contacts depuis le réseau (même fichier)
-  if (state.contacts && state.contacts.length) {
-    let cAdded = 0;
-    state.contacts.forEach(c => {
-      const key = ((c.societe||'') + '|' + (c.nom||'') + '|' + (c.email||'')).toLowerCase().trim();
-      const exists = g_contacts.find(x => ((x.societe||'') + '|' + (x.nom||'') + '|' + (x.email||'')).toLowerCase().trim() === key);
-      if (!exists) { g_contacts.push(c); cAdded++; }
-    });
-    if (cAdded > 0) { renderContacts(); saveContacts(); }
-  }
-  renderMaster(); renderKanban(); renderCP(); updateStats();
-}
-
-// Construit l'état complet pour sauvegarde réseau (dossiers + contacts)
-function buildFullSaveState() {
-  return {
-    master: g_master,
-    rawData: g_rawData,
-    cpData: g_cpData,
-    contacts: typeof g_contacts !== 'undefined' ? g_contacts : [],
-    savedAt: new Date().toISOString(),
-    operator: localStorage.getItem('dispatch_operator') || ''
-  };
-}
-
-// Auto-save réseau lors de chaque autoSave
-const _origAutoSave = typeof autoSave === 'function' ? autoSave : null;
-function autoSaveWithNetwork() {
-  if (_origAutoSave) _origAutoSave();
-  const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
-  if (path) {
-    netSave(path, buildSaveState()).catch(() => {});
+  const board = Array.isArray(state) ? state : (state.board || state.master || []);
+  let synced = 0;
+  board.forEach(remote => {
+    const local = g_master.find(r => r.file === remote.file);
+    if (local && local.statut !== remote.statut) {
+      local.statut = remote.statut;
+      if (remote.operator) local.operator = remote.operator;
+      synced++;
+    }
+  });
+  if (synced > 0) {
+    renderMaster(); renderKanban(); updateStats();
+    console.log(`Réseau : ${synced} statut(s) mis à jour.`);
   }
 }
 

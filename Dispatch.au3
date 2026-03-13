@@ -151,6 +151,24 @@ Func _HandleClient($iSocket)
         FileClose($hFile)
         _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
 
+    ElseIf StringLeft($sURL, 13) = "/api/net-save" Then
+        ; /api/net-save?path=F:\...\state.json — le body EST le JSON à écrire
+        Local $sNetPath = StringMid($sURL, 20) ; après "/api/net-save?path="
+        $sNetPath = _URIDecode($sNetPath)
+        If $sNetPath <> "" Then
+            _Net_SaveState($sNetPath, $sBody)
+            _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
+        Else
+            _SendHttpResponse($iSocket, 400, "application/json", '{"error":"missing path"}')
+        EndIf
+
+    ElseIf StringLeft($sURL, 13) = "/api/net-load" Then
+        ; /api/net-load?path=F:\...\state.json — retourne le contenu du fichier
+        Local $sNetPath2 = StringMid($sURL, 20) ; après "/api/net-load?path="
+        $sNetPath2 = _URIDecode($sNetPath2)
+        Local $sNetJSON = _Net_LoadState($sNetPath2)
+        _SendHttpResponse($iSocket, 200, "application/json", $sNetJSON)
+
     ElseIf $sURL = "/api/action" Then
         Local $sAction = _GetJsonValue($sBody, "action")
 
@@ -1510,6 +1528,20 @@ Func _COMAT_WaitIfPaused()
         Sleep(500)
         If $bCOMAT_Stop Then Return
     WEnd
+EndFunc
+
+; ==============================================================================
+; URI DECODE (pour les query params)
+; ==============================================================================
+Func _URIDecode($sStr)
+    $sStr = StringReplace($sStr, "+", " ")
+    Local $aMatch
+    While 1
+        $aMatch = StringRegExp($sStr, "%([0-9A-Fa-f]{2})", 3)
+        If Not IsArray($aMatch) Then ExitLoop
+        $sStr = StringReplace($sStr, "%" & $aMatch[0], Chr(Dec($aMatch[0])), 1)
+    WEnd
+    Return $sStr
 EndFunc
 
 ; ==============================================================================

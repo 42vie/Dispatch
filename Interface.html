@@ -2946,12 +2946,20 @@ async function apiCall(endpoint, data = {}) {
   }
 }
 
-// Raccourcis réseau — passent par /api/action (pas des endpoints séparés)
+// Raccourcis réseau — endpoints dédiés (le body EST le JSON, pas de parsing côté AutoIt)
 async function netSave(path, state) {
-  return apiCall('action', { action: 'save-network-state', path, state });
+  try {
+    const url = `${API_URL}/net-save?path=${encodeURIComponent(path)}`;
+    const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(state) });
+    return await resp.json();
+  } catch(e) { console.warn('netSave:', e); }
 }
 async function netLoad(path) {
-  return apiCall('action', { action: 'load-network-state', path });
+  try {
+    const url = `${API_URL}/net-load?path=${encodeURIComponent(path)}`;
+    const resp = await fetch(url, { method:'POST' });
+    return await resp.json();
+  } catch(e) { console.warn('netLoad:', e); return null; }
 }
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -3996,8 +4004,9 @@ async function reseauForceLoad() {
   if (!path) return toast('Chemin réseau non configuré.');
   try {
     const data = await netLoad(path);
-    console.log('Réseau load brut:', data);
-    let state = data && data.state ? data.state : null;
+    if (!data) return;
+    // netLoad retourne soit {status,state} (ancien format) soit directement {master,contacts,...}
+    let state = data.state ? data.state : (data.master ? data : null);
     if (typeof state === 'string') try { state = JSON.parse(state); } catch(e) {}
     if (state && state.master) {
       applyLoadedState(state);
@@ -4060,12 +4069,19 @@ function applyLoadedState(state) {
   renderMaster(); renderKanban(); renderCP(); updateStats();
 }
 
-// Construit l'état complet pour sauvegarde réseau (dossiers + contacts)
+// Construit l'état LÉGER pour le réseau : seulement dossiers actifs + contacts
+// Pas de rawData, pas d'archives → fichier petit = sync rapide
 function buildFullSaveState() {
+  // Seulement les dossiers dans le workflow (statut 1-9, pas les terminés archivés)
+  const activeMaster = g_master.map(r => ({
+    file: r.file, client: r.client, rdl: r.rdl, svct: r.svct,
+    transp: r.transp, poids: r.poids, vol: r.vol, taxable: r.taxable,
+    dept: r.dept, contact: r.contact, tel: r.tel, email: r.email,
+    cc: r.cc, comment: r.comment, statut: r.statut, operator: r.operator,
+    _dateCreated: r._dateCreated, fcDate: r.fcDate, fcHoraire: r.fcHoraire
+  }));
   return {
-    master: g_master,
-    rawData: g_rawData,
-    cpData: g_cpData,
+    master: activeMaster,
     contacts: typeof g_contacts !== 'undefined' ? g_contacts : [],
     savedAt: new Date().toISOString(),
     operator: localStorage.getItem('dispatch_operator') || ''

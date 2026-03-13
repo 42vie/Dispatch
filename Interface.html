@@ -1134,6 +1134,10 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
       <div class="form-section">Suivi</div>
       <div class="form-row"><label>Commentaire</label><input id="ed-comment" type="text"></div>
       <div class="form-row">
+        <label>Opérateur</label>
+        <input id="ed-operator" type="text" placeholder="Prénom">
+      </div>
+      <div class="form-row">
         <label>Statut</label>
         <select id="ed-statut">
           <option value="1">1. Pas encore CC</option>
@@ -2413,6 +2417,7 @@ function openEdit(idx) {
   document.getElementById('ed-tel').value=r.tel||'';
   document.getElementById('ed-email').value=r.email||'';
   document.getElementById('ed-comment').value=r.comment||'';
+  document.getElementById('ed-operator').value=r.operator||'';
   document.getElementById('ed-statut').value=statutNum(r.statut);
   document.getElementById('ed-cc').checked=r.cc==='Cc';
   openModal('modal-edit');
@@ -2457,6 +2462,7 @@ function saveEdit() {
   r.tel=document.getElementById('ed-tel').value;
   r.email=document.getElementById('ed-email').value;
   r.comment=document.getElementById('ed-comment').value;
+  r.operator=document.getElementById('ed-operator').value.trim();
   r.statut=document.getElementById('ed-statut').value;
   // Si contact renseigné → enrichir g_contacts auto
   if (r.contact&&r.email) {

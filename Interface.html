@@ -520,6 +520,10 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     <button class="btn btn-ghost" id="btn-load-json">📂 Charger sauvegarde</button>
     <input type="file" id="json-input" accept=".json" style="display:none">
     <button class="btn btn-blue-out" id="btn-save">💾 Sauvegarder</button>
+    <div class="header-sep"></div>
+    <button class="btn btn-ghost btn-sm" id="btn-export-wf" title="Exporter les dossiers en cours (workflow) pour les ré-importer plus tard ou les transmettre">📤 Workflow</button>
+    <button class="btn btn-ghost btn-sm" id="btn-import-wf" title="Importer un workflow exporté précédemment">📥 Workflow</button>
+    <input type="file" id="wf-input" accept=".json" style="display:none">
   </div>
 
   <div id="header-actions">
@@ -1785,7 +1789,7 @@ function kabApplyStatus() {
   kabGetSelected().forEach(r => { r.statut = newStat; });
   closeModal('modal-kab-status');
   kabClearSel();
-  renderMaster(); renderKanban(); updateStats(); autoSave();
+  renderMaster(); renderKanban(); updateStats(); markDirty();
   toast(`Statut ${newStat} appliqué.`);
 }
 
@@ -1813,7 +1817,7 @@ function kabSaveEdit() {
   });
   closeModal('modal-kab-edit');
   kabClearSel();
-  renderMaster(); renderKanban(); updateStats(); autoSave();
+  renderMaster(); renderKanban(); updateStats(); markDirty();
   toast('Modifications appliquées à la sélection.');
 }
 
@@ -1839,7 +1843,7 @@ Continuer pour les autres ?`)) return;
   }
   withEmail.forEach(r => { if (parseInt(statutNum(r.statut)) < 3) r.statut = '3'; });
   kabClearSel();
-  renderMaster(); renderKanban(); updateStats(); autoSave();
+  renderMaster(); renderKanban(); updateStats(); markDirty();
   toast(`Mail RDV envoyé pour ${withEmail.length} dossier(s).`);
 }
 
@@ -1890,7 +1894,7 @@ function onCardDrop(event, targetFile) {
   g_master.push(merged);
   g_dragFile = null;
   g_kabSelected.clear();
-  renderMaster(); renderKanban(); updateStats(); autoSave();
+  renderMaster(); renderKanban(); updateStats(); markDirty();
   toast(`Groupe créé : ${uniq.length} dossiers fusionnés.`);
 }
 
@@ -1956,7 +1960,7 @@ async function kanbanAction(from) {
   }
 
   renderMaster(); renderKanban(); updateStats();
-  autoSave();
+  markDirty();
 }
 //╔══════════════════════════════════════════════════════════════════════════╗
 // ║  CC PROCESSING                                                           ║
@@ -2070,7 +2074,7 @@ document.getElementById('btn-retirer-cp').onclick = () => {
   // Supprimer les groupes CP retirés
   const idxToRemove = checked.map(({i}) => i).sort((a,b) => b-a);
   idxToRemove.forEach(i => g_cpData.splice(i, 1));
-  renderCP(); renderMaster(); renderKanban(); updateStats(); autoSave();
+  renderCP(); renderMaster(); renderKanban(); updateStats(); markDirty();
   toast(`${checked.length} groupe(s) CP retirés — dossiers remis en Solo.`);
 };
 document.getElementById('file-input').addEventListener('change', e => {
@@ -2251,14 +2255,14 @@ function cpAddManual() {
     client, files: fileArr, palettes: '', colis: '',
     poids: 0, vol: 0, taxable: 0, doc: '', operator: g_operatorFilter || ''
   });
-  renderCP(); autoSave();
+  renderCP(); markDirty();
   toast('CP ajouté : ' + client + ' — ' + fileArr.length + ' dossier(s).');
 }
 
 function cpDelete(i) {
   if (!confirm('Supprimer ce CP (' + (g_cpData[i]?.client||'') + ') ?')) return;
   g_cpData.splice(i, 1);
-  renderCP(); autoSave();
+  renderCP(); markDirty();
   toast('CP supprimé.');
 }
 
@@ -2483,7 +2487,7 @@ function openGroup(idx) {
 function grpSupplUpdate(file, val) {
   if (!g_rawData[file]) g_rawData[file] = {};
   g_rawData[file].supplement = parseFloat(val) || 0;
-  autoSave();
+  markDirty();
 }
 
 // ── Copier numéro(s) de dossier ──────────────────────────────────────────
@@ -2509,7 +2513,7 @@ function grpSaveFields() {
   r.poids = parseFloat(document.getElementById('grp-poids').value) || 0;
   r.vol = parseFloat(document.getElementById('grp-vol').value) || 0;
   r.taxable = calcTaxable(r.poids, r.vol);
-  renderMaster(); renderKanban(); updateStats(); autoSave();
+  renderMaster(); renderKanban(); updateStats(); markDirty();
   toast('Groupe mis à jour — ' + r.transp + ' / ' + fmt(r.poids) + ' kg');
 }
 
@@ -2651,7 +2655,7 @@ document.getElementById('btn-clear-done').onclick = () => {
     if (!g_archive.find(a => a.file === r.file)) g_archive.push(r);
   });
   g_master = g_master.filter(r => String(r.statut)!=='8');
-  renderMaster(); renderKanban(); updateStats(); autoSave();
+  renderMaster(); renderKanban(); updateStats(); markDirty();
   toast(`${done.length} dossier(s) archivé(s) → onglet Historique.`);
 };
 
@@ -2689,6 +2693,95 @@ function downloadText(filename, text) {
   a.href='data:text/plain;charset=utf-8,'+encodeURIComponent(text);
   a.download=filename; a.click();
 }
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  EXPORT / IMPORT WORKFLOW — dossiers actifs uniquement                  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.getElementById('btn-export-wf').onclick = () => {
+  // Exporter uniquement les dossiers en cours (pas les terminés/archivés)
+  const active = g_master.filter(r => {
+    const s = parseInt(statutNum(r.statut));
+    return s >= 1 && s <= 9 && s !== 8; // Tout sauf "Terminé"
+  });
+  if (!active.length) return toast('Aucun dossier actif à exporter.');
+
+  // Exporter aussi les rawData correspondants
+  const activeRaw = {};
+  active.forEach(r => {
+    (r.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean).forEach(f => {
+      if (g_rawData[f]) activeRaw[f] = g_rawData[f];
+    });
+  });
+
+  const payload = {
+    _type: 'dispatch_workflow',
+    _exportDate: new Date().toISOString(),
+    _version: 2,
+    master: active,
+    rawData: activeRaw,
+    cpData: g_cpData,
+    contacts: g_contacts
+  };
+
+  const ts = new Date().toISOString().slice(0,16).replace('T','_').replace(':','-');
+  downloadText(`Workflow_${active.length}dossiers_${ts}.json`, JSON.stringify(payload, null, 2));
+  toast(`${active.length} dossier(s) actifs exportés. Fichier prêt à transmettre.`);
+};
+
+document.getElementById('btn-import-wf').onclick = () => document.getElementById('wf-input').click();
+document.getElementById('wf-input').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const d = JSON.parse(ev.target.result);
+      if (!d.master || !d.master.length) return toast('Fichier workflow vide ou invalide.');
+
+      // Fusionner : ajouter les dossiers absents, mettre à jour ceux existants
+      let added = 0, updated = 0;
+      d.master.forEach(imported => {
+        const existing = g_master.find(r => r.file === imported.file);
+        if (existing) {
+          // Mettre à jour les champs éditables (statut, contact, etc.)
+          ['statut','contact','tel','email','comment','cc','operator','fcDate','fcHoraire'].forEach(k => {
+            if (imported[k] !== undefined) existing[k] = imported[k];
+          });
+          updated++;
+        } else {
+          g_master.push(imported);
+          added++;
+        }
+      });
+
+      // Fusionner rawData
+      if (d.rawData) Object.assign(g_rawData, d.rawData);
+
+      // Fusionner contacts (ajouter les absents)
+      if (d.contacts) {
+        d.contacts.forEach(c => {
+          if (!g_contacts.find(x => (x.societe||'').toLowerCase() === (c.societe||'').toLowerCase() && (x.nom||'').toLowerCase() === (c.nom||'').toLowerCase())) {
+            g_contacts.push(c);
+          }
+        });
+      }
+
+      // Fusionner cpData
+      if (d.cpData) {
+        d.cpData.forEach(cp => {
+          if (!g_cpData.find(x => x.client === cp.client && JSON.stringify(x.files) === JSON.stringify(cp.files))) {
+            g_cpData.push(cp);
+          }
+        });
+      }
+
+      renderMaster(); renderKanban(); renderCP(); renderContacts(); updateStats();
+      markDirty();
+      toast(`Workflow importé : +${added} nouveau(x), ${updated} mis à jour.`);
+    } catch(err) { alert('Erreur lecture workflow : ' + err.message); }
+  };
+  reader.readAsText(f);
+  e.target.value = '';
+});
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  STATS                                                                   ║
@@ -2780,42 +2873,139 @@ async function apiCall(endpoint, data = {}) {
   }
 }
 
-// Nouvelle fonction de sauvegarde automatique
-async function autoSave() {
-  const data = { master: g_master, rawData: g_rawData, cpData: g_cpData, contacts: g_contacts, archive: g_archive };
-  await apiCall('save', data);
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  INDEXEDDB — Stockage local haute capacité (remplace JSON/localStorage) ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+const IDB_NAME = 'DispatchDB';
+const IDB_VERSION = 1;
+const IDB_STORE = 'state';
+let _idb = null;
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = e => { e.target.result.createObjectStore(IDB_STORE); };
+    req.onsuccess = e => { _idb = e.target.result; resolve(_idb); };
+    req.onerror = e => { console.warn('IndexedDB:', e.target.error); reject(e.target.error); };
+  });
 }
 
-// Remplace les clics et actions pour déclencher l'auto-sauvegarde
-// (On l'attache au clic global pour intercepter toute modification)
-document.addEventListener('click', () => setTimeout(autoSave, 500));
-document.addEventListener('input', () => setTimeout(autoSave, 500));
+function idbSave(data) {
+  if (!_idb) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const tx = _idb.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(data, 'dispatch_state');
+    tx.oncomplete = () => resolve();
+    tx.onerror = e => { console.warn('IDB save:', e.target.error); reject(e.target.error); };
+  });
+}
 
-// Chargement automatique au démarrage
+function idbLoad() {
+  if (!_idb) return Promise.resolve(null);
+  return new Promise((resolve, reject) => {
+    const tx = _idb.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).get('dispatch_state');
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  AUTO-SAVE — dirty flag + debounce (ne sauvegarde que si changement)    ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+let _dirty = false;
+let _saveTimer = null;
+const SAVE_DELAY = 1500; // 1.5s après dernière modification
+
+function markDirty() { _dirty = true; scheduleSave(); }
+
+function scheduleSave() {
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(autoSave, SAVE_DELAY);
+}
+
+async function autoSave() {
+  if (!_dirty) return;
+  _dirty = false;
+  const data = { master: g_master, rawData: g_rawData, cpData: g_cpData, contacts: g_contacts, archive: g_archive };
+  // Sauvegarder en parallèle : IndexedDB (local rapide) + API AutoIt (backend)
+  try { await Promise.all([ idbSave(data), apiCall('save', data) ]); }
+  catch(e) { console.warn('autoSave error:', e); }
+}
+
+// Écoute intelligente : ne marque dirty que sur vrais changements
+document.addEventListener('input', markDirty);
+// Les fonctions appellent markDirty() après modification — le save est debounced automatiquement
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  AUTO-PURGE — nettoie les archives > 45 jours pour alléger la mémoire  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function autoPurgeArchive() {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 45);
+  const before = g_archive.length;
+  g_archive = g_archive.filter(r => {
+    const d = r._dateArchived || r._dateCreated;
+    return d && new Date(d) >= cutoff;
+  });
+  const purged = before - g_archive.length;
+  if (purged > 0) console.log(`Auto-purge: ${purged} archives > 45j supprimées.`);
+}
+
+// Chargement automatique au démarrage — IndexedDB prioritaire, API fallback
 window.onload = async () => {
+  // 1. Ouvrir IndexedDB
+  try { await idbOpen(); } catch(e) { console.warn('IndexedDB indisponible, fallback API seul.'); }
+
+  let loaded = false;
+
+  // 2. Essayer IndexedDB d'abord (instantané, pas de réseau)
   try {
-    const response = await fetch(`${API_URL}/load`);
-    const d = await response.json();
-    if (d && d.master && d.master.length > 0) {
-      g_master = d.master || [];
-      g_rawData = d.rawData || {};
-      g_cpData = d.cpData || [];
-      g_contacts = d.contacts || [];
-      g_archive = d.archive || [];
-      // Sync : s'assurer que tous les dossiers CP en statut 2 (CC) sont dans g_cpData
-      g_master.forEach(r => {
-        if (isCP(r.client) && r.cc === 'Cc' && ['2'].includes(String(r.statut))) {
-          (r.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean).forEach(sf => {
-            addOrUpdateCP(r.client, sf, r.poids, r.vol, r.taxable, r.operator);
-          });
-        }
-      });
-      renderMaster(); renderKanban(); renderCP(); renderContacts(); updateStats();
-      populateOperatorFilter();
-      toast('Historique chargé depuis AutoIt.');
+    const idbData = await idbLoad();
+    if (idbData && idbData.master && idbData.master.length > 0) {
+      g_master = idbData.master || [];
+      g_rawData = idbData.rawData || {};
+      g_cpData = idbData.cpData || [];
+      g_contacts = idbData.contacts || [];
+      g_archive = idbData.archive || [];
+      loaded = true;
+      console.log('Chargé depuis IndexedDB (local).');
     }
-  } catch (err) {
-    console.log("Serveur hors ligne ou premier démarrage.");
+  } catch(e) { console.warn('IDB load error:', e); }
+
+  // 3. Fallback : charger depuis API AutoIt
+  if (!loaded) {
+    try {
+      const response = await fetch(`${API_URL}/load`);
+      const d = await response.json();
+      if (d && d.master && d.master.length > 0) {
+        g_master = d.master || [];
+        g_rawData = d.rawData || {};
+        g_cpData = d.cpData || [];
+        g_contacts = d.contacts || [];
+        g_archive = d.archive || [];
+        loaded = true;
+        // Syncer vers IndexedDB pour la prochaine fois
+        idbSave({ master: g_master, rawData: g_rawData, cpData: g_cpData, contacts: g_contacts, archive: g_archive });
+      }
+    } catch (err) {
+      console.log("Serveur hors ligne ou premier démarrage.");
+    }
+  }
+
+  if (loaded) {
+    // Sync : s'assurer que tous les dossiers CP en statut 2 (CC) sont dans g_cpData
+    g_master.forEach(r => {
+      if (isCP(r.client) && r.cc === 'Cc' && ['2'].includes(String(r.statut))) {
+        (r.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean).forEach(sf => {
+          addOrUpdateCP(r.client, sf, r.poids, r.vol, r.taxable, r.operator);
+        });
+      }
+    });
+    autoPurgeArchive(); // Nettoyer les vieilles archives automatiquement
+    renderMaster(); renderKanban(); renderCP(); renderContacts(); updateStats();
+    populateOperatorFilter();
+    toast(loaded ? '✓ Données restaurées.' : 'Premier démarrage.');
   }
 };
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -2919,7 +3109,7 @@ document.getElementById('btn-rdv-cp').addEventListener('click', async () => {
     });
   });
   idxToRemove.forEach(i => g_cpData.splice(i, 1));
-  renderCP(); renderMaster(); renderKanban(); updateStats(); autoSave();
+  renderCP(); renderMaster(); renderKanban(); updateStats(); markDirty();
   toast(`${checkedCps.length} CP traité(s) — dossiers passés au statut 3.`);
 });
 
@@ -2938,17 +3128,22 @@ document.getElementById('btn-comat-multi').onclick = async (e) => {
   _comatRunning = true;
   const total = nums.length;
   _batchShowBar('COMAT', 0, total);
-  toast(`COMAT : ${total} dossier(s) — F9 = Pause, Echap = Stop`);
+  toast(`COMAT : ${total} dossier(s) — l'interface reste utilisable.`);
   let done = 0;
-  for (const n of nums) {
+  async function _comatTabNext() {
+    if (done >= nums.length || !_comatRunning) {
+      _comatRunning = false; _batchHideBar();
+      toast(`COMAT terminé — ${done}/${total} dossier(s) traité(s).`);
+      return;
+    }
+    const n = nums[done];
     _batchShowBar('COMAT', done, total, n);
-    await apiCall('action', { action: 'COMAT_MULTI', data: n + ';;;' });
+    try { await apiCall('action', { action: 'COMAT_MULTI', data: n + ';;;' }); } catch(e) {}
     done++;
     _batchShowBar('COMAT', done, total);
+    setTimeout(_comatTabNext, 50);
   }
-  _comatRunning = false;
-  _batchHideBar();
-  toast(`COMAT terminé — ${done}/${total} dossier(s) traité(s).`);
+  _comatTabNext();
 };
 
 document.getElementById('btn-comat-solo').onclick = async (e) => {
@@ -3460,7 +3655,7 @@ function ntoBatchValider() {
   if (!_ntoBatchAffected.length) return;
   if (!confirm('Passer ' + _ntoBatchAffected.length + ' dossier(s) au statut 8 (Terminé) ?')) return;
   _ntoBatchAffected.forEach(r => { r.statut = '8'; });
-  renderMaster(); renderKanban(); updateStats(); autoSave();
+  renderMaster(); renderKanban(); updateStats(); markDirty();
   toast(_ntoBatchAffected.length + ' dossier(s) passés au statut 8.');
   ntoBatchFermer();
 }
@@ -4001,7 +4196,7 @@ function grpmSave() {
   });
 
   closeModal('modal-group-manual');
-  renderMaster(); renderKanban(); updateStats(); autoSave();
+  renderMaster(); renderKanban(); updateStats(); markDirty();
   toast(`Groupe créé : ${files.length} dossiers → ${fileStr}`);
 }
 
@@ -4086,7 +4281,7 @@ function kabFcUpdate(file, field, val) {
   if (!r) return;
   if (field === 'date')   r.fcDate    = val.trim();
   if (field === 'transp') r.transp    = val.trim();
-  autoSave();
+  markDirty();
 }
 
 function fcOpenModal(affected) {
@@ -4193,22 +4388,30 @@ async function fcLancer() {
   _fcRunning = true;
   const total = jobs.length;
   _batchShowBar('FC', 0, total);
-  toast(`FC : ${total} dossier(s) — F9 = Pause, Echap = Stop (dans AutoIt)`);
+  toast(`FC : ${total} dossier(s) — l'interface reste utilisable pendant le traitement.`);
   let done = 0;
-  for (const job of jobs) {
+  // Traitement non-bloquant : yield au event loop entre chaque dossier
+  async function _fcProcessNext() {
+    if (done >= jobs.length || !_fcRunning) {
+      _fcRunning = false; _batchHideBar();
+      toast(`FC terminé — ${done}/${total} dossier(s) traité(s).`);
+      return;
+    }
+    const job = jobs[done];
     _batchShowBar('FC', done, total, job.file);
-    await apiCall('action', { action: 'KANBAN_5', data: job.row });
+    try {
+      await apiCall('action', { action: 'KANBAN_5', data: job.row });
+    } catch(e) { console.warn('FC error:', e); }
     done++;
-    // Marquer le parent comme traité si tous ses sous-fichiers sont passés
     const parentSubs = (job.masterRef.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean);
     const allDone = parentSubs.every(sf => !jobs.slice(done).some(q => q.masterRef === job.masterRef));
     if (allDone) job.masterRef.statut = '6';
-    renderMaster(); renderKanban(); updateStats(); autoSave();
+    renderMaster(); renderKanban(); updateStats(); markDirty();
     _batchShowBar('FC', done, total);
+    // Yield : laisse le navigateur respirer entre chaque requête
+    setTimeout(_fcProcessNext, 50);
   }
-  _fcRunning = false;
-  _batchHideBar();
-  toast(`FC terminé — ${done}/${total} dossier(s) traité(s).`);
+  _fcProcessNext();
 }
 
 // ── Barre de progression FC / COMAT ──
@@ -4253,23 +4456,31 @@ async function comatStartBatch(affected, toStatus) {
   _comatRunning = true;
   const total = jobs.length;
   _batchShowBar('COMAT', 0, total);
-  toast(`COMAT : ${total} dossier(s) — F9 = Pause, Echap = Stop (dans AutoIt)`);
+  toast(`COMAT : ${total} dossier(s) — l'interface reste utilisable pendant le traitement.`);
   let done = 0;
-  for (const job of jobs) {
+  // Traitement non-bloquant
+  async function _comatProcessNext() {
+    if (done >= jobs.length || !_comatRunning) {
+      _comatRunning = false; _batchHideBar();
+      toast(`COMAT terminé — ${done}/${total} dossier(s) traité(s).`);
+      return;
+    }
+    const job = jobs[done];
     _batchShowBar('COMAT', done, total, job.num);
-    await apiCall('action', { action: 'COMAT_MULTI', data: job.num + ';;;' });
+    try {
+      await apiCall('action', { action: 'COMAT_MULTI', data: job.num + ';;;' });
+    } catch(e) { console.warn('COMAT error:', e); }
     done++;
     if (job.masterRef) {
       const parentSubs = (job.masterRef.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean);
       const allDone = parentSubs.every(sf => !jobs.slice(done).some(q => q.masterRef === job.masterRef));
       if (allDone) job.masterRef.statut = String(toStatus);
     }
-    renderMaster(); renderKanban(); updateStats(); autoSave();
+    renderMaster(); renderKanban(); updateStats(); markDirty();
     _batchShowBar('COMAT', done, total);
+    setTimeout(_comatProcessNext, 50);
   }
-  _comatRunning = false;
-  _batchHideBar();
-  toast(`COMAT terminé — ${done}/${total} dossier(s) traité(s).`);
+  _comatProcessNext();
 }
 
 
@@ -4345,7 +4556,7 @@ function histSaveComment(file, val) {
   const r = g_archive.find(x => x.file === file);
   if (!r) return;
   r.comment = val;
-  autoSave();
+  markDirty();
 }
 document.querySelectorAll('.tab').forEach(t => {
   t.addEventListener('click', () => { if (t.dataset.tab === 'historique') setTimeout(histRender, 50); });

@@ -652,7 +652,11 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
   <div class="tabpane" id="tab-contacts">
     <div class="tab-toolbar">
       <button class="btn btn-success btn-sm" id="btn-add-contact">➕ Ajouter Contact</button>
-      <span style="font-size:11px;color:var(--text3);margin-left:8px">Les contacts sont sauvegardés dans le fichier JSON — ils persistent d'un jour à l'autre.</span>
+      <div style="flex:1"></div>
+      <span style="font-size:11px;color:var(--text3)">Fichier indépendant — partageable entre collègues</span>
+      <button class="btn btn-ghost btn-sm" id="btn-export-contacts" title="Exporter les contacts dans un fichier séparé">📤 Exporter</button>
+      <button class="btn btn-ghost btn-sm" id="btn-import-contacts" title="Importer des contacts depuis un fichier">📥 Importer</button>
+      <input type="file" id="contacts-input" accept=".json" style="display:none">
     </div>
     <div class="contacts-wrap">
       <table class="t-contacts" id="contacts-table">
@@ -1065,6 +1069,24 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
           <button class="btn btn-ghost" onclick="reseauForceLoad()" style="height:32px">⬇ Recharger depuis réseau</button>
         </div>
         <div id="opts-reseau-status" style="font-size:11px;color:var(--text3)">—</div>
+      </div>
+
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin:20px 0 14px">Contacts partagés — Fichier réseau</div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:11px">
+        <div class="form-row">
+          <label style="min-width:190px">Chemin fichier contacts</label>
+          <input id="opts-contacts-path" type="text" placeholder="F:\dispatch\contacts.json"
+            style="flex:1;font-family:var(--mono)">
+        </div>
+        <div style="font-size:11px;color:var(--text3)">
+          Fichier JSON partagé sur le réseau. Tous les collègues pointant vers le même fichier<br>
+          partageront la même base de contacts. La fusion est automatique (pas de doublons).
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-purple-out" onclick="contactsReseauSaveOpts()" style="height:32px">💾 Enregistrer</button>
+          <button class="btn btn-ghost" onclick="contactsReseauSync()" style="height:32px">🔄 Synchroniser</button>
+        </div>
+        <div id="opts-contacts-reseau-status" style="font-size:11px;color:var(--text3)">—</div>
       </div>
     </div>
   </div>
@@ -2313,6 +2335,7 @@ function deleteContact(i) {
   if (!confirm('Supprimer ce contact ?')) return;
   g_contacts.splice(i,1);
   renderContacts();
+  saveContacts();
 }
 
 function saveContact() {
@@ -2328,8 +2351,50 @@ function saveContact() {
   else g_contacts.push(c);
   closeModal('modal-contact');
   renderContacts();
+  saveContacts();
   toast('Contact sauvegardé.');
 }
+
+// ── Export / Import Contacts (fichier séparé, partageable) ──
+document.getElementById('btn-export-contacts').onclick = () => {
+  if (!g_contacts.length) return toast('Aucun contact à exporter.');
+  const payload = {
+    _type: 'dispatch_contacts',
+    _exportDate: new Date().toISOString(),
+    _count: g_contacts.length,
+    contacts: g_contacts
+  };
+  const ts = new Date().toISOString().slice(0,10);
+  downloadText(`Contacts_${g_contacts.length}_${ts}.json`, JSON.stringify(payload, null, 2));
+  toast(`${g_contacts.length} contact(s) exportés.`);
+};
+
+document.getElementById('btn-import-contacts').onclick = () => document.getElementById('contacts-input').click();
+document.getElementById('contacts-input').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const d = JSON.parse(ev.target.result);
+      const imported = d.contacts || (Array.isArray(d) ? d : []);
+      if (!imported.length) return toast('Aucun contact trouvé dans ce fichier.');
+      let added = 0, skipped = 0;
+      imported.forEach(c => {
+        const exists = g_contacts.find(x =>
+          (x.societe||'').toLowerCase() === (c.societe||'').toLowerCase() &&
+          (x.nom||'').toLowerCase() === (c.nom||'').toLowerCase()
+        );
+        if (exists) { skipped++; }
+        else { g_contacts.push(c); added++; }
+      });
+      renderContacts();
+      saveContacts();
+      toast(`Contacts importés : +${added} nouveau(x), ${skipped} déjà existant(s).`);
+    } catch(err) { alert('Erreur lecture contacts : ' + err.message); }
+  };
+  reader.readAsText(f);
+  e.target.value = '';
+});
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  EDIT MODAL                                                              ║
@@ -2406,6 +2471,7 @@ function saveEdit() {
     if (!existing) {
       g_contacts.push({societe:r.client,nom:r.contact,tel:r.tel,email:r.email,cp:'',notes:''});
       renderContacts();
+      saveContacts();
     }
   }
   if (document.getElementById('ed-cc').checked&&ccWas!=='Cc') {
@@ -2698,12 +2764,17 @@ function downloadText(filename, text) {
 // ║  EXPORT / IMPORT WORKFLOW — dossiers actifs uniquement                  ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 document.getElementById('btn-export-wf').onclick = () => {
+  const myName = localStorage.getItem('dispatch_operator') || '';
+
   // Exporter uniquement les dossiers en cours (pas les terminés/archivés)
   const active = g_master.filter(r => {
     const s = parseInt(statutNum(r.statut));
     return s >= 1 && s <= 9 && s !== 8; // Tout sauf "Terminé"
   });
   if (!active.length) return toast('Aucun dossier actif à exporter.');
+
+  // S'assurer que chaque dossier a un opérateur (tag avec le nom si absent)
+  active.forEach(r => { if (!r.operator && myName) r.operator = myName; });
 
   // Exporter aussi les rawData correspondants
   const activeRaw = {};
@@ -2713,10 +2784,16 @@ document.getElementById('btn-export-wf').onclick = () => {
     });
   });
 
+  // Résumé par opérateur pour le header
+  const byOp = {};
+  active.forEach(r => { const op = r.operator || 'Non assigné'; byOp[op] = (byOp[op]||0) + 1; });
+
   const payload = {
     _type: 'dispatch_workflow',
     _exportDate: new Date().toISOString(),
-    _version: 2,
+    _exportedBy: myName || 'inconnu',
+    _version: 3,
+    _summary: byOp,
     master: active,
     rawData: activeRaw,
     cpData: g_cpData,
@@ -2724,8 +2801,9 @@ document.getElementById('btn-export-wf').onclick = () => {
   };
 
   const ts = new Date().toISOString().slice(0,16).replace('T','_').replace(':','-');
-  downloadText(`Workflow_${active.length}dossiers_${ts}.json`, JSON.stringify(payload, null, 2));
-  toast(`${active.length} dossier(s) actifs exportés. Fichier prêt à transmettre.`);
+  const nameTag = myName ? `_${myName}` : '';
+  downloadText(`Workflow${nameTag}_${active.length}dossiers_${ts}.json`, JSON.stringify(payload, null, 2));
+  toast(`${active.length} dossier(s) exportés par ${myName || '?'}. Fichier prêt à transmettre.`);
 };
 
 document.getElementById('btn-import-wf').onclick = () => document.getElementById('wf-input').click();
@@ -2775,8 +2853,10 @@ document.getElementById('wf-input').addEventListener('change', e => {
       }
 
       renderMaster(); renderKanban(); renderCP(); renderContacts(); updateStats();
+      populateOperatorFilter(); // Rafraîchir le filtre avec les nouveaux opérateurs
       markDirty();
-      toast(`Workflow importé : +${added} nouveau(x), ${updated} mis à jour.`);
+      const from = d._exportedBy ? ` (de ${d._exportedBy})` : '';
+      toast(`Workflow importé${from} : +${added} nouveau(x), ${updated} mis à jour.`);
     } catch(err) { alert('Erreur lecture workflow : ' + err.message); }
   };
   reader.readAsText(f);
@@ -2877,38 +2957,49 @@ async function apiCall(endpoint, data = {}) {
 // ║  INDEXEDDB — Stockage local haute capacité (remplace JSON/localStorage) ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 const IDB_NAME = 'DispatchDB';
-const IDB_VERSION = 1;
+const IDB_VERSION = 2;
 const IDB_STORE = 'state';
+const IDB_CONTACTS = 'contacts';
 let _idb = null;
 
 function idbOpen() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(IDB_NAME, IDB_VERSION);
-    req.onupgradeneeded = e => { e.target.result.createObjectStore(IDB_STORE); };
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+      if (!db.objectStoreNames.contains(IDB_CONTACTS)) db.createObjectStore(IDB_CONTACTS);
+    };
     req.onsuccess = e => { _idb = e.target.result; resolve(_idb); };
     req.onerror = e => { console.warn('IndexedDB:', e.target.error); reject(e.target.error); };
   });
 }
 
-function idbSave(data) {
+function idbPut(store, key, data) {
   if (!_idb) return Promise.resolve();
   return new Promise((resolve, reject) => {
-    const tx = _idb.transaction(IDB_STORE, 'readwrite');
-    tx.objectStore(IDB_STORE).put(data, 'dispatch_state');
+    const tx = _idb.transaction(store, 'readwrite');
+    tx.objectStore(store).put(data, key);
     tx.oncomplete = () => resolve();
     tx.onerror = e => { console.warn('IDB save:', e.target.error); reject(e.target.error); };
   });
 }
 
-function idbLoad() {
+function idbGet(store, key) {
   if (!_idb) return Promise.resolve(null);
   return new Promise((resolve, reject) => {
-    const tx = _idb.transaction(IDB_STORE, 'readonly');
-    const req = tx.objectStore(IDB_STORE).get('dispatch_state');
+    const tx = _idb.transaction(store, 'readonly');
+    const req = tx.objectStore(store).get(key);
     req.onsuccess = () => resolve(req.result || null);
     req.onerror = e => reject(e.target.error);
   });
 }
+
+// Raccourcis pour compatibilité
+function idbSave(data) { return idbPut(IDB_STORE, 'dispatch_state', data); }
+function idbLoad() { return idbGet(IDB_STORE, 'dispatch_state'); }
+function idbSaveContacts() { return idbPut(IDB_CONTACTS, 'contacts', g_contacts); }
+function idbLoadContacts() { return idbGet(IDB_CONTACTS, 'contacts'); }
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  AUTO-SAVE — dirty flag + debounce (ne sauvegarde que si changement)    ║
@@ -2929,8 +3020,14 @@ async function autoSave() {
   _dirty = false;
   const data = { master: g_master, rawData: g_rawData, cpData: g_cpData, contacts: g_contacts, archive: g_archive };
   // Sauvegarder en parallèle : IndexedDB (local rapide) + API AutoIt (backend)
-  try { await Promise.all([ idbSave(data), apiCall('save', data) ]); }
+  // Contacts sauvés séparément dans IndexedDB (store dédié)
+  try { await Promise.all([ idbSave(data), idbSaveContacts(), apiCall('save', data) ]); }
   catch(e) { console.warn('autoSave error:', e); }
+}
+
+// Sauvegarde contacts uniquement (après ajout/modif/suppression)
+async function saveContacts() {
+  try { await idbSaveContacts(); } catch(e) { console.warn('contacts save:', e); }
 }
 
 // Écoute intelligente : ne marque dirty que sur vrais changements
@@ -2959,21 +3056,31 @@ window.onload = async () => {
 
   let loaded = false;
 
-  // 2. Essayer IndexedDB d'abord (instantané, pas de réseau)
+  // 2. Charger contacts depuis leur store dédié (indépendant)
+  try {
+    const idbContacts = await idbLoadContacts();
+    if (idbContacts && idbContacts.length > 0) {
+      g_contacts = idbContacts;
+      console.log(`Contacts chargés depuis IndexedDB : ${g_contacts.length}`);
+    }
+  } catch(e) { console.warn('IDB contacts load:', e); }
+
+  // 3. Essayer IndexedDB d'abord pour les dossiers (instantané, pas de réseau)
   try {
     const idbData = await idbLoad();
     if (idbData && idbData.master && idbData.master.length > 0) {
       g_master = idbData.master || [];
       g_rawData = idbData.rawData || {};
       g_cpData = idbData.cpData || [];
-      g_contacts = idbData.contacts || [];
+      // Contacts : prendre IDB dédié en priorité, sinon ceux du state global
+      if (!g_contacts.length && idbData.contacts) g_contacts = idbData.contacts;
       g_archive = idbData.archive || [];
       loaded = true;
       console.log('Chargé depuis IndexedDB (local).');
     }
   } catch(e) { console.warn('IDB load error:', e); }
 
-  // 3. Fallback : charger depuis API AutoIt
+  // 4. Fallback : charger depuis API AutoIt
   if (!loaded) {
     try {
       const response = await fetch(`${API_URL}/load`);
@@ -2982,11 +3089,12 @@ window.onload = async () => {
         g_master = d.master || [];
         g_rawData = d.rawData || {};
         g_cpData = d.cpData || [];
-        g_contacts = d.contacts || [];
+        if (!g_contacts.length && d.contacts) g_contacts = d.contacts;
         g_archive = d.archive || [];
         loaded = true;
         // Syncer vers IndexedDB pour la prochaine fois
         idbSave({ master: g_master, rawData: g_rawData, cpData: g_cpData, contacts: g_contacts, archive: g_archive });
+        idbSaveContacts();
       }
     } catch (err) {
       console.log("Serveur hors ligne ou premier démarrage.");
@@ -3890,33 +3998,65 @@ async function reseauForceLoad() {
     const data = await apiCall('load-network-state', { path });
     if (data && data.state) {
       applyLoadedState(data.state);
-      toast('État rechargé depuis ' + path);
+      // Réécrire le fichier fusionné sur le réseau
+      await apiCall('save-network-state', { path, state: buildSaveState() });
+      toast('État synchronisé avec ' + path);
       const st = document.getElementById('opts-reseau-status');
-      if (st) st.textContent = '✓ Rechargé depuis réseau — ' + new Date().toLocaleTimeString();
+      if (st) st.textContent = '✓ Synchronisé — ' + new Date().toLocaleTimeString();
     }
   } catch(e) { toast('Erreur chargement réseau : ' + e.message); }
 }
 
 function buildSaveState() {
-  return {
-    master: g_master,
-    contacts: typeof g_contacts !== 'undefined' ? g_contacts : [],
-    savedAt: new Date().toISOString()
-  };
+  return buildFullSaveState();
 }
 
 function applyLoadedState(state) {
   if (state.master) {
-    // Fusionner : on garde les statuts du réseau, mais on garde les dossiers locaux non présents
+    // Fusion bidirectionnelle : réseau → local (met à jour les existants, ajoute les absents)
+    let added = 0, updated = 0;
     state.master.forEach(remote => {
       const local = g_master.find(r => r.file === remote.file);
       if (local) {
-        // Mettre à jour le statut et les champs editables depuis le réseau
-        ['statut','contact','tel','email','comment','cc'].forEach(k => { if (remote[k]) local[k] = remote[k]; });
+        // Mettre à jour : prendre la version la plus récente (statut le plus avancé, ou dernier modifié)
+        const remoteStatut = parseInt(remote.statut) || 0;
+        const localStatut = parseInt(local.statut) || 0;
+        // Si le distant est plus avancé dans le workflow, on prend son statut
+        if (remoteStatut > localStatut && remoteStatut !== 9) {
+          local.statut = remote.statut;
+        }
+        // Toujours syncer les champs éditables depuis le réseau s'ils sont renseignés
+        ['contact','tel','email','comment','cc','operator','fcDate','fcHoraire','transp'].forEach(k => {
+          if (remote[k] && !local[k]) local[k] = remote[k];
+        });
+        updated++;
+      } else {
+        // Dossier absent localement → l'ajouter (un collègue l'a importé)
+        g_master.push(remote);
+        added++;
       }
     });
+    if (added > 0) console.log(`Réseau : +${added} dossier(s) ajouté(s), ${updated} mis à jour.`);
   }
-  renderMaster(); renderKanban(); updateStats();
+  // Fusionner rawData (ajout des clés absentes)
+  if (state.rawData) {
+    Object.keys(state.rawData).forEach(k => {
+      if (!g_rawData[k]) g_rawData[k] = state.rawData[k];
+    });
+  }
+  renderMaster(); renderKanban(); renderCP(); updateStats();
+}
+
+// Construit l'état complet pour sauvegarde réseau (dossiers + contacts)
+function buildFullSaveState() {
+  return {
+    master: g_master,
+    rawData: g_rawData,
+    cpData: g_cpData,
+    contacts: typeof g_contacts !== 'undefined' ? g_contacts : [],
+    savedAt: new Date().toISOString(),
+    operator: localStorage.getItem('dispatch_operator') || ''
+  };
 }
 
 // Auto-save réseau lors de chaque autoSave
@@ -3927,6 +4067,111 @@ function autoSaveWithNetwork() {
   if (path) {
     apiCall('save-network-state', { path, state: buildSaveState() }).catch(() => {});
   }
+  // Auto-sync contacts réseau
+  contactsReseauAutoSync();
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  CONTACTS RÉSEAU — Fichier partagé avec fusion automatique              ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function contactsReseauSaveOpts() {
+  const path = (document.getElementById('opts-contacts-path')?.value || '').trim();
+  localStorage.setItem('dispatch_contacts_path', path);
+  const st = document.getElementById('opts-contacts-reseau-status');
+  if (st) st.textContent = '✓ Chemin enregistré — ' + new Date().toLocaleTimeString();
+  if (path) contactsReseauSync();
+}
+
+function contactsReseauLoadOpts() {
+  const path = localStorage.getItem('dispatch_contacts_path') || '';
+  const el = document.getElementById('opts-contacts-path');
+  if (el && path) el.value = path;
+}
+
+// Clé unique pour un contact (évite doublons)
+function _contactKey(c) {
+  return ((c.societe||'') + '|' + (c.nom||'') + '|' + (c.email||'')).toLowerCase().trim();
+}
+
+// Fusion bidirectionnelle : local + réseau → pas de doublons
+function _mergeContacts(local, remote) {
+  const map = new Map();
+  // D'abord les locaux
+  local.forEach(c => map.set(_contactKey(c), c));
+  // Puis les distants (ajoute les absents, ne remplace pas)
+  let added = 0;
+  remote.forEach(c => {
+    const key = _contactKey(c);
+    if (!map.has(key)) { map.set(key, c); added++; }
+  });
+  return { merged: Array.from(map.values()), added };
+}
+
+async function contactsReseauSync() {
+  const path = localStorage.getItem('dispatch_contacts_path') || '';
+  if (!path) return toast('Chemin contacts réseau non configuré. Aller dans Options → Réseau.');
+  const st = document.getElementById('opts-contacts-reseau-status');
+
+  try {
+    // 1. Charger le fichier réseau existant
+    let remoteContacts = [];
+    try {
+      const data = await apiCall('load-network-state', { path });
+      if (data && data.state && data.state.contacts) {
+        remoteContacts = data.state.contacts;
+      }
+    } catch(e) { /* fichier n'existe pas encore, on va le créer */ }
+
+    // 2. Fusionner local + réseau
+    const { merged, added } = _mergeContacts(g_contacts, remoteContacts);
+    const newFromRemote = added;
+    const newForRemote = merged.length - remoteContacts.length;
+
+    // 3. Appliquer localement
+    g_contacts = merged;
+    renderContacts();
+    saveContacts();
+
+    // 4. Écrire le résultat fusionné sur le réseau
+    const payload = {
+      path,
+      state: {
+        contacts: g_contacts,
+        savedAt: new Date().toISOString(),
+        count: g_contacts.length
+      }
+    };
+    await apiCall('save-network-state', payload);
+
+    if (st) st.textContent = `✓ Sync — ${g_contacts.length} contacts (${newFromRemote > 0 ? '+' + newFromRemote + ' du réseau' : 'à jour'}) — ${new Date().toLocaleTimeString()}`;
+    if (newFromRemote > 0) toast(`${newFromRemote} nouveau(x) contact(s) récupéré(s) depuis le réseau.`);
+  } catch(e) {
+    if (st) st.textContent = '✕ Erreur sync : ' + e.message;
+    toast('Erreur synchronisation contacts : ' + e.message);
+  }
+}
+
+// Auto-sync contacts réseau (appelé périodiquement, silencieux)
+let _contactsSyncTimer = null;
+function contactsReseauAutoSync() {
+  const path = localStorage.getItem('dispatch_contacts_path') || '';
+  if (!path) return;
+  // Debounce : max 1 sync toutes les 30s
+  if (_contactsSyncTimer) return;
+  _contactsSyncTimer = setTimeout(() => { _contactsSyncTimer = null; }, 30000);
+  // Sync silencieux (pas de toast)
+  apiCall('load-network-state', { path }).then(data => {
+    if (data && data.state && data.state.contacts) {
+      const { merged, added } = _mergeContacts(g_contacts, data.state.contacts);
+      if (added > 0) {
+        g_contacts = merged;
+        renderContacts();
+        saveContacts();
+        // Réécrire le fichier réseau avec la fusion
+        apiCall('save-network-state', { path, state: { contacts: g_contacts, savedAt: new Date().toISOString(), count: g_contacts.length } }).catch(() => {});
+      }
+    }
+  }).catch(() => {});
 }
 
 // Init au chargement
@@ -3934,6 +4179,7 @@ window.addEventListener('load', () => {
   setTimeout(() => {
     optsLoadPJ();
     optsLoadReseau();
+    contactsReseauLoadOpts();
     optsLoadFuel();
     cpCfgLoad();
     populateOperatorFilter();
@@ -3941,6 +4187,9 @@ window.addEventListener('load', () => {
     // Charger l'état réseau au démarrage
     const path = localStorage.getItem('dispatch_state_path') || '';
     if (path) reseauForceLoad();
+    // Sync contacts réseau au démarrage
+    const cPath = localStorage.getItem('dispatch_contacts_path') || '';
+    if (cPath) contactsReseauSync();
   }, 800); // après que g_master soit peuplé depuis AutoIt
 });
 

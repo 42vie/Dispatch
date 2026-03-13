@@ -3034,9 +3034,14 @@ async function autoSave() {
   if (!_dirty) return;
   _dirty = false;
   const data = { master: g_master, rawData: g_rawData, cpData: g_cpData, contacts: g_contacts, archive: g_archive };
-  // Sauvegarder en parallèle : IndexedDB (local rapide) + API AutoIt (backend)
-  // Contacts sauvés séparément dans IndexedDB (store dédié)
-  try { await Promise.all([ idbSave(data), idbSaveContacts(), apiCall('save', data) ]); }
+  // Sauvegarder en parallèle : IndexedDB + API AutoIt + Réseau partagé
+  const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
+  try { await Promise.all([
+    idbSave(data),
+    idbSaveContacts(),
+    apiCall('save', data),
+    path ? netSave(path, buildSaveState()) : Promise.resolve()
+  ]); }
   catch(e) { console.warn('autoSave error:', e); }
 }
 

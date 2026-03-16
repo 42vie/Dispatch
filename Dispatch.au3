@@ -145,7 +145,22 @@ Func _HandleClient($iSocket)
     If $aLines[0] < 1 Then Return TCPCloseSocket($iSocket)
     Local $aTop = StringSplit($aLines[1], " ")
     If $aTop[0] < 2 Then Return TCPCloseSocket($iSocket)
+    Local $sMethod = $aTop[1]
     Local $sURL = $aTop[2]
+
+    ; ── Gérer preflight CORS (OPTIONS) ──
+    If $sMethod = "OPTIONS" Then
+        Local $sCors = "HTTP/1.1 204 No Content" & @CRLF & _
+            "Access-Control-Allow-Origin: *" & @CRLF & _
+            "Access-Control-Allow-Methods: GET, POST, OPTIONS" & @CRLF & _
+            "Access-Control-Allow-Headers: Content-Type" & @CRLF & _
+            "Access-Control-Max-Age: 86400" & @CRLF & _
+            "Content-Length: 0" & @CRLF & _
+            "Connection: close" & @CRLF & @CRLF
+        TCPSend($iSocket, StringToBinary($sCors, 4))
+        TCPCloseSocket($iSocket)
+        Return
+    EndIf
 
     If $sURL = "/" Then
         _SendHttpResponse($iSocket, 200, "text/html", $g_sHTML)
@@ -336,6 +351,8 @@ Func _SendHttpResponse($iSocket, $iCode, $sContentType, $sData)
                       "Content-Type: " & $sContentType & "; charset=UTF-8" & @CRLF & _
                       "Content-Length: " & $iLen & @CRLF & _
                       "Access-Control-Allow-Origin: *" & @CRLF & _
+                      "Access-Control-Allow-Headers: Content-Type" & @CRLF & _
+                      "Cache-Control: no-cache" & @CRLF & _
                       "Connection: close" & @CRLF & @CRLF
     ; Envoyer par blocs pour éviter les envois partiels sur gros payloads
     Local $bAll = StringToBinary($sHeaders, 4) & $bData

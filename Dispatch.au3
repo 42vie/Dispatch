@@ -35,7 +35,9 @@ Global Const $COMAT_DELAY_LOAD = 3000
 Global $bCOMAT_Stop  = False
 Global $bCOMAT_Pause = False
 
-Opt("TrayIconDebug", 1)
+Opt("TrayIconDebug", 0)
+Opt("TrayMenuMode", 3)        ; pas de menu Pause/Exit par défaut
+Opt("TrayAutoPause", 0)       ; ne jamais auto-pauser le script
 TCPStartup()
 
 Global $g_iPort       = 9500

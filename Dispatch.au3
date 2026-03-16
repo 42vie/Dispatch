@@ -5,6 +5,8 @@
 #include <String.au3>
 #include <Date.au3>
 #include <Misc.au3>
+#include <GUIConstantsEx.au3>
+#include <WindowsConstants.au3>
 
 ; ═══════════════════════════════════════════════════════════════════════════
 ; VARIABLES GLOBALES
@@ -18,6 +20,8 @@ Global $g_idTrackLV   = 0
 Global $bFC_Stop        = False
 Global $bFC_Pause       = False
 Global $iFC_StepCurrent = 0
+Global $g_sFC_AuditLog  = ""
+Global $g_bFC_Audit     = True
 
 Global $sClassFileOpen  = "[CLASS:#32770; TITLE:Open]"
 Global $sClassMenu      = "[CLASS:TfmMenuSelection]"
@@ -330,6 +334,9 @@ Func _HandleClient($iSocket)
                 $sCpRaw_a = _GetJsonValue($sBody, "cpConfig")
                 IniWrite($sIni_a, "CP", "Config", $sCpRaw_a)
 
+            Case "DIAG"
+                _RunDiagnostic()
+
         EndSwitch
 
         _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
@@ -419,6 +426,142 @@ EndFunc
 Func _WinWaitSpinner($sClass, $sTxt)
     _Spinner($sTxt)
     Return WinWait($sClass, "", 10)
+EndFunc
+
+; ==============================================================================
+; AUDIT FC — Diagnostic détaillé pour FileClosing
+; ==============================================================================
+Func _FC_AuditInit($sLabel)
+    $g_sFC_AuditLog = ""
+    _FC_AuditLog("====== AUDIT FC : " & $sLabel & " ======")
+    _FC_AuditLog("PC       : " & @ComputerName)
+    _FC_AuditLog("User     : " & @UserName)
+    _FC_AuditLog("OS       : " & @OSVersion & " " & @OSArch)
+    _FC_AuditLog("RAM Free : " & Round(MemGetStats()[2] / 1024, 0) & " MB / " & Round(MemGetStats()[1] / 1024, 0) & " MB")
+    _FC_AuditLog("CPU      : " & @CPUArch)
+    Local $aProc = ProcessList("ETMS.exe")
+    If IsArray($aProc) Then
+        _FC_AuditLog("ETMS PID : " & ($aProc[0][0] > 0 ? $aProc[1][1] : "NON TROUVE"))
+    Else
+        _FC_AuditLog("ETMS PID : NON TROUVE")
+    EndIf
+EndFunc
+
+Func _FC_AuditLog($sMsg)
+    If Not $g_bFC_Audit Then Return
+    Local $sLine = @YEAR & "-" & @MON & "-" & @MDAY & " " & @HOUR & ":" & @MIN & ":" & @SEC & "." & @MSEC & "  " & $sMsg
+    $g_sFC_AuditLog &= $sLine & @CRLF
+EndFunc
+
+Func _FC_AuditStep($iStep, $sDesc)
+    _FC_AuditLog("── STEP " & $iStep & " : " & $sDesc & " ──")
+EndFunc
+
+Func _FC_AuditWinState($sClass, $sLabel)
+    Local $bExists = WinExists($sClass)
+    Local $sState  = "exists=" & $bExists
+    If $bExists Then
+        Local $hW  = WinGetHandle($sClass)
+        Local $aPos = WinGetPos($hW)
+        Local $sTitle = WinGetTitle($hW)
+        $sState &= " | hwnd=" & $hW & " | title=" & $sTitle
+        If IsArray($aPos) Then $sState &= " | pos=" & $aPos[0] & "," & $aPos[1] & " size=" & $aPos[2] & "x" & $aPos[3]
+        $sState &= " | state=" & WinGetState($hW)
+    EndIf
+    _FC_AuditLog("  WIN[" & $sLabel & "] " & $sState)
+EndFunc
+
+Func _FC_AuditCtrl($hWnd, $sCtrl, $sLabel)
+    Local $sTxt = ControlGetText($hWnd, "", $sCtrl)
+    Local $hCtrl = ControlGetHandle($hWnd, "", $sCtrl)
+    _FC_AuditLog("  CTRL[" & $sLabel & "] handle=" & $hCtrl & " | text='" & StringLeft($sTxt, 120) & "'")
+EndFunc
+
+Func _FC_AuditTiming($sLabel, $nMs)
+    Local $sSuffix = ""
+    If $nMs > 5000 Then $sSuffix = " *** LENT ***"
+    If $nMs > 10000 Then $sSuffix = " *** TRES LENT ***"
+    If $nMs > 20000 Then $sSuffix = " *** CRITIQUE ***"
+    _FC_AuditLog("  TIMING[" & $sLabel & "] " & Round($nMs, 0) & " ms" & $sSuffix)
+EndFunc
+
+Func _FC_AuditFileCheck($sPath)
+    _FC_AuditLog("  FILE[" & $sPath & "]")
+    If FileExists($sPath) Then
+        Local $iSize = FileGetSize($sPath)
+        Local $sTime = FileGetTime($sPath, 0, 1)
+        _FC_AuditLog("    exists=TRUE | size=" & $iSize & " octets (" & Round($iSize/1024, 1) & " KB) | modified=" & $sTime)
+    Else
+        _FC_AuditLog("    exists=FALSE *** FICHIER INTROUVABLE ***")
+        ; Verifier le dossier parent
+        Local $sDir = StringRegExpReplace($sPath, "\\[^\\]+$", "")
+        If FileExists($sDir) Then
+            _FC_AuditLog("    dossier parent OK : " & $sDir)
+            ; Lister les .eds dans le dossier
+            Local $hSearch = FileFindFirstFile($sDir & "\*.eds")
+            If $hSearch <> -1 Then
+                Local $sFiles = ""
+                Local $iCount = 0
+                While 1
+                    Local $sFile = FileFindNextFile($hSearch)
+                    If @error Then ExitLoop
+                    $sFiles &= $sFile & ", "
+                    $iCount += 1
+                WEnd
+                FileClose($hSearch)
+                _FC_AuditLog("    .eds trouves (" & $iCount & ") : " & StringTrimRight($sFiles, 2))
+            Else
+                _FC_AuditLog("    AUCUN .eds dans le dossier !")
+            EndIf
+        Else
+            _FC_AuditLog("    *** DOSSIER PARENT INTROUVABLE : " & $sDir & " ***")
+        EndIf
+    EndIf
+EndFunc
+
+Func _FC_AuditSave($sNum)
+    If $g_sFC_AuditLog = "" Then Return ""
+    Local $sDir = @ScriptDir & "\logs"
+    If Not FileExists($sDir) Then DirCreate($sDir)
+    Local $sFile = $sDir & "\FC_AUDIT_" & $sNum & "_" & @YEAR & @MON & @MDAY & "_" & @HOUR & @MIN & @SEC & ".log"
+    Local $hFile = FileOpen($sFile, 2)
+    If $hFile = -1 Then Return ""
+    FileWrite($hFile, $g_sFC_AuditLog)
+    FileClose($hFile)
+    Return $sFile
+EndFunc
+
+Func _FC_AuditShow($sNum)
+    If Not $g_bFC_Audit Then Return
+    Local $sFile = _FC_AuditSave($sNum)
+    If $sFile = "" Then Return
+
+    ; GUI avec le rapport complet
+    Local $hGUI = GUICreate("AUDIT FC — " & $sNum, 750, 550, -1, -1)
+    GUISetBkColor(0x1E1E1E, $hGUI)
+    GUISetFont(9, 400, 0, "Consolas")
+    Local $idEdit = GUICtrlCreateEdit($g_sFC_AuditLog, 5, 5, 740, 495, BitOR(0x0004, 0x0800, 0x00200000))
+    GUICtrlSetBkColor($idEdit, 0x1E1E1E)
+    GUICtrlSetColor($idEdit, 0x00FF00)
+    Local $idBtnCopy = GUICtrlCreateButton("Copier", 5, 505, 120, 35)
+    Local $idBtnOpen = GUICtrlCreateButton("Ouvrir le .log", 130, 505, 150, 35)
+    Local $idBtnClose = GUICtrlCreateButton("Fermer", 625, 505, 120, 35)
+    GUISetState(@SW_SHOW, $hGUI)
+
+    While 1
+        Switch GUIGetMsg()
+            Case $GUI_EVENT_CLOSE, $idBtnClose
+                ExitLoop
+            Case $idBtnCopy
+                ClipPut($g_sFC_AuditLog)
+                ToolTip("Copié !", Default, Default, "Audit FC", 1)
+                Sleep(1000)
+                ToolTip("")
+            Case $idBtnOpen
+                ShellExecute($sFile)
+        EndSwitch
+    WEnd
+    GUIDelete($hGUI)
 EndFunc
 
 Func _FC_WaitIfPaused()
@@ -927,8 +1070,17 @@ Func _Run_FileClosing_UPS($Num)
     Local Const $sFC_INPUT    = "[CLASS:TInputQueryForm]"
     Local Const $sFC_EDS      = "F:\Scripting\Export\EXPORT_HPE_FILECLOSING_001\EXPORT_HPE_FILECLOSING_031.eds"
 
+    _FC_AuditInit("FC-UPS | Num=" & $Num)
+    _FC_AuditFileCheck($sFC_EDS)
+    Local $tTotal = TimerInit()
+
     Local $hWnd = _GetWindowETMS()
-    If $hWnd = 0 Then Return
+    If $hWnd = 0 Then
+        _FC_AuditLog("*** ERREUR : E.TMS introuvable (hWnd=0) ***")
+        _FC_AuditShow($Num)
+        Return
+    EndIf
+    _FC_AuditLog("E.TMS hwnd=" & $hWnd)
     WinActivate($hWnd)
     WinWaitActive($hWnd, "", 3)
     $bFC_Stop = False
@@ -936,30 +1088,50 @@ Func _Run_FileClosing_UPS($Num)
 
     ; ── 1. LOG J ─────────────────────────────────────────────────────────────
     $iFC_StepCurrent = 1
+    _FC_AuditStep(1, "LOG J")
+    Local $t1 = TimerInit()
     _Spinner("FC-UPS [" & $Num & "] 1/5 - LOG J...")
+    _FC_AuditCtrl($hWnd, $sFC_LOG, "LOG avant")
     ControlSetText($hWnd, "", $sFC_LOG, "LOG " & $Num)
     Sleep(300)
+    _FC_AuditCtrl($hWnd, $sFC_LOG, "LOG apres")
     ControlSend($hWnd, "", $sFC_LOG, "{F8}")
     Sleep(3000)
+    _FC_AuditTiming("Step1-LOGJ", TimerDiff($t1))
     _FC_WaitIfPaused()
-    If $bFC_Stop Then Return
+    If $bFC_Stop Then
+        _FC_AuditLog("*** STOP par utilisateur Step 1 ***")
+        _FC_AuditShow($Num)
+        Return
+    EndIf
 
     ; ── 2. Toolbar EDS ───────────────────────────────────────────────────────
     $iFC_StepCurrent = 2
+    _FC_AuditStep(2, "Toolbar EDS click")
+    Local $t2 = TimerInit()
     _Spinner("FC-UPS [" & $Num & "] 2/5 - Lancement EDS...")
     WinActivate($hWnd)
     WinWaitActive($hWnd, "", 3)
     Sleep(500)
+    _FC_AuditWinState("[CLASS:TfmBrowser]", "ETMS avant click toolbar")
     ControlClick($hWnd, "", $sFC_TOOLBAR, "LEFT", 1, 54, 9)
+    _FC_AuditTiming("Step2-ToolbarClick", TimerDiff($t2))
     _FC_WaitIfPaused()
-    If $bFC_Stop Then Return
+    If $bFC_Stop Then
+        _FC_AuditLog("*** STOP par utilisateur Step 2 ***")
+        _FC_AuditShow($Num)
+        Return
+    EndIf
 
     ; ── 3. FileOpen (retry x3) ────────────────────────────────────────────────
     $iFC_StepCurrent = 3
+    _FC_AuditStep(3, "FileOpen dialog")
     Local $bFileOK = False
     Local $iTentative = 0
     While Not $bFileOK And $iTentative < 3
         $iTentative += 1
+        Local $t3 = TimerInit()
+        _FC_AuditLog("  Tentative " & $iTentative & "/3")
         _Spinner("FC-UPS [" & $Num & "] 3/5 - FileOpen (essai " & $iTentative & "/3)...")
         If $iTentative > 1 Then
             If WinExists($sFC_FILEOPEN) Then WinClose($sFC_FILEOPEN)
@@ -972,38 +1144,79 @@ Func _Run_FileClosing_UPS($Num)
         Local $iTimer = TimerInit()
         While Not WinExists($sFC_FILEOPEN)
             Sleep(100)
-            If _IsPressed("1B") Then Return
-            If TimerDiff($iTimer) > 10000 Then ExitLoop
+            If _IsPressed("1B") Then
+                _FC_AuditLog("*** ECHAP par utilisateur pendant attente FileOpen ***")
+                _FC_AuditShow($Num)
+                Return
+            EndIf
+            If TimerDiff($iTimer) > 10000 Then
+                _FC_AuditLog("  TIMEOUT 10s : FileOpen ne s'ouvre pas")
+                ExitLoop
+            EndIf
         WEnd
-        If Not WinExists($sFC_FILEOPEN) Then ContinueLoop
+        _FC_AuditTiming("Attente apparition FileOpen", TimerDiff($iTimer))
+        If Not WinExists($sFC_FILEOPEN) Then
+            _FC_AuditLog("  FileOpen toujours absent apres timeout")
+            _FC_AuditWinState($sFC_FILEOPEN, "FileOpen")
+            ContinueLoop
+        EndIf
         WinActivate($sFC_FILEOPEN)
         WinWaitActive($sFC_FILEOPEN, "", 3)
+        _FC_AuditWinState($sFC_FILEOPEN, "FileOpen ouvert")
         Sleep(300)
         ControlSetText($sFC_FILEOPEN, "", "[CLASS:TRzEdit; INSTANCE:1]", "")
         Sleep(150)
         ControlSetText($sFC_FILEOPEN, "", "[CLASS:TRzEdit; INSTANCE:1]", $sFC_EDS)
         Sleep(500)
-        If Not StringInStr(ControlGetText($sFC_FILEOPEN, "", "[CLASS:TRzEdit; INSTANCE:1]"), "EXPORT_HPE_FILECLOSING") Then ContinueLoop
+        Local $sReadBack = ControlGetText($sFC_FILEOPEN, "", "[CLASS:TRzEdit; INSTANCE:1]")
+        _FC_AuditLog("  Champ FileOpen apres ecriture = '" & $sReadBack & "'")
+        If Not StringInStr($sReadBack, "EXPORT_HPE_FILECLOSING") Then
+            _FC_AuditLog("  *** ECHEC : le texte n'a pas ete ecrit correctement ***")
+            ContinueLoop
+        EndIf
         Send("{ENTER}")
         Local $iWait = TimerInit()
         While WinExists($sFC_FILEOPEN)
             Sleep(100)
             If TimerDiff($iWait) > 5000 Then ExitLoop
         WEnd
-        If Not WinExists($sFC_FILEOPEN) Then $bFileOK = True
+        _FC_AuditTiming("Fermeture FileOpen apres ENTER", TimerDiff($iWait))
+        If Not WinExists($sFC_FILEOPEN) Then
+            $bFileOK = True
+            _FC_AuditLog("  FileOpen OK, fichier accepte")
+        Else
+            _FC_AuditLog("  *** FileOpen toujours ouvert apres 5s — fichier refuse ? ***")
+            _FC_AuditWinState($sFC_FILEOPEN, "FileOpen bloque")
+        EndIf
+        _FC_AuditTiming("Step3-Tentative" & $iTentative, TimerDiff($t3))
     WEnd
     If Not $bFileOK Then
+        _FC_AuditLog("*** ECHEC FINAL : 3 tentatives FileOpen echouees ***")
+        _FC_AuditTiming("TOTAL", TimerDiff($tTotal))
+        _FC_AuditShow($Num)
         MsgBox(16+262144, "Erreur FC-UPS", "Impossible d'ouvrir le fichier EDS." & @CRLF & "Dossier : " & $Num)
         $bFC_Stop = True
         Return
     EndIf
     _FC_WaitIfPaused()
-    If $bFC_Stop Then Return
+    If $bFC_Stop Then
+        _FC_AuditLog("*** STOP par utilisateur Step 3 ***")
+        _FC_AuditShow($Num)
+        Return
+    EndIf
 
     ; ── 4. Menu Selection ────────────────────────────────────────────────────
     $iFC_StepCurrent = 4
+    _FC_AuditStep(4, "Menu Selection")
+    Local $t4 = TimerInit()
     _WinWaitSpinner($sFC_MENU, "FC-UPS [" & $Num & "] 4/5 - Menu Selection...")
-    If $bFC_Stop Then Return
+    _FC_AuditTiming("Attente Menu Selection", TimerDiff($t4))
+    If $bFC_Stop Then
+        _FC_AuditLog("*** STOP Step 4 ***")
+        _FC_AuditShow($Num)
+        Return
+    EndIf
+    _FC_AuditWinState($sFC_MENU, "Menu Selection")
     Local $hMenu = WinActivate($sFC_MENU)
     WinWaitActive($hMenu, "", 3)
     Sleep(300)
@@ -1012,13 +1225,25 @@ Func _Run_FileClosing_UPS($Num)
     ControlClick($hMenu, "", "[TEXT:OK]")
     WinWaitClose($hMenu, "", 5)
     Sleep(500)
+    _FC_AuditTiming("Step4-MenuSelection", TimerDiff($t4))
     _FC_WaitIfPaused()
-    If $bFC_Stop Then Return
+    If $bFC_Stop Then
+        _FC_AuditLog("*** STOP Step 4 apres ***")
+        _FC_AuditShow($Num)
+        Return
+    EndIf
 
     ; ── 5. Numéro J ──────────────────────────────────────────────────────────
     $iFC_StepCurrent = 5
+    _FC_AuditStep(5, "Numero J = " & $Num)
+    Local $t5 = TimerInit()
     _WinWaitSpinner($sFC_INPUT, "FC-UPS [" & $Num & "] 5/5 - Numéro J...")
-    If $bFC_Stop Then Return
+    _FC_AuditTiming("Attente Input Num J", TimerDiff($t5))
+    If $bFC_Stop Then
+        _FC_AuditLog("*** STOP Step 5 ***")
+        _FC_AuditShow($Num)
+        Return
+    EndIf
     Local $hInput1 = WinActivate($sFC_INPUT)
     WinWaitActive($hInput1, "", 3)
     Sleep(300)
@@ -1027,13 +1252,24 @@ Func _Run_FileClosing_UPS($Num)
     ControlClick($hInput1, "", "[TEXT:OK]")
     WinWaitClose($hInput1, "", 5)
     Sleep(3000) ; E.TMS charge
+    _FC_AuditTiming("Step5-NumeroJ", TimerDiff($t5))
     _FC_WaitIfPaused()
-    If $bFC_Stop Then Return
+    If $bFC_Stop Then
+        _FC_AuditLog("*** STOP Step 5 apres ***")
+        _FC_AuditShow($Num)
+        Return
+    EndIf
 
     ; ── 6. UPS = pas de Carrier ID → première popup = DEF → terminé ──────────
     $iFC_StepCurrent = 6
+    _FC_AuditStep(6, "DEF")
+    Local $t6 = TimerInit()
     _WinWaitSpinner($sFC_INPUT, "FC-UPS [" & $Num & "] DEF...")
-    If $bFC_Stop Then Return
+    If $bFC_Stop Then
+        _FC_AuditLog("*** STOP Step 6 ***")
+        _FC_AuditShow($Num)
+        Return
+    EndIf
     Local $hDef = WinActivate($sFC_INPUT)
     WinWaitActive($hDef, "", 3)
     Sleep(300)
@@ -1041,14 +1277,22 @@ Func _Run_FileClosing_UPS($Num)
     Sleep(300)
     ControlClick($hDef, "", "[TEXT:OK]")
     WinWaitClose($hDef, "", 5)
+    _FC_AuditTiming("Step6-DEF", TimerDiff($t6))
 
     ; ── Attendre le script auto E.TMS (min 20s) ──────────────────────────────
     _Spinner("FC-UPS [" & $Num & "] Script auto en cours... (20s)")
     Sleep(20000)
     _FC_WaitIfPaused()
-    If $bFC_Stop Then Return
+    If $bFC_Stop Then
+        _FC_AuditLog("*** STOP pendant attente script auto ***")
+        _FC_AuditShow($Num)
+        Return
+    EndIf
 
     ; ── C'EST TOUT POUR UPS ──────────────────────────────────────────────────
+    _FC_AuditTiming("TOTAL FC-UPS", TimerDiff($tTotal))
+    _FC_AuditLog("====== FIN FC-UPS OK ======")
+    _FC_AuditSave($Num)
     $iFC_StepCurrent = 0
     ToolTip("")
 EndFunc
@@ -1065,8 +1309,18 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
     Local Const $sFC_CARRIER  = "[CLASS:TEIInputQueryForm; REGEXPTITLE:(?i).*Carrier ID.*]"
     Local Const $sFC_EDS      = "F:\Scripting\Export\EXPORT_HPE_FILECLOSING_001\EXPORT_HPE_FILECLOSING_031.eds"
 
+    _FC_AuditInit("FC-Single | Num=" & $Num & " | Carrier=" & $CarrierID & " | StartStep=" & $iStartStep)
+    _FC_AuditFileCheck($sFC_EDS)
+    _FC_AuditLog("Params: DateG=" & $DateGOverride & " Horaire=" & $Horaire & " DLY=" & $DLY)
+    Local $tTotal = TimerInit()
+
     Local $hWnd = _GetWindowETMS()
-    If $hWnd = 0 Then Return
+    If $hWnd = 0 Then
+        _FC_AuditLog("*** ERREUR : E.TMS introuvable (hWnd=0) ***")
+        _FC_AuditShow($Num)
+        Return
+    EndIf
+    _FC_AuditLog("E.TMS hwnd=" & $hWnd)
     WinActivate($hWnd)
     WinWaitActive($hWnd, "", 3)
     $bFC_Stop  = False
@@ -1074,32 +1328,49 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
 
     If $iStartStep <= 1 Then
         $iFC_StepCurrent = 1
+        _FC_AuditStep(1, "LOG J")
+        Local $t1 = TimerInit()
         _Spinner("FC [" & $Num & "] 1/7 - LOG J...")
         ControlSetText($hWnd, "", $sFC_LOG, "LOG " & $Num)
         Sleep(300)
         ControlSend($hWnd, "", $sFC_LOG, "{F8}")
         Sleep(3000)
+        _FC_AuditTiming("Step1-LOGJ", TimerDiff($t1))
         _FC_WaitIfPaused()
-        If $bFC_Stop Then Return
+        If $bFC_Stop Then
+            _FC_AuditLog("*** STOP Step 1 ***")
+            _FC_AuditShow($Num)
+            Return
+        EndIf
     EndIf
 
     If $iStartStep <= 2 Then
         $iFC_StepCurrent = 2
+        _FC_AuditStep(2, "Toolbar EDS")
+        Local $t2 = TimerInit()
         _Spinner("FC [" & $Num & "] 2/7 - Lancement EDS...")
         WinActivate($hWnd)
         WinWaitActive($hWnd, "", 3)
         Sleep(500)
         ControlClick($hWnd, "", $sFC_TOOLBAR, "LEFT", 1, 54, 9)
+        _FC_AuditTiming("Step2-Toolbar", TimerDiff($t2))
         _FC_WaitIfPaused()
-        If $bFC_Stop Then Return
+        If $bFC_Stop Then
+            _FC_AuditLog("*** STOP Step 2 ***")
+            _FC_AuditShow($Num)
+            Return
+        EndIf
     EndIf
 
     If $iStartStep <= 3 Then
         $iFC_StepCurrent = 3
+        _FC_AuditStep(3, "FileOpen")
         Local $bFileOK    = False
         Local $iTentative = 0
         While Not $bFileOK And $iTentative < 3
             $iTentative += 1
+            Local $t3 = TimerInit()
+            _FC_AuditLog("  Tentative " & $iTentative & "/3")
             _Spinner("FC [" & $Num & "] 3/7 - FileOpen (essai " & $iTentative & "/3)...")
             If $iTentative > 1 Then
                 If WinExists($sFC_FILEOPEN) Then
@@ -1114,39 +1385,78 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
             Local $iTimer = TimerInit()
             While Not WinExists($sFC_FILEOPEN)
                 Sleep(100)
-                If _IsPressed("1B") Then Return
-                If TimerDiff($iTimer) > 10000 Then ExitLoop
+                If _IsPressed("1B") Then
+                    _FC_AuditLog("*** ECHAP pendant attente FileOpen ***")
+                    _FC_AuditShow($Num)
+                    Return
+                EndIf
+                If TimerDiff($iTimer) > 10000 Then
+                    _FC_AuditLog("  TIMEOUT 10s : FileOpen ne s'ouvre pas")
+                    ExitLoop
+                EndIf
             WEnd
-            If Not WinExists($sFC_FILEOPEN) Then ContinueLoop
+            _FC_AuditTiming("Attente FileOpen", TimerDiff($iTimer))
+            If Not WinExists($sFC_FILEOPEN) Then
+                _FC_AuditLog("  FileOpen absent apres timeout")
+                ContinueLoop
+            EndIf
             WinActivate($sFC_FILEOPEN)
             WinWaitActive($sFC_FILEOPEN, "", 3)
+            _FC_AuditWinState($sFC_FILEOPEN, "FileOpen")
             Sleep(300)
             ControlSetText($sFC_FILEOPEN, "", "[CLASS:TRzEdit; INSTANCE:1]", "")
             Sleep(150)
             ControlSetText($sFC_FILEOPEN, "", "[CLASS:TRzEdit; INSTANCE:1]", $sFC_EDS)
             Sleep(500)
-            If Not StringInStr(ControlGetText($sFC_FILEOPEN, "", "[CLASS:TRzEdit; INSTANCE:1]"), "EXPORT_HPE_FILECLOSING") Then ContinueLoop
+            Local $sReadBack = ControlGetText($sFC_FILEOPEN, "", "[CLASS:TRzEdit; INSTANCE:1]")
+            _FC_AuditLog("  Champ apres ecriture = '" & $sReadBack & "'")
+            If Not StringInStr($sReadBack, "EXPORT_HPE_FILECLOSING") Then
+                _FC_AuditLog("  *** ECHEC ecriture champ ***")
+                ContinueLoop
+            EndIf
             Send("{ENTER}")
             Local $iWait = TimerInit()
             While WinExists($sFC_FILEOPEN)
                 Sleep(100)
                 If TimerDiff($iWait) > 5000 Then ExitLoop
             WEnd
-            If Not WinExists($sFC_FILEOPEN) Then $bFileOK = True
+            _FC_AuditTiming("Fermeture FileOpen", TimerDiff($iWait))
+            If Not WinExists($sFC_FILEOPEN) Then
+                $bFileOK = True
+                _FC_AuditLog("  FileOpen OK")
+            Else
+                _FC_AuditLog("  *** FileOpen bloque ***")
+            EndIf
+            _FC_AuditTiming("Step3-Tentative" & $iTentative, TimerDiff($t3))
         WEnd
         If Not $bFileOK Then
+            _FC_AuditLog("*** ECHEC FINAL FileOpen 3 tentatives ***")
+            _FC_AuditTiming("TOTAL", TimerDiff($tTotal))
+            _FC_AuditShow($Num)
             MsgBox(16+262144, "Erreur FC", "Impossible d'ouvrir le fichier EDS." & @CRLF & "Dossier : " & $Num)
             $bFC_Stop = True
             Return
         EndIf
         _FC_WaitIfPaused()
-        If $bFC_Stop Then Return
+        If $bFC_Stop Then
+            _FC_AuditLog("*** STOP Step 3 ***")
+            _FC_AuditShow($Num)
+            Return
+        EndIf
     EndIf
 
     If $iStartStep <= 4 Then
         $iFC_StepCurrent = 4
+        _FC_AuditStep(4, "Menu Selection")
+        Local $t4 = TimerInit()
         _WinWaitSpinner($sFC_MENU, "FC [" & $Num & "] 4/7 - Menu Selection...")
-        If $bFC_Stop Then Return
+        _FC_AuditTiming("Attente Menu", TimerDiff($t4))
+        If $bFC_Stop Then
+            _FC_AuditLog("*** STOP Step 4 ***")
+            _FC_AuditShow($Num)
+            Return
+        EndIf
+        _FC_AuditWinState($sFC_MENU, "Menu Selection")
         Local $hMenu = WinActivate($sFC_MENU)
         WinWaitActive($hMenu, "", 3)
         Sleep(300)
@@ -1155,14 +1465,26 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
         ControlClick($hMenu, "", "[TEXT:OK]")
         WinWaitClose($hMenu, "", 5)
         Sleep(500)
+        _FC_AuditTiming("Step4-Menu", TimerDiff($t4))
         _FC_WaitIfPaused()
-        If $bFC_Stop Then Return
+        If $bFC_Stop Then
+            _FC_AuditLog("*** STOP Step 4 apres ***")
+            _FC_AuditShow($Num)
+            Return
+        EndIf
     EndIf
 
     If $iStartStep <= 5 Then
         $iFC_StepCurrent = 5
+        _FC_AuditStep(5, "Numero J = " & $Num)
+        Local $t5 = TimerInit()
         _WinWaitSpinner($sFC_INPUT, "FC [" & $Num & "] 5/7 - Numero J...")
-        If $bFC_Stop Then Return
+        _FC_AuditTiming("Attente Input NumJ", TimerDiff($t5))
+        If $bFC_Stop Then
+            _FC_AuditLog("*** STOP Step 5 ***")
+            _FC_AuditShow($Num)
+            Return
+        EndIf
         Local $hInput1 = WinActivate($sFC_INPUT)
         WinWaitActive($hInput1, "", 3)
         Sleep(300)
@@ -1171,14 +1493,26 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
         ControlClick($hInput1, "", "[TEXT:OK]")
         WinWaitClose($hInput1, "", 5)
         Sleep(300)
+        _FC_AuditTiming("Step5-NumJ", TimerDiff($t5))
         _FC_WaitIfPaused()
-        If $bFC_Stop Then Return
+        If $bFC_Stop Then
+            _FC_AuditLog("*** STOP Step 5 apres ***")
+            _FC_AuditShow($Num)
+            Return
+        EndIf
     EndIf
 
     If $iStartStep <= 6 Then
         $iFC_StepCurrent = 6
+        _FC_AuditStep(6, "Carrier ID = " & $CarrierID)
+        Local $t6 = TimerInit()
         _WinWaitSpinner($sFC_CARRIER, "FC [" & $Num & "] 6/7 - Carrier ID [" & $CarrierID & "]...")
-        If $bFC_Stop Then Return
+        _FC_AuditTiming("Attente Carrier", TimerDiff($t6))
+        If $bFC_Stop Then
+            _FC_AuditLog("*** STOP Step 6 ***")
+            _FC_AuditShow($Num)
+            Return
+        EndIf
         Local $hCarrier = WinActivate($sFC_CARRIER)
         WinWaitActive($hCarrier, "", 3)
         Sleep(300)
@@ -1187,8 +1521,13 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
         ControlClick($hCarrier, "", "[TEXT:OK]")
         WinWaitClose($hCarrier, "", 5)
         Sleep(3000)
+        _FC_AuditTiming("Step6-Carrier", TimerDiff($t6))
         _FC_WaitIfPaused()
-        If $bFC_Stop Then Return
+        If $bFC_Stop Then
+            _FC_AuditLog("*** STOP Step 6 apres ***")
+            _FC_AuditShow($Num)
+            Return
+        EndIf
     EndIf
 
     ; ── Calcul dates (si pas d'override depuis la modale) ────────────────────
@@ -1263,25 +1602,42 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
 
     If $iStartStep <= 7 Then
         $iFC_StepCurrent = 7
+        _FC_AuditStep(7, "Colonnes C..R (16 popups)")
         Local $p
         For $p = 0 To 15
-            If $aSkip[$p] Then ContinueLoop
-            If $bFC_Stop Then Return
+            If $aSkip[$p] Then
+                _FC_AuditLog("  Col " & Chr(67 + $p) & " : SKIP")
+                ContinueLoop
+            EndIf
+            If $bFC_Stop Then
+                _FC_AuditLog("*** STOP pendant colonnes (p=" & $p & ") ***")
+                _FC_AuditShow($Num)
+                Return
+            EndIf
             Local $sVal       = $aVal[$p]
             Local $colNom     = Chr(67 + $p)
             Local $bColValidee = False
             Local $iTimeout   = 0
             If $p >= 14 Then $iTimeout = 3
+            Local $tCol = TimerInit()
             While Not $bColValidee
                 _FC_WaitIfPaused()
-                If $bFC_Stop Then Return
+                If $bFC_Stop Then
+                    _FC_AuditLog("*** STOP Col " & $colNom & " ***")
+                    _FC_AuditShow($Num)
+                    Return
+                EndIf
                 _Spinner("FC [" & $Num & "] Col " & $colNom & "...")
                 Local $hWinWait = WinWait($sFC_INPUT, "", $iTimeout)
-                If $hWinWait = 0 And $p >= 14 Then ExitLoop 2
+                If $hWinWait = 0 And $p >= 14 Then
+                    _FC_AuditLog("  Col " & $colNom & " : timeout (optionnel, fin)")
+                    ExitLoop 2
+                EndIf
                 Local $hWin   = WinActivate($sFC_INPUT)
                 Local $sTitre = WinGetTitle($hWin)
                 Sleep(150)
                 If StringInStr($sTitre, "REASON") Then
+                    _FC_AuditLog("  Col " & $colNom & " : REASON popup -> DE")
                     ControlSetText($hWin, "", "[CLASS:TEdit; INSTANCE:1]", "DE")
                     Sleep(150)
                     ControlClick($hWin, "", "[TEXT:OK]")
@@ -1296,10 +1652,14 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
                     Sleep(300)
                 EndIf
             WEnd
+            _FC_AuditTiming("Col " & $colNom & " (val='" & StringLeft($sVal, 30) & "')", TimerDiff($tCol))
         Next
         Sleep(500)
     EndIf
 
+    _FC_AuditTiming("TOTAL FC-Single", TimerDiff($tTotal))
+    _FC_AuditLog("====== FIN FC-Single OK ======")
+    _FC_AuditSave($Num)
     $iFC_StepCurrent = 0
     ToolTip("")
 EndFunc
@@ -1639,4 +1999,384 @@ Func _AttachPJIfExists($sFile, $sTransp)
         If FileExists($sFilePath) Then Return $sFilePath
     Next
     Return ""
+EndFunc
+
+; ==============================================================================
+; DIAGNOSTIC COMPLET — Benchmark système + E.TMS + fichiers + contrôles
+; ==============================================================================
+Func _RunDiagnostic()
+    Local $sLog = ""
+    Local $tGlobal = TimerInit()
+
+    ; ── Helper interne pour écrire dans le log ──
+    $sLog &= "╔══════════════════════════════════════════════════════════════╗" & @CRLF
+    $sLog &= "║  DIAGNOSTIC DISPATCH — " & @YEAR & "-" & @MON & "-" & @MDAY & " " & @HOUR & ":" & @MIN & ":" & @SEC & "  ║" & @CRLF
+    $sLog &= "╚══════════════════════════════════════════════════════════════╝" & @CRLF & @CRLF
+
+    ; ══════════════════════════════════════════════════════════════════════════
+    ; 1. INFOS SYSTÈME
+    ; ══════════════════════════════════════════════════════════════════════════
+    $sLog &= "── 1. SYSTEME ──────────────────────────────────────────────────" & @CRLF
+    $sLog &= "  PC         : " & @ComputerName & @CRLF
+    $sLog &= "  User       : " & @UserName & @CRLF
+    $sLog &= "  OS         : " & @OSVersion & " " & @OSArch & " (build " & @OSBuild & ")" & @CRLF
+    $sLog &= "  CPU        : " & @CPUArch & @CRLF
+    Local $aMem = MemGetStats()
+    Local $iRamTotalMB = Round($aMem[1] / 1024, 0)
+    Local $iRamFreeMB  = Round($aMem[2] / 1024, 0)
+    Local $iRamUsedPct = $aMem[0]
+    $sLog &= "  RAM        : " & $iRamFreeMB & " MB libre / " & $iRamTotalMB & " MB total (" & $iRamUsedPct & "% utilisé)"
+    If $iRamUsedPct > 90 Then
+        $sLog &= "  *** RAM CRITIQUE ***"
+    ElseIf $iRamUsedPct > 80 Then
+        $sLog &= "  ** RAM ELEVEE **"
+    EndIf
+    $sLog &= @CRLF
+    $sLog &= "  Script Dir : " & @ScriptDir & @CRLF
+    $sLog &= @CRLF
+
+    ; ══════════════════════════════════════════════════════════════════════════
+    ; 2. PROCESSUS
+    ; ══════════════════════════════════════════════════════════════════════════
+    $sLog &= "── 2. PROCESSUS ────────────────────────────────────────────────" & @CRLF
+    Local $aProcs[5] = ["ETMS.exe", "Outlook.exe", "chrome.exe", "msedge.exe", "explorer.exe"]
+    For $i = 0 To 4
+        Local $aP = ProcessList($aProcs[$i])
+        If IsArray($aP) And $aP[0][0] > 0 Then
+            $sLog &= "  " & StringFormat("%-15s", $aProcs[$i]) & " : " & $aP[0][0] & " instance(s), PID=" & $aP[1][1] & @CRLF
+        Else
+            $sLog &= "  " & StringFormat("%-15s", $aProcs[$i]) & " : NON TROUVE" & @CRLF
+        EndIf
+    Next
+    $sLog &= @CRLF
+
+    ; ══════════════════════════════════════════════════════════════════════════
+    ; 3. BENCHMARK DISQUE / FICHIERS
+    ; ══════════════════════════════════════════════════════════════════════════
+    $sLog &= "── 3. BENCHMARK DISQUE ─────────────────────────────────────────" & @CRLF
+
+    ; 3a. Écriture temp
+    Local $sTmp = @TempDir & "\dispatch_diag_test.tmp"
+    Local $tDisk = TimerInit()
+    Local $hTmp = FileOpen($sTmp, 2)
+    If $hTmp <> -1 Then
+        For $x = 1 To 100
+            FileWrite($hTmp, "BENCHMARK LIGNE " & $x & @CRLF)
+        Next
+        FileClose($hTmp)
+    EndIf
+    Local $nDiskWrite = TimerDiff($tDisk)
+    $sLog &= "  Ecriture 100 lignes (TEMP) : " & Round($nDiskWrite, 0) & " ms"
+    If $nDiskWrite > 500 Then $sLog &= "  *** DISQUE LENT ***"
+    $sLog &= @CRLF
+
+    ; 3b. Lecture temp
+    $tDisk = TimerInit()
+    If FileExists($sTmp) Then
+        Local $sContent = FileRead($sTmp)
+    EndIf
+    Local $nDiskRead = TimerDiff($tDisk)
+    $sLog &= "  Lecture fichier TEMP       : " & Round($nDiskRead, 0) & " ms"
+    If $nDiskRead > 200 Then $sLog &= "  *** LECTURE LENTE ***"
+    $sLog &= @CRLF
+    FileDelete($sTmp)
+
+    ; 3c. Accès EDS
+    Local $sEDS = "F:\Scripting\Export\EXPORT_HPE_FILECLOSING_001\EXPORT_HPE_FILECLOSING_031.eds"
+    $tDisk = TimerInit()
+    Local $bEdsExists = FileExists($sEDS)
+    Local $nEdsCheck = TimerDiff($tDisk)
+    $sLog &= "  Accès fichier EDS          : " & Round($nEdsCheck, 0) & " ms"
+    If $nEdsCheck > 1000 Then $sLog &= "  *** ACCES RESEAU LENT ***"
+    $sLog &= @CRLF
+    If $bEdsExists Then
+        Local $iEdsSize = FileGetSize($sEDS)
+        $sLog &= "    -> existe : OUI | taille=" & $iEdsSize & " octets (" & Round($iEdsSize/1024, 1) & " KB)" & @CRLF
+    Else
+        $sLog &= "    -> *** FICHIER EDS INTROUVABLE ***" & @CRLF
+        ; Lister le dossier
+        Local $sEdsDir = "F:\Scripting\Export\EXPORT_HPE_FILECLOSING_001"
+        If FileExists($sEdsDir) Then
+            $sLog &= "    -> Dossier existe. Contenu :" & @CRLF
+            Local $hSearch = FileFindFirstFile($sEdsDir & "\*.*")
+            If $hSearch <> -1 Then
+                Local $iCnt = 0
+                While 1
+                    Local $sF = FileFindNextFile($hSearch)
+                    If @error Then ExitLoop
+                    $sLog &= "       " & $sF & @CRLF
+                    $iCnt += 1
+                    If $iCnt > 20 Then
+                        $sLog &= "       ... (limité à 20)" & @CRLF
+                        ExitLoop
+                    EndIf
+                WEnd
+                FileClose($hSearch)
+            EndIf
+        Else
+            $sLog &= "    -> *** DOSSIER INTROUVABLE : " & $sEdsDir & " ***" & @CRLF
+        EndIf
+    EndIf
+
+    ; 3d. Accès dossier PJ
+    Local $sIniDiag = @ScriptDir & "\dispatch_config.ini"
+    Local $sPJPath = IniRead($sIniDiag, "PJ", "Path", "")
+    If $sPJPath <> "" Then
+        $tDisk = TimerInit()
+        Local $bPJExists = FileExists($sPJPath)
+        Local $nPJ = TimerDiff($tDisk)
+        $sLog &= "  Accès dossier PJ           : " & Round($nPJ, 0) & " ms (" & $sPJPath & ")"
+        If $nPJ > 1000 Then $sLog &= "  *** RESEAU LENT ***"
+        $sLog &= @CRLF
+    EndIf
+
+    ; 3e. Accès réseau partagé
+    Local $sNetPath = IniRead($sIniDiag, "Network", "StatePath", "")
+    If $sNetPath <> "" Then
+        $tDisk = TimerInit()
+        Local $bNetExists = FileExists($sNetPath)
+        Local $nNet = TimerDiff($tDisk)
+        $sLog &= "  Accès state réseau         : " & Round($nNet, 0) & " ms (" & $sNetPath & ")"
+        If $nNet > 2000 Then $sLog &= "  *** RESEAU TRES LENT ***"
+        $sLog &= @CRLF
+    EndIf
+    $sLog &= @CRLF
+
+    ; ══════════════════════════════════════════════════════════════════════════
+    ; 4. BENCHMARK E.TMS
+    ; ══════════════════════════════════════════════════════════════════════════
+    $sLog &= "── 4. E.TMS ───────────────────────────────────────────────────" & @CRLF
+
+    Local $tETMS = TimerInit()
+    Local $hETMS = WinGetHandle("[CLASS:TfmBrowser]")
+    Local $nFindETMS = TimerDiff($tETMS)
+    $sLog &= "  Trouver fenetre E.TMS      : " & Round($nFindETMS, 0) & " ms"
+    If $nFindETMS > 500 Then $sLog &= "  *** LENT ***"
+    $sLog &= @CRLF
+
+    If $hETMS = 0 Or Not WinExists($hETMS) Then
+        $sLog &= "  *** E.TMS N'EST PAS OUVERT — tests E.TMS ignorés ***" & @CRLF
+    Else
+        Local $sETMSTitle = WinGetTitle($hETMS)
+        Local $aETMSPos   = WinGetPos($hETMS)
+        Local $iETMSState = WinGetState($hETMS)
+        $sLog &= "  Titre      : " & $sETMSTitle & @CRLF
+        If IsArray($aETMSPos) Then
+            $sLog &= "  Position   : " & $aETMSPos[0] & "," & $aETMSPos[1] & " taille=" & $aETMSPos[2] & "x" & $aETMSPos[3] & @CRLF
+        EndIf
+        $sLog &= "  State      : " & $iETMSState & @CRLF
+
+        ; 4a. WinActivate speed
+        $tETMS = TimerInit()
+        WinActivate($hETMS)
+        WinWaitActive($hETMS, "", 3)
+        Local $nActivate = TimerDiff($tETMS)
+        $sLog &= "  WinActivate                : " & Round($nActivate, 0) & " ms"
+        If $nActivate > 1000 Then
+            $sLog &= "  *** TRES LENT ***"
+        ElseIf $nActivate > 500 Then
+            $sLog &= "  ** LENT **"
+        EndIf
+        $sLog &= @CRLF
+
+        ; 4b. Instance detection
+        Local $sInst = _GetETMSInstance($hETMS)
+        $sLog &= "  Instance détectée          : " & $sInst & " (titre=" & StringLeft($sETMSTitle, 40) & ")" & @CRLF
+
+        ; 4c. ControlGetText speed (LOG)
+        Local $sLogCtrl = "[CLASS:TEIEdit; INSTANCE:91]"
+        $tETMS = TimerInit()
+        Local $sLogText = ControlGetText($hETMS, "", $sLogCtrl)
+        Local $nGetText = TimerDiff($tETMS)
+        $sLog &= "  ControlGetText (LOG)       : " & Round($nGetText, 0) & " ms | texte='" & StringLeft($sLogText, 50) & "'"
+        If $nGetText > 300 Then $sLog &= "  *** LENT ***"
+        $sLog &= @CRLF
+
+        ; 4d. ControlSetText speed (LOG — on va écrire puis remettre)
+        Local $sSaveText = $sLogText
+        $tETMS = TimerInit()
+        ControlSetText($hETMS, "", $sLogCtrl, "DIAG_TEST")
+        Local $nSetText = TimerDiff($tETMS)
+        $sLog &= "  ControlSetText (LOG)       : " & Round($nSetText, 0) & " ms"
+        If $nSetText > 300 Then $sLog &= "  *** LENT ***"
+        $sLog &= @CRLF
+
+        ; 4e. Relecture pour vérifier
+        $tETMS = TimerInit()
+        Local $sVerify = ControlGetText($hETMS, "", $sLogCtrl)
+        Local $nVerify = TimerDiff($tETMS)
+        Local $bMatch = ($sVerify = "DIAG_TEST")
+        $sLog &= "  Vérification écriture      : " & Round($nVerify, 0) & " ms | match=" & $bMatch
+        If Not $bMatch Then $sLog &= "  *** ECHEC ECRITURE : lu='" & StringLeft($sVerify, 30) & "' ***"
+        $sLog &= @CRLF
+
+        ; Remettre le texte original
+        ControlSetText($hETMS, "", $sLogCtrl, $sSaveText)
+
+        ; 4f. Toolbar detection
+        Local $sToolbar = "[CLASS:TRzToolbar; INSTANCE:1]"
+        $tETMS = TimerInit()
+        Local $hTB = ControlGetHandle($hETMS, "", $sToolbar)
+        Local $nToolbar = TimerDiff($tETMS)
+        $sLog &= "  Toolbar handle             : " & Round($nToolbar, 0) & " ms | handle=" & $hTB
+        If $hTB = 0 Or $hTB = "" Then $sLog &= "  *** TOOLBAR INTROUVABLE ***"
+        $sLog &= @CRLF
+
+        ; 4g. Tester toutes les instances TEIEdit connues
+        $sLog &= "  Contrôles TEIEdit :" & @CRLF
+        Local $aInst[5] = ["83", "91", "109", "207", "300"]
+        Local $aInstName[5] = ["NOTES", "LOG", "REFS", "HIST", "DIMST"]
+        For $k = 0 To 4
+            Local $sC = "[CLASS:TEIEdit; INSTANCE:" & $aInst[$k] & "]"
+            $tETMS = TimerInit()
+            Local $hC = ControlGetHandle($hETMS, "", $sC)
+            Local $nC = TimerDiff($tETMS)
+            Local $sT = ""
+            If $hC <> 0 And $hC <> "" Then $sT = StringLeft(ControlGetText($hETMS, "", $sC), 30)
+            $sLog &= "    [" & $aInstName[$k] & " inst:" & $aInst[$k] & "] handle=" & $hC & " | " & Round($nC, 0) & " ms"
+            If $sT <> "" Then $sLog &= " | texte='" & $sT & "'"
+            If $nC > 200 Then $sLog &= "  ** LENT **"
+            $sLog &= @CRLF
+        Next
+
+        ; 4h. Test Send (PgUp) speed
+        $tETMS = TimerInit()
+        WinActivate($hETMS)
+        Send("{PGUP}")
+        Local $nSend = TimerDiff($tETMS)
+        $sLog &= "  Send(PgUp)                 : " & Round($nSend, 0) & " ms"
+        If $nSend > 500 Then $sLog &= "  *** LENT ***"
+        $sLog &= @CRLF
+    EndIf
+
+    ; 4i. EDOC
+    Local $tEdoc = TimerInit()
+    Local $hEdoc = WinGetHandle("[CLASS:TfmEdocViewerMainDlg]")
+    Local $nEdoc = TimerDiff($tEdoc)
+    If $hEdoc <> 0 And WinExists($hEdoc) Then
+        $sLog &= "  EDOC                       : OUVERT (hwnd=" & $hEdoc & " | " & Round($nEdoc, 0) & " ms)" & @CRLF
+    Else
+        $sLog &= "  EDOC                       : non ouvert" & @CRLF
+    EndIf
+    $sLog &= @CRLF
+
+    ; ══════════════════════════════════════════════════════════════════════════
+    ; 5. BENCHMARK RESEAU (serveur local)
+    ; ══════════════════════════════════════════════════════════════════════════
+    $sLog &= "── 5. SERVEUR LOCAL ────────────────────────────────────────────" & @CRLF
+    Local $tNet = TimerInit()
+    Local $iSock = TCPConnect("127.0.0.1", 8888)
+    Local $nConnect = TimerDiff($tNet)
+    If $iSock >= 0 Then
+        $sLog &= "  Connexion 127.0.0.1:8888   : " & Round($nConnect, 0) & " ms | OK" & @CRLF
+        TCPCloseSocket($iSock)
+    Else
+        $sLog &= "  Connexion 127.0.0.1:8888   : ECHEC (err=" & @error & ")" & @CRLF
+    EndIf
+    $sLog &= @CRLF
+
+    ; ══════════════════════════════════════════════════════════════════════════
+    ; 6. RÉSUMÉ / VERDICT
+    ; ══════════════════════════════════════════════════════════════════════════
+    Local $nTotal = TimerDiff($tGlobal)
+    $sLog &= "── 6. RESUME ──────────────────────────────────────────────────" & @CRLF
+    $sLog &= "  Durée totale diagnostic    : " & Round($nTotal, 0) & " ms" & @CRLF
+    $sLog &= @CRLF
+
+    ; Verdicts
+    Local $iProblems = 0
+    If $iRamUsedPct > 85 Then
+        $sLog &= "  [!] RAM saturée à " & $iRamUsedPct & "% — fermer des applis" & @CRLF
+        $iProblems += 1
+    EndIf
+    If $nDiskWrite > 500 Then
+        $sLog &= "  [!] Disque lent en écriture — antivirus ? disque plein ?" & @CRLF
+        $iProblems += 1
+    EndIf
+    If $bEdsExists = False Then
+        $sLog &= "  [!] Fichier EDS introuvable — chemin incorrect ou lecteur déconnecté" & @CRLF
+        $iProblems += 1
+    ElseIf $nEdsCheck > 1000 Then
+        $sLog &= "  [!] Accès EDS lent (" & Round($nEdsCheck, 0) & " ms) — réseau lent ou F: surchargé" & @CRLF
+        $iProblems += 1
+    EndIf
+    If $hETMS = 0 Or Not WinExists($hETMS) Then
+        $sLog &= "  [!] E.TMS pas ouvert — impossible de tester la réactivité" & @CRLF
+        $iProblems += 1
+    Else
+        If $nActivate > 1000 Then
+            $sLog &= "  [!] E.TMS met " & Round($nActivate, 0) & " ms pour s'activer — PC surchargé" & @CRLF
+            $iProblems += 1
+        EndIf
+        If $nGetText > 300 Then
+            $sLog &= "  [!] Lecture contrôles E.TMS lente — E.TMS surchargé" & @CRLF
+            $iProblems += 1
+        EndIf
+        If $nSetText > 300 Then
+            $sLog &= "  [!] Écriture contrôles E.TMS lente — E.TMS surchargé" & @CRLF
+            $iProblems += 1
+        EndIf
+        If Not $bMatch Then
+            $sLog &= "  [!] ControlSetText ne fonctionne pas — E.TMS bloqué ou protégé" & @CRLF
+            $iProblems += 1
+        EndIf
+    EndIf
+    If $sPJPath <> "" And $nPJ > 1000 Then
+        $sLog &= "  [!] Dossier PJ lent (" & Round($nPJ, 0) & " ms) — réseau" & @CRLF
+        $iProblems += 1
+    EndIf
+    If $sNetPath <> "" And $nNet > 2000 Then
+        $sLog &= "  [!] State réseau lent (" & Round($nNet, 0) & " ms) — partage réseau lent" & @CRLF
+        $iProblems += 1
+    EndIf
+
+    $sLog &= @CRLF
+    If $iProblems = 0 Then
+        $sLog &= "  ✓ TOUT EST OK — aucun problème détecté" & @CRLF
+    Else
+        $sLog &= "  ✗ " & $iProblems & " PROBLEME(S) DETECTE(S)" & @CRLF
+    EndIf
+    $sLog &= @CRLF & "══════════════════════════════════════════════════════════════════" & @CRLF
+
+    ; ── Sauvegarder le log ──
+    Local $sLogDir = @ScriptDir & "\logs"
+    If Not FileExists($sLogDir) Then DirCreate($sLogDir)
+    Local $sLogFile = $sLogDir & "\DIAG_" & @YEAR & @MON & @MDAY & "_" & @HOUR & @MIN & @SEC & ".log"
+    Local $hLogFile = FileOpen($sLogFile, 2)
+    If $hLogFile <> -1 Then
+        FileWrite($hLogFile, $sLog)
+        FileClose($hLogFile)
+    EndIf
+
+    ; ── Afficher la GUI ──
+    Local $hDiag = GUICreate("DIAGNOSTIC DISPATCH", 800, 600, -1, -1)
+    GUISetBkColor(0x1E1E1E, $hDiag)
+    GUISetFont(9, 400, 0, "Consolas")
+    Local $idDiagEdit = GUICtrlCreateEdit($sLog, 5, 5, 790, 545, BitOR(0x0004, 0x0800, 0x00200000))
+    GUICtrlSetBkColor($idDiagEdit, 0x1E1E1E)
+    GUICtrlSetColor($idDiagEdit, 0x00FF00)
+    Local $idDiagCopy  = GUICtrlCreateButton("Copier", 5, 555, 130, 35)
+    Local $idDiagOpen  = GUICtrlCreateButton("Ouvrir le .log", 140, 555, 160, 35)
+    Local $idDiagRerun = GUICtrlCreateButton("Relancer", 305, 555, 130, 35)
+    Local $idDiagClose = GUICtrlCreateButton("Fermer", 665, 555, 130, 35)
+    GUISetState(@SW_SHOW, $hDiag)
+
+    While 1
+        Switch GUIGetMsg()
+            Case $GUI_EVENT_CLOSE, $idDiagClose
+                ExitLoop
+            Case $idDiagCopy
+                ClipPut($sLog)
+                ToolTip("Copié dans le presse-papier !", Default, Default, "Diagnostic", 1)
+                Sleep(1000)
+                ToolTip("")
+            Case $idDiagOpen
+                ShellExecute($sLogFile)
+            Case $idDiagRerun
+                GUIDelete($hDiag)
+                _RunDiagnostic()
+                Return
+        EndSwitch
+    WEnd
+    GUIDelete($hDiag)
 EndFunc

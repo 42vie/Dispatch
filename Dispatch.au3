@@ -631,20 +631,26 @@ Func _ActionETMS($sBouton, $sNumDossier)
     EndIf
     Local $hWnd = WinGetHandle("[CLASS:TfmBrowser]")
     If Not WinExists($hWnd) Then
-    MsgBox(16, "Erreur", "E.TMS est fermé ou introuvable.")
-    Return
-EndIf
-    WinActivate($hWnd)
-    WinWaitActive($hWnd, "", 3)
-    Send("{PGUP}")
-    Sleep(150)
+        MsgBox(16, "Erreur", "E.TMS est fermé ou introuvable.")
+        Return
+    EndIf
+
+    ; Préparer la commande AVANT d'activer (gagner du temps)
     Local $sCommande = $sBouton & " " & $sNumDossier
     If $sBouton = "LOG X" Then $sCommande = "LOG X"
     Local $sInst = _GetETMSInstance($hWnd)
     Local $sCtrl = "[CLASS:TEIEdit; INSTANCE:" & $sInst & "]"
+
+    ; Activer + PgUp via ControlSend (évite Send global lent ~500ms)
+    WinActivate($hWnd)
+    WinWaitActive($hWnd, "", 3)
+    ControlSend($hWnd, "", $sCtrl, "{PGUP}")
+    Sleep(50)
+
+    ; Écrire la commande et exécuter
     ControlFocus($hWnd, "", $sCtrl)
     ControlSetText($hWnd, "", $sCtrl, $sCommande)
-    Sleep(150)
+    Sleep(50)
     ControlSend($hWnd, "", $sCtrl, "{F8}")
 EndFunc
 
@@ -2205,7 +2211,7 @@ Func _RunDiagnostic()
         $tETMS = TimerInit()
         Local $sVerify = ControlGetText($hETMS, "", $sLogCtrl)
         Local $nVerify = TimerDiff($tETMS)
-        Local $bMatch = ($sVerify = "DIAG_TEST")
+        Local $bMatch = (StringStripWS($sVerify, 3) = "DIAG_TEST")
         $sLog &= "  Vérification écriture      : " & Round($nVerify, 0) & " ms | match=" & $bMatch
         If Not $bMatch Then $sLog &= "  *** ECHEC ECRITURE : lu='" & StringLeft($sVerify, 30) & "' ***"
         $sLog &= @CRLF

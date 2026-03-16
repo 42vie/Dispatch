@@ -78,6 +78,9 @@ Else
 EndIf
 
 Global $g_sSaveFile = @ScriptDir & "\historique_dispatch.json"
+Global $g_sStatusFile   = @ScriptDir & "\dispatch_status.json"
+Global $g_sDataFile     = @ScriptDir & "\dispatch_data.json"
+Global $g_sContactsFile = @ScriptDir & "\dispatch_contacts.json"
 Global $g_sHtmlFile = @ScriptDir & "\interface.html"
 If Not FileExists($g_sHtmlFile) Then $g_sHtmlFile = @ScriptDir & "\Interface.html"
 If Not FileExists($g_sHtmlFile) Then $g_sHtmlFile = @ScriptDir & "\Interface_v2.html"
@@ -185,6 +188,102 @@ Func _HandleClient($iSocket)
         FileWrite($hFile, $sBody)
         FileClose($hFile)
         _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
+
+    ; ── Fichiers séparés : STATUS ──
+    ElseIf $sURL = "/api/save-status" Then
+        Local $hFileS = FileOpen($g_sStatusFile, 2 + 256)
+        FileWrite($hFileS, $sBody)
+        FileClose($hFileS)
+        _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
+
+    ElseIf $sURL = "/api/load-status" Then
+        Local $sJsonS = "[]"
+        If FileExists($g_sStatusFile) Then
+            Local $hReadS = FileOpen($g_sStatusFile, 256)
+            If $hReadS <> -1 Then
+                $sJsonS = FileRead($hReadS)
+                FileClose($hReadS)
+            EndIf
+        EndIf
+        _SendHttpResponse($iSocket, 200, "application/json", $sJsonS)
+
+    ; ── Fichiers séparés : DATA ──
+    ElseIf $sURL = "/api/save-data" Then
+        Local $hFileD = FileOpen($g_sDataFile, 2 + 256)
+        FileWrite($hFileD, $sBody)
+        FileClose($hFileD)
+        _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
+
+    ElseIf $sURL = "/api/load-data" Then
+        Local $sJsonD = "{}"
+        If FileExists($g_sDataFile) Then
+            Local $hReadD = FileOpen($g_sDataFile, 256)
+            If $hReadD <> -1 Then
+                $sJsonD = FileRead($hReadD)
+                FileClose($hReadD)
+            EndIf
+        EndIf
+        _SendHttpResponse($iSocket, 200, "application/json", $sJsonD)
+
+    ; ── Fichiers séparés : CONTACTS (multi-chunks) ──
+    ElseIf $sURL = "/api/save-contacts" Then
+        ; Body = {chunk:0, total:1, data:[...]}
+        ; Si chunk=0 et total=1 → un seul fichier dispatch_contacts.json
+        ; Si multi-chunks → dispatch_contacts_0.json, dispatch_contacts_1.json, etc.
+        Local $sChunk = _GetJsonValue($sBody, "chunk")
+        Local $sTotal = _GetJsonValue($sBody, "total")
+        Local $sData  = _GetJsonArrayValue($sBody, "data")
+        If $sTotal = "1" Or $sTotal = "" Then
+            Local $hFileC = FileOpen($g_sContactsFile, 2 + 256)
+            FileWrite($hFileC, $sData)
+            FileClose($hFileC)
+        Else
+            Local $sChunkFile = @ScriptDir & "\dispatch_contacts_" & $sChunk & ".json"
+            Local $hFileC2 = FileOpen($sChunkFile, 2 + 256)
+            FileWrite($hFileC2, $sData)
+            FileClose($hFileC2)
+            ; Sauvegarder le nombre total de chunks
+            Local $hMeta = FileOpen(@ScriptDir & "\dispatch_contacts_meta.json", 2 + 256)
+            FileWrite($hMeta, '{"total":' & $sTotal & '}')
+            FileClose($hMeta)
+        EndIf
+        _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
+
+    ElseIf $sURL = "/api/load-contacts" Then
+        Local $sJsonC = "[]"
+        ; Vérifier si multi-chunks
+        Local $sMetaFile = @ScriptDir & "\dispatch_contacts_meta.json"
+        If FileExists($sMetaFile) Then
+            Local $hMeta2 = FileOpen($sMetaFile, 256)
+            Local $sMeta = FileRead($hMeta2)
+            FileClose($hMeta2)
+            Local $iTotalC = Number(_GetJsonValue($sMeta, "total"))
+            If $iTotalC > 1 Then
+                ; Charger et fusionner tous les chunks
+                Local $sAll = ""
+                For $i = 0 To $iTotalC - 1
+                    Local $sChkFile = @ScriptDir & "\dispatch_contacts_" & $i & ".json"
+                    If FileExists($sChkFile) Then
+                        Local $hChk = FileOpen($sChkFile, 256)
+                        Local $sPart = FileRead($hChk)
+                        FileClose($hChk)
+                        ; Enlever les crochets pour fusionner
+                        $sPart = StringRegExpReplace($sPart, "^\s*\[", "")
+                        $sPart = StringRegExpReplace($sPart, "\]\s*$", "")
+                        If $sAll <> "" And $sPart <> "" Then $sAll &= ","
+                        $sAll &= $sPart
+                    EndIf
+                Next
+                $sJsonC = "[" & $sAll & "]"
+            EndIf
+        ElseIf FileExists($g_sContactsFile) Then
+            Local $hReadC = FileOpen($g_sContactsFile, 256)
+            If $hReadC <> -1 Then
+                $sJsonC = FileRead($hReadC)
+                FileClose($hReadC)
+            EndIf
+        EndIf
+        _SendHttpResponse($iSocket, 200, "application/json", $sJsonC)
 
     ElseIf StringLeft($sURL, 13) = "/api/net-save" Then
         ; /api/net-save?path=F:\...\state.json — le body EST le JSON à écrire
@@ -413,6 +512,13 @@ Func _GetJsonValue($sJson, $sKey)
         EndIf
     EndIf
     Return ""
+EndFunc
+
+; Alias pour récupérer un array JSON (utilise _GetJsonValue qui gère déjà les [...])
+Func _GetJsonArrayValue($sJson, $sKey)
+    Local $sVal = _GetJsonValue($sJson, $sKey)
+    If $sVal = "" Then Return "[]"
+    Return $sVal
 EndFunc
 
 Func _GetWindowETMS()

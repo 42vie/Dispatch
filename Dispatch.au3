@@ -35,7 +35,9 @@ Global Const $COMAT_DELAY_LOAD = 3000
 Global $bCOMAT_Stop  = False
 Global $bCOMAT_Pause = False
 
-Opt("TrayIconDebug", 1)
+Opt("TrayIconDebug", 0)
+Opt("TrayMenuMode", 3)        ; pas de menu Pause/Exit par défaut
+Opt("TrayAutoPause", 0)       ; ne jamais auto-pauser le script
 TCPStartup()
 
 Global $g_iPort       = 9500
@@ -81,6 +83,9 @@ If Not FileExists($g_sHtmlFile) Then
     Exit
 EndIf
 Global $g_sHTML = FileRead($g_sHtmlFile)
+; Pré-calculer le HTML avec le bon port (une seule fois)
+$g_sHTML = StringReplace($g_sHTML, "127.0.0.1:9500", "127.0.0.1:" & $g_iPort)
+$g_sHTML = StringReplace($g_sHTML, "127.0.0.1:8080", "127.0.0.1:" & $g_iPort)
 
 ShellExecute("http://127.0.0.1:" & $g_iPort)
 
@@ -88,7 +93,7 @@ ShellExecute("http://127.0.0.1:" & $g_iPort)
 While 1
     Local $iClientSocket = TCPAccept($g_iMainSocket)
     If $iClientSocket <> -1 Then _HandleClient($iClientSocket)
-    Sleep(20)
+    Sleep(10)
 WEnd
 
 ; ==============================================================================
@@ -98,9 +103,12 @@ Func _HandleClient($iSocket)
     Local $sHeader = ""
     Local $iContentLength = 0
     Local $sBody = ""
+    Local $hTimeout = TimerInit()
+    Local Const $RECV_TIMEOUT = 3000 ; 3s max pour recevoir les headers
 
-    While 1
-        Local $sRecv = TCPRecv($iSocket, 2048)
+    ; ── Recevoir les headers (avec timeout) ──
+    While TimerDiff($hTimeout) < $RECV_TIMEOUT
+        Local $sRecv = TCPRecv($iSocket, 8192)
         If @error Then ExitLoop
         If $sRecv <> "" Then
             $sHeader &= $sRecv
@@ -113,26 +121,49 @@ Func _HandleClient($iSocket)
                 ExitLoop
             EndIf
         EndIf
-        Sleep(10)
+        Sleep(5)
     WEnd
 
-    While StringLen($sBody) < $iContentLength
-        Local $sRecv = TCPRecv($iSocket, 4096)
+    If StringInStr($sHeader, @CRLF) = 0 Then
+        TCPCloseSocket($iSocket)
+        Return
+    EndIf
+
+    ; ── Recevoir le body (avec timeout) ──
+    $hTimeout = TimerInit()
+    While StringLen($sBody) < $iContentLength And TimerDiff($hTimeout) < $RECV_TIMEOUT
+        Local $sRecv2 = TCPRecv($iSocket, 8192)
         If @error Then ExitLoop
-        If $sRecv <> "" Then $sBody &= $sRecv
-        Sleep(10)
+        If $sRecv2 <> "" Then
+            $sBody &= $sRecv2
+            $hTimeout = TimerInit() ; reset timer si on reçoit des données
+        EndIf
+        Sleep(5)
     WEnd
 
     Local $aLines = StringSplit($sHeader, @CRLF, 1)
     If $aLines[0] < 1 Then Return TCPCloseSocket($iSocket)
     Local $aTop = StringSplit($aLines[1], " ")
     If $aTop[0] < 2 Then Return TCPCloseSocket($iSocket)
+    Local $sMethod = $aTop[1]
     Local $sURL = $aTop[2]
 
+    ; ── Gérer preflight CORS (OPTIONS) ──
+    If $sMethod = "OPTIONS" Then
+        Local $sCors = "HTTP/1.1 204 No Content" & @CRLF & _
+            "Access-Control-Allow-Origin: *" & @CRLF & _
+            "Access-Control-Allow-Methods: GET, POST, OPTIONS" & @CRLF & _
+            "Access-Control-Allow-Headers: Content-Type" & @CRLF & _
+            "Access-Control-Max-Age: 86400" & @CRLF & _
+            "Content-Length: 0" & @CRLF & _
+            "Connection: close" & @CRLF & @CRLF
+        TCPSend($iSocket, StringToBinary($sCors, 4))
+        TCPCloseSocket($iSocket)
+        Return
+    EndIf
+
     If $sURL = "/" Then
-        Local $sHtmlModded = StringReplace($g_sHTML, "127.0.0.1:9500", "127.0.0.1:" & $g_iPort)
-        $sHtmlModded = StringReplace($sHtmlModded, "127.0.0.1:8080", "127.0.0.1:" & $g_iPort)
-        _SendHttpResponse($iSocket, 200, "text/html", $sHtmlModded)
+        _SendHttpResponse($iSocket, 200, "text/html", $g_sHTML)
 
     ElseIf $sURL = "/api/load" Then
         Local $sJson = "{}"
@@ -312,6 +343,7 @@ EndFunc
 
 Func _SendHttpResponse($iSocket, $iCode, $sContentType, $sData)
     Local $sStatus = "200 OK"
+    If $iCode = 400 Then $sStatus = "400 Bad Request"
     If $iCode = 404 Then $sStatus = "404 Not Found"
     Local $bData    = StringToBinary($sData, 4)
     Local $iLen     = BinaryLen($bData)
@@ -319,8 +351,23 @@ Func _SendHttpResponse($iSocket, $iCode, $sContentType, $sData)
                       "Content-Type: " & $sContentType & "; charset=UTF-8" & @CRLF & _
                       "Content-Length: " & $iLen & @CRLF & _
                       "Access-Control-Allow-Origin: *" & @CRLF & _
+                      "Access-Control-Allow-Headers: Content-Type" & @CRLF & _
+                      "Cache-Control: no-cache" & @CRLF & _
                       "Connection: close" & @CRLF & @CRLF
-    TCPSend($iSocket, StringToBinary($sHeaders, 4) & $bData)
+    ; Envoyer par blocs pour éviter les envois partiels sur gros payloads
+    Local $bAll = StringToBinary($sHeaders, 4) & $bData
+    Local $iTotal = BinaryLen($bAll)
+    Local $iSent = 0
+    While $iSent < $iTotal
+        Local $bChunk = BinaryMid($bAll, $iSent + 1, 8192)
+        Local $iRes = TCPSend($iSocket, $bChunk)
+        If @error Then ExitLoop
+        If $iRes > 0 Then
+            $iSent += $iRes
+        Else
+            Sleep(5)
+        EndIf
+    WEnd
 EndFunc
 
 ; ==============================================================================
@@ -878,7 +925,7 @@ Func _Run_FileClosing_UPS($Num)
     Local Const $sFC_FILEOPEN = "[CLASS:TRzShellOpenSaveForm]"
     Local Const $sFC_MENU     = "[CLASS:TEIInputQueryForm; REGEXPTITLE:(?i).*MENU SELECTION.*]"
     Local Const $sFC_INPUT    = "[CLASS:TInputQueryForm]"
-    Local Const $sFC_EDS      = "EXPORT_HPE_FILECLOSING_031.eds"
+    Local Const $sFC_EDS      = "F:\Scripting\Export\EXPORT_HPE_FILECLOSING_001\EXPORT_HPE_FILECLOSING_031.eds"
 
     Local $hWnd = _GetWindowETMS()
     If $hWnd = 0 Then Return
@@ -1016,7 +1063,7 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
     Local Const $sFC_MENU     = "[CLASS:TEIInputQueryForm; REGEXPTITLE:(?i).*MENU SELECTION.*]"
     Local Const $sFC_INPUT    = "[CLASS:TInputQueryForm]"
     Local Const $sFC_CARRIER  = "[CLASS:TEIInputQueryForm; REGEXPTITLE:(?i).*Carrier ID.*]"
-    Local Const $sFC_EDS      = "EXPORT_HPE_FILECLOSING_031.eds"
+    Local Const $sFC_EDS      = "F:\Scripting\Export\EXPORT_HPE_FILECLOSING_001\EXPORT_HPE_FILECLOSING_031.eds"
 
     Local $hWnd = _GetWindowETMS()
     If $hWnd = 0 Then Return

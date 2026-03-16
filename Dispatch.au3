@@ -925,7 +925,7 @@ Func _Run_FileClosing_UPS($Num)
     Local Const $sFC_FILEOPEN = "[CLASS:TRzShellOpenSaveForm]"
     Local Const $sFC_MENU     = "[CLASS:TEIInputQueryForm; REGEXPTITLE:(?i).*MENU SELECTION.*]"
     Local Const $sFC_INPUT    = "[CLASS:TInputQueryForm]"
-    Local Const $sFC_EDS      = "EXPORT_HPE_FILECLOSING_031.eds"
+    Local Const $sFC_EDS      = "F:\Scripting\Export\EXPORT_HPE_FILECLOSING_001\EXPORT_HPE_FILECLOSING_031.eds"
 
     Local $hWnd = _GetWindowETMS()
     If $hWnd = 0 Then Return
@@ -1063,7 +1063,7 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
     Local Const $sFC_MENU     = "[CLASS:TEIInputQueryForm; REGEXPTITLE:(?i).*MENU SELECTION.*]"
     Local Const $sFC_INPUT    = "[CLASS:TInputQueryForm]"
     Local Const $sFC_CARRIER  = "[CLASS:TEIInputQueryForm; REGEXPTITLE:(?i).*Carrier ID.*]"
-    Local Const $sFC_EDS      = "EXPORT_HPE_FILECLOSING_031.eds"
+    Local Const $sFC_EDS      = "F:\Scripting\Export\EXPORT_HPE_FILECLOSING_001\EXPORT_HPE_FILECLOSING_031.eds"
 
     Local $hWnd = _GetWindowETMS()
     If $hWnd = 0 Then Return

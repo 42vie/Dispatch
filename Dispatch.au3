@@ -78,6 +78,9 @@ Else
 EndIf
 
 Global $g_sSaveFile = @ScriptDir & "\historique_dispatch.json"
+Global $g_sAuditLog = @ScriptDir & "\logs\dispatch_audit.log"
+Global $g_iAuditCheckTimer = 0
+Global Const $AUDIT_CHECK_INTERVAL = 60000 ; 60 secondes entre chaque vérification silencieuse
 Global $g_sStatusFile   = @ScriptDir & "\dispatch_status.json"
 Global $g_sDataFile     = @ScriptDir & "\dispatch_data.json"
 Global $g_sContactsFile = @ScriptDir & "\dispatch_contacts.json"
@@ -96,10 +99,22 @@ $g_sHTML = StringReplace($g_sHTML, "127.0.0.1:8080", "127.0.0.1:" & $g_iPort)
 
 ShellExecute("http://127.0.0.1:" & $g_iPort)
 
+; Créer le dossier logs s'il n'existe pas
+If Not FileExists(@ScriptDir & "\logs") Then DirCreate(@ScriptDir & "\logs")
+_AuditLog("INFO", "Serveur démarré sur le port " & $g_iPort)
+$g_iAuditCheckTimer = TimerInit()
+
 ; Boucle principale
 While 1
     Local $iClientSocket = TCPAccept($g_iMainSocket)
     If $iClientSocket <> -1 Then _HandleClient($iClientSocket)
+
+    ; Vérification silencieuse en arrière-plan (chaque minute)
+    If TimerDiff($g_iAuditCheckTimer) > $AUDIT_CHECK_INTERVAL Then
+        _SilentHealthCheck()
+        $g_iAuditCheckTimer = TimerInit()
+    EndIf
+
     Sleep(10)
 WEnd
 
@@ -191,6 +206,7 @@ Func _HandleClient($iSocket)
 
     ; ── Fichiers séparés : STATUS ──
     ElseIf $sURL = "/api/save-status" Then
+        _AuditLog("SAVE", "status — " & StringLen($sBody) & " bytes")
         Local $hFileS = FileOpen($g_sStatusFile, 2 + 256)
         FileWrite($hFileS, $sBody)
         FileClose($hFileS)
@@ -209,6 +225,7 @@ Func _HandleClient($iSocket)
 
     ; ── Fichiers séparés : DATA ──
     ElseIf $sURL = "/api/save-data" Then
+        _AuditLog("SAVE", "data — " & StringLen($sBody) & " bytes")
         Local $hFileD = FileOpen($g_sDataFile, 2 + 256)
         FileWrite($hFileD, $sBody)
         FileClose($hFileD)
@@ -227,6 +244,7 @@ Func _HandleClient($iSocket)
 
     ; ── Fichiers séparés : CONTACTS (multi-chunks) ──
     ElseIf $sURL = "/api/save-contacts" Then
+        _AuditLog("SAVE", "contacts — " & StringLen($sBody) & " bytes")
         ; Body = {chunk:0, total:1, data:[...]}
         ; Si chunk=0 et total=1 → un seul fichier dispatch_contacts.json
         ; Si multi-chunks → dispatch_contacts_0.json, dispatch_contacts_1.json, etc.
@@ -319,6 +337,8 @@ Func _HandleClient($iSocket)
         Local $sJSON_a   = ""
         Local $sIni_a    = ""
         Local $sCpRaw_a  = ""
+
+        _AuditLog("ACTION", $sAction & " — " & StringLeft($sBody, 200))
 
         Switch $sAction
 
@@ -435,6 +455,15 @@ Func _HandleClient($iSocket)
 
             Case "DIAG"
                 _RunDiagnostic()
+
+            Case "CLEAN_CONTACTS"
+                _CleanContactsFiles()
+
+            Case "STORAGE_INFO"
+                Local $sInfo = _GetStorageInfo()
+                _SendHttpResponse($iSocket, 200, "application/json", $sInfo)
+                TCPCloseSocket($iSocket)
+                Return
 
         EndSwitch
 
@@ -737,7 +766,7 @@ Func _ActionETMS($sBouton, $sNumDossier)
     EndIf
     Local $hWnd = WinGetHandle("[CLASS:TfmBrowser]")
     If Not WinExists($hWnd) Then
-        MsgBox(16, "Erreur", "E.TMS est fermé ou introuvable.")
+        _NotifyError("E.TMS", "E.TMS est fermé ou introuvable. Ouvrez E.TMS avant de lancer une action.")
         Return
     EndIf
 
@@ -2069,7 +2098,7 @@ EndFunc
 Func _Net_SaveState($sPath, $sJSON)
     Local $hFile = FileOpen($sPath, 2)
     If $hFile = -1 Then
-        ToolTip("Erreur écriture : " & $sPath, 0, 0)
+        _NotifyError("Réseau", "Impossible d'écrire : " & $sPath)
         Return False
     EndIf
     FileWrite($hFile, $sJSON)
@@ -2078,9 +2107,15 @@ Func _Net_SaveState($sPath, $sJSON)
 EndFunc
 
 Func _Net_LoadState($sPath)
-    If Not FileExists($sPath) Then Return "{}"
+    If Not FileExists($sPath) Then
+        _NotifyError("Réseau", "Fichier introuvable : " & $sPath)
+        Return "{}"
+    EndIf
     Local $hFile = FileOpen($sPath, 0)
-    If $hFile = -1 Then Return "{}"
+    If $hFile = -1 Then
+        _NotifyError("Réseau", "Impossible de lire : " & $sPath)
+        Return "{}"
+    EndIf
     Local $sContent = FileRead($hFile)
     FileClose($hFile)
     Return $sContent
@@ -2491,4 +2526,204 @@ Func _RunDiagnostic()
         EndSwitch
     WEnd
     GUIDelete($hDiag)
+EndFunc
+
+; ==============================================================================
+; CLEANER CONTACTS — Nettoie les apostrophes et caractères spéciaux encodés
+; ==============================================================================
+Func _CleanContactsFiles()
+    Local $aFiles[4] = [$g_sContactsFile, "", "", ""]
+    ; Chercher aussi les chunks
+    For $i = 0 To 9
+        Local $sChkF = @ScriptDir & "\dispatch_contacts_" & $i & ".json"
+        If FileExists($sChkF) And $i < 3 Then $aFiles[$i + 1] = $sChkF
+    Next
+
+    Local $iCleaned = 0
+    For $f = 0 To 3
+        If $aFiles[$f] = "" Then ContinueLoop
+        If Not FileExists($aFiles[$f]) Then ContinueLoop
+
+        Local $hRead = FileOpen($aFiles[$f], 256)
+        If $hRead = -1 Then ContinueLoop
+        Local $sContent = FileRead($hRead)
+        FileClose($hRead)
+
+        Local $sBefore = $sContent
+
+        ; Corriger les apostrophes mal encodées
+        $sContent = StringReplace($sContent, "â€™", "'")       ; UTF-8 mojibake
+        $sContent = StringReplace($sContent, "&#039;", "'")     ; HTML entity
+        $sContent = StringReplace($sContent, "&apos;", "'")     ; XML entity
+        $sContent = StringReplace($sContent, "&#x27;", "'")     ; Hex HTML entity
+        $sContent = StringReplace($sContent, "'", "'")          ; Smart quote left
+        $sContent = StringReplace($sContent, "'", "'")          ; Smart quote right
+        $sContent = StringReplace($sContent, "Ã©", "é")         ; UTF-8 mojibake é
+        $sContent = StringReplace($sContent, "Ã¨", "è")         ; UTF-8 mojibake è
+        $sContent = StringReplace($sContent, "Ãª", "ê")         ; UTF-8 mojibake ê
+        $sContent = StringReplace($sContent, "Ã ", "à")         ; UTF-8 mojibake à
+        $sContent = StringReplace($sContent, "Ã§", "ç")         ; UTF-8 mojibake ç
+        $sContent = StringReplace($sContent, "Ã¢", "â")         ; UTF-8 mojibake â
+        $sContent = StringReplace($sContent, "Ã®", "î")         ; UTF-8 mojibake î
+        $sContent = StringReplace($sContent, "Ã¼", "ü")         ; UTF-8 mojibake ü
+        $sContent = StringReplace($sContent, "Ã¶", "ö")         ; UTF-8 mojibake ö
+        $sContent = StringReplace($sContent, "&amp;", "&")       ; Double-encoded &
+        $sContent = StringReplace($sContent, "&lt;", "<")        ; HTML <
+        $sContent = StringReplace($sContent, "&gt;", ">")        ; HTML >
+        $sContent = StringReplace($sContent, "&quot;", '"')      ; HTML "
+        ; Supprimer les espaces multiples consécutifs
+        While StringInStr($sContent, "  ")
+            $sContent = StringReplace($sContent, "  ", " ")
+        WEnd
+
+        If $sContent <> $sBefore Then
+            Local $hWrite = FileOpen($aFiles[$f], 2 + 256)
+            FileWrite($hWrite, $sContent)
+            FileClose($hWrite)
+            $iCleaned += 1
+        EndIf
+    Next
+
+    If $iCleaned > 0 Then
+        TrayTip("Dispatch — Contacts", $iCleaned & " fichier(s) contact nettoyé(s).", 5, 1)
+    Else
+        TrayTip("Dispatch — Contacts", "Aucun nettoyage nécessaire.", 3, 1)
+    EndIf
+EndFunc
+
+; ==============================================================================
+; ESTIMATION STOCKAGE — Taille de tous les fichiers JSON
+; ==============================================================================
+Func _GetStorageInfo()
+    Local $sResult = '{"files":['
+
+    ; Liste des fichiers à vérifier
+    Local $aCheck[7][2] = [ _
+        [$g_sSaveFile, "historique_dispatch.json"], _
+        [$g_sStatusFile, "dispatch_status.json"], _
+        [$g_sDataFile, "dispatch_data.json"], _
+        [$g_sContactsFile, "dispatch_contacts.json"], _
+        [@ScriptDir & "\dispatch_contacts_meta.json", "dispatch_contacts_meta.json"], _
+        [@ScriptDir & "\dispatch_config.ini", "dispatch_config.ini"], _
+        [@ScriptDir & "\dispatch_contacts_0.json", "dispatch_contacts_0.json"] _
+    ]
+
+    Local $iTotalSize = 0
+    For $i = 0 To 6
+        Local $sFile = $aCheck[$i][0]
+        Local $sName = $aCheck[$i][1]
+        Local $iSize = 0
+        If FileExists($sFile) Then $iSize = FileGetSize($sFile)
+        $iTotalSize += $iSize
+        If $i > 0 Then $sResult &= ","
+        $sResult &= '{"name":"' & $sName & '","size":' & $iSize & '}'
+    Next
+
+    ; Chercher les chunks contacts additionnels
+    For $c = 1 To 20
+        Local $sChk = @ScriptDir & "\dispatch_contacts_" & $c & ".json"
+        If Not FileExists($sChk) Then ExitLoop
+        Local $iChkSize = FileGetSize($sChk)
+        $iTotalSize += $iChkSize
+        $sResult &= ',{"name":"dispatch_contacts_' & $c & '.json","size":' & $iChkSize & '}'
+    Next
+
+    $sResult &= '],"totalBytes":' & $iTotalSize
+    $sResult &= ',"totalKB":' & Round($iTotalSize / 1024, 1)
+    $sResult &= ',"totalMB":' & Round($iTotalSize / 1048576, 2)
+    $sResult &= '}'
+    Return $sResult
+EndFunc
+
+; ==============================================================================
+; NOTIFICATION ERREUR — TrayTip visible pour tout problème
+; ==============================================================================
+Func _NotifyError($sSource, $sMsg)
+    TrayTip("Dispatch — Erreur " & $sSource, $sMsg, 10, 3)
+    _AuditLog("ERREUR", $sSource & " : " & $sMsg)
+EndFunc
+
+; ==============================================================================
+; AUDIT LOG — Journal d'erreurs en arrière-plan
+; ==============================================================================
+Func _AuditLog($sLevel, $sMsg)
+    Local $sTs = @YEAR & "-" & @MON & "-" & @MDAY & " " & @HOUR & ":" & @MIN & ":" & @SEC
+    Local $sLine = "[" & $sTs & "] [" & $sLevel & "] " & $sMsg & @CRLF
+    ConsoleWrite($sLine)
+    ; Écrire dans le fichier audit
+    Local $hAudit = FileOpen($g_sAuditLog, 1 + 256) ; 1=append, 256=UTF-8
+    If $hAudit <> -1 Then
+        FileWrite($hAudit, $sLine)
+        FileClose($hAudit)
+    EndIf
+EndFunc
+
+; ==============================================================================
+; HEALTH CHECK SILENCIEUX — Tourne en arrière-plan toutes les minutes
+; Détecte les erreurs silencieuses et les log
+; ==============================================================================
+Func _SilentHealthCheck()
+    Local $iErrors = 0
+
+    ; 1. Vérifier que les fichiers JSON sont valides et accessibles
+    Local $aCheck[4] = [$g_sStatusFile, $g_sDataFile, $g_sContactsFile, $g_sSaveFile]
+    Local $aNames[4] = ["status", "data", "contacts", "historique"]
+    For $i = 0 To 3
+        If FileExists($aCheck[$i]) Then
+            Local $iSize = FileGetSize($aCheck[$i])
+            If $iSize = 0 Then
+                _AuditLog("WARN", "Fichier vide détecté : " & $aNames[$i] & " (" & $aCheck[$i] & ")")
+                $iErrors += 1
+            EndIf
+            ; Vérifier que le fichier n'est pas corrompu (doit commencer par [ ou {)
+            Local $hCheck = FileOpen($aCheck[$i], 256)
+            If $hCheck <> -1 Then
+                Local $sFirst = StringStripWS(StringLeft(FileRead($hCheck), 5), 3)
+                FileClose($hCheck)
+                If $sFirst <> "" And StringLeft($sFirst, 1) <> "[" And StringLeft($sFirst, 1) <> "{" Then
+                    _AuditLog("ERREUR", "JSON corrompu : " & $aNames[$i] & " commence par '" & StringLeft($sFirst, 3) & "' au lieu de [ ou {")
+                    _NotifyError("JSON", "Fichier " & $aNames[$i] & " possiblement corrompu !")
+                    $iErrors += 1
+                EndIf
+            EndIf
+        EndIf
+    Next
+
+    ; 2. Vérifier que le fichier réseau partagé est accessible
+    Local $sIniNet = @ScriptDir & "\dispatch_config.ini"
+    Local $sNetPath = IniRead($sIniNet, "Network", "StatePath", "")
+    If $sNetPath <> "" Then
+        If Not FileExists($sNetPath) Then
+            ; Ne pas alerter si le chemin n'a jamais existé (premier lancement)
+            Local $sDir = StringLeft($sNetPath, StringInStr($sNetPath, "\", 0, -1))
+            If FileExists($sDir) Then
+                _AuditLog("WARN", "Fichier réseau introuvable : " & $sNetPath)
+            EndIf
+        EndIf
+    EndIf
+
+    ; 3. Vérifier la taille mémoire des fichiers (alerte si > 5 MB)
+    Local $iTotalSize = 0
+    For $i = 0 To 3
+        If FileExists($aCheck[$i]) Then $iTotalSize += FileGetSize($aCheck[$i])
+    Next
+    If $iTotalSize > 5242880 Then ; > 5 MB
+        _AuditLog("WARN", "Stockage total élevé : " & Round($iTotalSize / 1048576, 2) & " MB — pensez à nettoyer les contacts ou vider les terminés")
+        _NotifyError("Stockage", "Les fichiers JSON font " & Round($iTotalSize / 1048576, 1) & " MB — nettoyage recommandé")
+    EndIf
+
+    ; 4. Vérifier l'ancienneté du fichier data (si > 24h sans modification = potentiel problème)
+    If FileExists($g_sDataFile) Then
+        Local $sModTime = FileGetTime($g_sDataFile, 0, 1)
+        If $sModTime <> "" Then
+            Local $sDiff = _DateDiff("h", StringMid($sModTime, 1, 4) & "/" & StringMid($sModTime, 5, 2) & "/" & StringMid($sModTime, 7, 2) & " " & StringMid($sModTime, 9, 2) & ":" & StringMid($sModTime, 11, 2) & ":" & StringMid($sModTime, 13, 2), _NowCalc())
+            If Number($sDiff) > 24 Then
+                _AuditLog("INFO", "Fichier data non modifié depuis " & $sDiff & "h")
+            EndIf
+        EndIf
+    EndIf
+
+    If $iErrors > 0 Then
+        _AuditLog("WARN", "Health check : " & $iErrors & " problème(s) détecté(s)")
+    EndIf
 EndFunc

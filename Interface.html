@@ -483,6 +483,10 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
 }
 #toast.show { opacity: 1; }
 
+/* ── SPINNER ETMS ── */
+@keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+#etms-spinner.active { display:flex !important; }
+
 /* ── IMPORT ZONE ── */
 .import-info {
   background: var(--blue-bg); border: 1px dashed var(--blue);
@@ -913,6 +917,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
         <button class="btn btn-sm btn-ghost"      onclick="optsShowPanel('reseau')" id="otab-reseau">🌐 Réseau partagé</button>
         <button class="btn btn-sm btn-ghost"      onclick="optsShowPanel('nto')"    id="otab-nto">⛽ NTO / Fuel</button>
         <button class="btn btn-sm btn-ghost"      onclick="optsShowPanel('diag')"   id="otab-diag">🔍 Diagnostic</button>
+        <button class="btn btn-sm btn-ghost"      onclick="optsShowPanel('stockage')" id="otab-stockage">💾 Stockage</button>
       </div>
     </div>
 
@@ -1019,6 +1024,30 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
             🔍 Lancer le diagnostic
           </button>
           <span id="diag-status" style="font-size:11px;color:var(--text3)"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel Stockage ─────────────────────────────── -->
+    <div id="opts-panel-stockage" style="display:none;padding:20px;max-width:680px;overflow-y:auto">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">Stockage — Taille des fichiers JSON</div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:14px">
+        <div id="storage-info" style="font-size:12px;color:var(--text2);line-height:1.8">
+          Cliquez sur "Analyser" pour voir la taille des fichiers.
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-blue-out btn-sm" onclick="loadStorageInfo()" style="height:32px">📊 Analyser le stockage</button>
+          <button class="btn btn-green-out btn-sm" onclick="cleanContacts()" style="height:32px">🧹 Nettoyer les contacts</button>
+          <span id="storage-status" style="font-size:11px;color:var(--text3)"></span>
+        </div>
+      </div>
+      <div style="margin-top:14px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:16px">
+        <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">Mémoire locale (navigateur)</div>
+        <div style="font-size:12px;color:var(--text2);line-height:1.8">
+          <b>Dossiers actifs :</b> <span id="mem-master">-</span><br>
+          <b>Contacts :</b> <span id="mem-contacts">-</span><br>
+          <b>RawData :</b> <span id="mem-rawdata">-</span><br>
+          <b>CP Data :</b> <span id="mem-cpdata">-</span>
         </div>
       </div>
     </div>
@@ -1220,6 +1249,16 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
 </div>
 
 <div id="toast"></div>
+
+<!-- ══ SPINNER OVERLAY ETMS ══ -->
+<div id="etms-spinner" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.35);z-index:9999;
+  display:none;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border-radius:12px;padding:28px 40px;box-shadow:var(--shadow-lg);text-align:center;min-width:280px">
+    <div id="etms-spinner-icon" style="font-size:28px;margin-bottom:10px;animation:spin 1.2s linear infinite">&#9881;</div>
+    <div id="etms-spinner-msg" style="font-size:14px;font-weight:600;color:var(--text)">Action en cours...</div>
+    <div id="etms-spinner-sub" style="font-size:11px;color:var(--text3);margin-top:6px">Ne touchez pas à E.TMS pendant l'exécution</div>
+  </div>
+</div>
 
 <!-- ══ KANBAN ACTION BAR ══ -->
 <div id="kanban-action-bar">
@@ -1793,7 +1832,7 @@ function kabChangeStatus() {
 
 function kabApplyStatus() {
   const newStat = document.getElementById('kab-new-status').value;
-  kabGetSelected().forEach(r => { r.statut = newStat; });
+  kabGetSelected().forEach(r => { r.statut = newStat; stampRecord(r); });
   closeModal('modal-kab-status');
   kabClearSel();
   renderMaster(); renderKanban(); updateStats(); markDirty();
@@ -1861,6 +1900,7 @@ function onKDrop(event, status) {
   const idx = g_master.findIndex(r => r.file===g_dragFile);
   if (idx<0) return;
   g_master[idx].statut = String(status);
+  stampRecord(g_master[idx]);
   if (status>=2 && g_master[idx].cc!=='Cc') g_master[idx].cc='Cc';
   renderMaster(); renderKanban(); updateStats(); g_dragFile=null;
 }
@@ -2451,7 +2491,7 @@ function saveEdit() {
   r.email=document.getElementById('ed-email').value;
   r.comment=document.getElementById('ed-comment').value;
   r.operator=document.getElementById('ed-operator').value.trim();
-  r.statut=document.getElementById('ed-statut').value;
+  r.statut=document.getElementById('ed-statut').value; stampRecord(r);
   // Si contact renseigné → enrichir g_contacts auto
   if (r.contact&&r.email) {
     const existing=g_contacts.find(c=>c.email===r.email);
@@ -3046,6 +3086,12 @@ const SAVE_DELAY = 1500; // 1.5s après dernière modification
 
 function markDirty() { _dirty = true; scheduleSave(); }
 
+// Marquer un dossier comme modifié par cet opérateur (pour la fusion réseau)
+function stampRecord(r) {
+  r._ts = Date.now();
+  r._by = localStorage.getItem('dispatch_operator') || '';
+}
+
 function scheduleSave() {
   if (_saveTimer) clearTimeout(_saveTimer);
   _saveTimer = setTimeout(autoSave, SAVE_DELAY);
@@ -3069,7 +3115,7 @@ async function autoSave() {
     apiCall('save-status', statusData),
     apiCall('save-data', infoData),
     saveContactsChunked(),
-    path ? netSave(path, buildSaveState()) : Promise.resolve()
+    path ? smartNetSave(path) : Promise.resolve()
   ]); }
   catch(e) { console.warn('autoSave error:', e); }
 }
@@ -3196,6 +3242,17 @@ window.onload = async () => {
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  ENVOI DES ACTIONS VERS AUTOIT                                           ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
+// Spinner ETMS — affiché pendant les actions longues
+function showSpinner(msg, sub) {
+  const el = document.getElementById('etms-spinner');
+  document.getElementById('etms-spinner-msg').textContent = msg || 'Action en cours...';
+  document.getElementById('etms-spinner-sub').textContent = sub || 'Ne touchez pas à E.TMS pendant l\'exécution';
+  el.classList.add('active');
+}
+function hideSpinner() {
+  document.getElementById('etms-spinner').classList.remove('active');
+}
+
 async function sendAction(actionType, cmd = '') {
   // Récupération des données depuis la fenêtre d'édition (Modal Edit)
   const file = document.getElementById('ed-file').value.trim();
@@ -3215,10 +3272,22 @@ async function sendAction(actionType, cmd = '') {
     email: email
   };
 
-  if (actionType === 'ETMS_CMD') toast(`E.TMS : Envoi de ${cmd} pour ${file}...`);
-  if (actionType === 'MAIL_RDV') toast(`Outlook : Préparation du mail pour ${client}...`);
+  if (actionType === 'ETMS_CMD') {
+    showSpinner(`E.TMS : ${cmd} → ${file}`, 'Commande envoyée à E.TMS — patientez...');
+  }
+  if (actionType === 'MAIL_RDV') {
+    showSpinner(`Outlook : Mail RDV pour ${client}`, 'Préparation du mail en cours...');
+  }
 
-  await apiCall('action', payload);
+  try {
+    await apiCall('action', payload);
+    if (actionType === 'ETMS_CMD') toast(`✓ E.TMS : ${cmd} terminé pour ${file}`);
+    if (actionType === 'MAIL_RDV') toast(`✓ Mail RDV envoyé pour ${client}`);
+  } catch(e) {
+    toast(`Erreur : ${e.message || 'Action échouée'}`);
+  } finally {
+    hideSpinner();
+  }
 }
 
 // Fonction pour les boutons du header (lit le champ hdr-file)
@@ -3244,10 +3313,17 @@ async function sendActionHeader(actionType, cmd = '') {
     email: email
   };
 
-  if (actionType === 'ETMS_CMD') toast(`E.TMS : ${cmd} → ${file}`);
-  if (actionType === 'MAIL_RDV') toast(`Outlook : Mail RDV pour ${client || file}...`);
+  if (actionType === 'ETMS_CMD') showSpinner(`E.TMS : ${cmd} → ${file}`);
+  if (actionType === 'MAIL_RDV') showSpinner(`Mail RDV pour ${client || file}...`);
 
-  await apiCall('action', payload);
+  try {
+    await apiCall('action', payload);
+    if (actionType === 'ETMS_CMD') toast(`✓ E.TMS : ${cmd} → ${file}`);
+  } catch(e) {
+    toast(`Erreur : ${e.message || 'Action échouée'}`);
+  } finally {
+    hideSpinner();
+  }
 }
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -3992,7 +4068,7 @@ function identitySkip() {
 // ║  OPTIONS — NAVIGATION SOUS-PANELS                                        ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 function optsShowPanel(panel) {
-  ['cp','pj','reseau','nto','diag'].forEach(p => {
+  ['cp','pj','reseau','nto','diag','stockage'].forEach(p => {
     const el = document.getElementById('opts-panel-' + p);
     const btn = document.getElementById('otab-' + p);
     if (el) el.style.display = p === panel ? '' : 'none';
@@ -4012,6 +4088,54 @@ async function runDiagnostic() {
     if (st) st.textContent = '✓ Diagnostic lancé — regarde la fenêtre AutoIt';
   } catch (e) {
     if (st) st.textContent = '✗ Erreur : ' + e.message;
+  }
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  OPTIONS — STOCKAGE + NETTOYAGE CONTACTS                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+async function loadStorageInfo() {
+  const st = document.getElementById('storage-status');
+  if (st) st.textContent = 'Analyse en cours...';
+  try {
+    const info = await apiCall('action', { action: 'STORAGE_INFO' });
+    const el = document.getElementById('storage-info');
+    if (info && info.files) {
+      el.innerHTML = info.files.map(f => {
+        const kb = (f.size / 1024).toFixed(1);
+        const color = f.size > 500000 ? 'var(--red)' : f.size > 100000 ? 'var(--orange)' : 'var(--green)';
+        return `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
+          <span style="font-family:var(--mono)">${f.name}</span>
+          <span style="color:${color};font-weight:600;font-family:var(--mono)">${kb} KB</span>
+        </div>`;
+      }).join('') +
+        `<div style="margin-top:8px;font-weight:700;font-size:13px">Total : ${info.totalKB} KB (${info.totalMB} MB)</div>`;
+    }
+    if (st) st.textContent = '✓ Analyse terminée';
+  } catch(e) {
+    if (st) st.textContent = '✗ Erreur : ' + (e.message || 'Serveur hors ligne');
+  }
+  // Mémoire locale
+  const fmtSize = (obj) => { const s = JSON.stringify(obj).length; return (s/1024).toFixed(1) + ' KB'; };
+  const m = document.getElementById('mem-master');
+  const c = document.getElementById('mem-contacts');
+  const r = document.getElementById('mem-rawdata');
+  const p = document.getElementById('mem-cpdata');
+  if (m) m.textContent = g_master.length + ' dossiers (' + fmtSize(g_master) + ')';
+  if (c) c.textContent = g_contacts.length + ' contacts (' + fmtSize(g_contacts) + ')';
+  if (r) r.textContent = Object.keys(g_rawData).length + ' entrées (' + fmtSize(g_rawData) + ')';
+  if (p) p.textContent = g_cpData.length + ' entrées (' + fmtSize(g_cpData) + ')';
+}
+
+async function cleanContacts() {
+  const st = document.getElementById('storage-status');
+  if (st) st.textContent = 'Nettoyage en cours...';
+  try {
+    await apiCall('action', { action: 'CLEAN_CONTACTS' });
+    if (st) st.textContent = '✓ Contacts nettoyés — vérifiez les TrayTip';
+    toast('Nettoyage contacts terminé.');
+  } catch(e) {
+    if (st) st.textContent = '✗ Erreur nettoyage';
   }
 }
 
@@ -4071,7 +4195,7 @@ async function reseauForceSave() {
   const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
   if (!path) return toast('Chemin réseau non configuré. Aller dans Options → Réseau partagé.');
   try {
-    await netSave(path, buildSaveState());
+    await smartNetSave(path);
     const st = document.getElementById('opts-reseau-status');
     if (st) st.textContent = '✓ Sauvegardé sur réseau — ' + new Date().toLocaleTimeString();
     toast('État sauvegardé sur ' + path);
@@ -4090,18 +4214,93 @@ async function reseauForceLoad() {
   } catch(e) { toast('Erreur chargement réseau : ' + e.message); }
 }
 
-// ── État réseau = tableau de bord : juste file + statut + operator ──
-// S'écrase à chaque save (pas de fusion, pas de cumul)
+// ── État réseau = tableau de bord : file + statut + operator + timestamp ──
+// Chaque entrée porte un _ts (timestamp) pour savoir quelle version est la plus récente
 function buildSaveState() {
+  const myName = localStorage.getItem('dispatch_operator') || '';
   return g_master.map(r => ({
     file: r.file,
     statut: r.statut,
-    operator: r.operator || ''
+    operator: r.operator || '',
+    _ts: r._ts || Date.now(),
+    _by: myName
   }));
 }
 
+// Sauvegarde intelligente : merge avant écriture
+// Si le fichier réseau a été modifié par un autre utilisateur, on fusionne :
+// - Pour chaque dossier, on garde la version avec le timestamp le plus récent
+// - Les dossiers inconnus localement sont conservés tels quels (ajoutés par l'autre)
+async function smartNetSave(path) {
+  const myName = localStorage.getItem('dispatch_operator') || '';
+  try {
+    // 1. Charger l'état réseau actuel
+    const remote = await netLoad(path);
+    const remoteBoard = Array.isArray(remote) ? remote : (remote?.board || remote?.master || []);
+
+    // 2. Construire l'état local
+    const localBoard = buildSaveState();
+
+    // 3. Fusionner
+    const merged = new Map();
+
+    // D'abord, charger tout le réseau
+    remoteBoard.forEach(r => merged.set(r.file, r));
+
+    // Ensuite, écraser avec le local SEULEMENT si :
+    // - Le dossier n'existe pas en remote
+    // - OU l'opérateur du dossier local est le même que moi (c'est mon dossier)
+    // - OU le timestamp local est plus récent que le remote
+    localBoard.forEach(local => {
+      const existing = merged.get(local.file);
+      if (!existing) {
+        // Nouveau dossier, ajouter
+        merged.set(local.file, local);
+      } else if ((existing._by || '') === myName || !existing._by) {
+        // C'est mon propre dossier, je l'écrase
+        merged.set(local.file, local);
+      } else if ((local._ts || 0) >= (existing._ts || 0)) {
+        // Mon timestamp est plus récent ou égal
+        merged.set(local.file, local);
+      }
+      // Sinon : le remote est plus récent ET c'est un autre opérateur → on garde le remote
+    });
+
+    // 4. Sauvegarder le résultat fusionné
+    const finalState = [...merged.values()];
+    await netSave(path, finalState);
+
+    // 5. Appliquer les changements remote qu'on a gardés (syncer l'interface)
+    let synced = 0;
+    remoteBoard.forEach(remote => {
+      const kept = merged.get(remote.file);
+      if (kept === remote) {
+        // On a gardé la version remote, syncer en local
+        const local = g_master.find(r => r.file === remote.file);
+        if (local && local.statut !== remote.statut) {
+          local.statut = remote.statut;
+          if (remote.operator) local.operator = remote.operator;
+          local._ts = remote._ts;
+          synced++;
+        }
+      }
+    });
+
+    if (synced > 0) {
+      renderMaster(); renderKanban(); updateStats();
+      console.log(`Réseau merge : ${synced} dossier(s) mis à jour depuis l'autre utilisateur.`);
+      toast(`Sync réseau : ${synced} dossier(s) fusionnés avec l'autre opérateur.`);
+    }
+
+    return finalState;
+  } catch(e) {
+    console.warn('smartNetSave error:', e);
+    // Fallback : sauvegarde classique
+    await smartNetSave(path);
+  }
+}
+
 // Au load : on écrase le statut local avec celui du réseau (si le dossier existe)
-// On n'ajoute rien, on ne touche à rien d'autre
 function applyLoadedState(state) {
   const board = Array.isArray(state) ? state : (state.board || state.master || []);
   let synced = 0;
@@ -4110,6 +4309,7 @@ function applyLoadedState(state) {
     if (local && local.statut !== remote.statut) {
       local.statut = remote.statut;
       if (remote.operator) local.operator = remote.operator;
+      if (remote._ts) local._ts = remote._ts;
       synced++;
     }
   });

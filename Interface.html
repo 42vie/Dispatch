@@ -134,6 +134,8 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
 .btn-ghost:hover { background: var(--border); color: var(--text); }
 .btn-blue-out  { background: var(--blue-bg); border-color: var(--blue); color: var(--blue); }
 .btn-blue-out:hover { background: #d8eaf8; }
+.btn-green-out { background: var(--green-bg); border-color: var(--green); color: var(--green); }
+.btn-green-out:hover { background: #d6eddf; }
 .btn-orange-out { background: var(--orange-bg); border-color: var(--orange); color: var(--orange); }
 .btn-purple-out { background: var(--purple-bg); border-color: var(--purple); color: var(--purple); }
 .btn-sm { height: 24px; padding: 0 8px; font-size: 11px; }
@@ -481,6 +483,10 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
 }
 #toast.show { opacity: 1; }
 
+/* ── SPINNER ETMS ── */
+@keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+#etms-spinner.active { display:flex !important; }
+
 /* ── IMPORT ZONE ── */
 .import-info {
   background: var(--blue-bg); border: 1px dashed var(--blue);
@@ -520,6 +526,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     <button class="btn btn-ghost" id="btn-load-json">📂 Charger sauvegarde</button>
     <input type="file" id="json-input" accept=".json" style="display:none">
     <button class="btn btn-blue-out" id="btn-save">💾 Sauvegarder</button>
+    <button class="btn btn-green-out btn-sm" id="btn-export-excel" title="Exporter le tableau Dispatch en Excel (.xlsx)">📊 Export Excel</button>
     <div class="header-sep"></div>
     <button class="btn btn-ghost btn-sm" id="btn-export-wf" title="Exporter les dossiers en cours (workflow) pour les ré-importer plus tard ou les transmettre">📤 Workflow</button>
     <button class="btn btn-ghost btn-sm" id="btn-import-wf" title="Importer un workflow exporté précédemment">📥 Workflow</button>
@@ -571,7 +578,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
   <div class="tab" data-tab="workflow">Workflow</div>
   <div class="tab" data-tab="cp">Channel Partners</div>
   <div class="tab" data-tab="contacts">Contacts Clients</div>
-  <div class="tab" data-tab="historique">Historique</div>
+
   <div class="tab" data-tab="comat">COMAT</div>
   <div class="tab" data-tab="nto">NTO</div>
   <div class="tab" data-tab="options">Options</div>
@@ -620,6 +627,17 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
 
   <!-- WORKFLOW KANBAN -->
   <div class="tabpane" id="tab-workflow">
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0">
+      <span style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Trier par</span>
+      <select id="kanban-sort" style="height:28px;font-size:11px;border:1px solid var(--border2);border-radius:5px;background:var(--surface2);color:var(--text);padding:0 8px" onchange="renderKanban()">
+        <option value="">Défaut (ordre d'import)</option>
+        <option value="transp">Transporteur</option>
+        <option value="client">Client</option>
+        <option value="_dateCreated">Date création</option>
+        <option value="rdl">RDL</option>
+        <option value="dept">Département</option>
+      </select>
+    </div>
     <div id="kanban-wrap">
       <!-- 7 colonnes générées en JS -->
     </div>
@@ -677,63 +695,6 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     </div>
   </div>
 
-  <!-- FILE CLOSING -->
-  <div class="tabpane" id="tab-historique">
-    <div class="tab-toolbar" style="padding:10px 14px;gap:10px;flex-wrap:wrap">
-      <span style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">📚 Historique des dossiers</span>
-      <div style="flex:1"></div>
-      <input id="hist-search" type="text" placeholder="🔍  Rechercher client, N° J, commentaire..."
-        style="width:280px;height:30px;border:1px solid var(--border2);border-radius:5px;
-               background:var(--surface2);color:var(--text);font-size:12px;padding:0 10px;outline:none"
-        oninput="histFilter()">
-      <select id="hist-filter-statut"
-        style="height:30px;font-size:11px;border:1px solid var(--border2);border-radius:5px;
-               background:var(--surface2);color:var(--text);padding:0 8px"
-        onchange="histFilter()">
-        <option value="">Tous statuts</option>
-        <option value="9">En attente (9)</option>
-        <option value="8">Terminés (8)</option>
-        <option value="7">NTO (7)</option>
-        <option value="6">COMAT (6)</option>
-        <option value="5">Prêt FC (5)</option>
-        <option value="4">Pré-alerte (4)</option>
-        <option value="3">Attente (3)</option>
-        <option value="2">CC (2)</option>
-      </select>
-      <select id="hist-filter-transp"
-        style="height:30px;font-size:11px;border:1px solid var(--border2);border-radius:5px;
-               background:var(--surface2);color:var(--text);padding:0 8px"
-        onchange="histFilter()">
-        <option value="">Tous transporteurs</option>
-        <option value="Flex">Flex</option>
-        <option value="DGS">DGS</option>
-        <option value="EFDS">EFDS</option>
-        <option value="UPS">UPS</option>
-      </select>
-      <button class="btn btn-ghost btn-sm" onclick="histClearFilters()">✕ Effacer filtres</button>
-    </div>
-
-    <div style="flex:1;overflow-y:auto;padding:0 14px 14px">
-      <table id="hist-table" style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead>
-          <tr style="position:sticky;top:0;background:var(--surface);z-index:1">
-            <th onclick="histSort('file')"    style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;cursor:pointer;border-bottom:2px solid var(--border);white-space:nowrap">N° J ↕</th>
-            <th onclick="histSort('client')"  style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;cursor:pointer;border-bottom:2px solid var(--border)">Client ↕</th>
-            <th onclick="histSort('rdl')"     style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;cursor:pointer;border-bottom:2px solid var(--border)">RDL ↕</th>
-            <th                               style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--border)">Transp.</th>
-            <th onclick="histSort('statut')"  style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;cursor:pointer;border-bottom:2px solid var(--border)">Statut ↕</th>
-            <th onclick="histSort('_dateCreated')" style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;cursor:pointer;border-bottom:2px solid var(--border)">Créé ↕</th>
-            <th onclick="histSort('_dateArchived')" style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;cursor:pointer;border-bottom:2px solid var(--border)">Archivé ↕</th>
-            <th                               style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--border)">Commentaire</th>
-          </tr>
-        </thead>
-        <tbody id="hist-tbody"></tbody>
-      </table>
-      <div id="hist-empty" style="display:none;text-align:center;padding:40px;color:var(--text3);font-size:13px">
-        Aucun dossier trouvé
-      </div>
-    </div>
-  </div>
 
 <!-- COMAT -->
 <div class="tabpane" id="tab-comat">
@@ -956,6 +917,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
         <button class="btn btn-sm btn-ghost"      onclick="optsShowPanel('reseau')" id="otab-reseau">🌐 Réseau partagé</button>
         <button class="btn btn-sm btn-ghost"      onclick="optsShowPanel('nto')"    id="otab-nto">⛽ NTO / Fuel</button>
         <button class="btn btn-sm btn-ghost"      onclick="optsShowPanel('diag')"   id="otab-diag">🔍 Diagnostic</button>
+        <button class="btn btn-sm btn-ghost"      onclick="optsShowPanel('stockage')" id="otab-stockage">💾 Stockage</button>
       </div>
     </div>
 
@@ -1062,6 +1024,30 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
             🔍 Lancer le diagnostic
           </button>
           <span id="diag-status" style="font-size:11px;color:var(--text3)"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel Stockage ─────────────────────────────── -->
+    <div id="opts-panel-stockage" style="display:none;padding:20px;max-width:680px;overflow-y:auto">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">Stockage — Taille des fichiers JSON</div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:14px">
+        <div id="storage-info" style="font-size:12px;color:var(--text2);line-height:1.8">
+          Cliquez sur "Analyser" pour voir la taille des fichiers.
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-blue-out btn-sm" onclick="loadStorageInfo()" style="height:32px">📊 Analyser le stockage</button>
+          <button class="btn btn-green-out btn-sm" onclick="cleanContacts()" style="height:32px">🧹 Nettoyer les contacts</button>
+          <span id="storage-status" style="font-size:11px;color:var(--text3)"></span>
+        </div>
+      </div>
+      <div style="margin-top:14px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:16px">
+        <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">Mémoire locale (navigateur)</div>
+        <div style="font-size:12px;color:var(--text2);line-height:1.8">
+          <b>Dossiers actifs :</b> <span id="mem-master">-</span><br>
+          <b>Contacts :</b> <span id="mem-contacts">-</span><br>
+          <b>RawData :</b> <span id="mem-rawdata">-</span><br>
+          <b>CP Data :</b> <span id="mem-cpdata">-</span>
         </div>
       </div>
     </div>
@@ -1264,6 +1250,16 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
 
 <div id="toast"></div>
 
+<!-- ══ SPINNER OVERLAY ETMS ══ -->
+<div id="etms-spinner" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.35);z-index:9999;
+  display:none;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border-radius:12px;padding:28px 40px;box-shadow:var(--shadow-lg);text-align:center;min-width:280px">
+    <div id="etms-spinner-icon" style="font-size:28px;margin-bottom:10px;animation:spin 1.2s linear infinite">&#9881;</div>
+    <div id="etms-spinner-msg" style="font-size:14px;font-weight:600;color:var(--text)">Action en cours...</div>
+    <div id="etms-spinner-sub" style="font-size:11px;color:var(--text3);margin-top:6px">Ne touchez pas à E.TMS pendant l'exécution</div>
+  </div>
+</div>
+
 <!-- ══ KANBAN ACTION BAR ══ -->
 <div id="kanban-action-bar">
   <span class="kab-count"><span id="kab-count">0</span> sélectionné(s)</span>
@@ -1409,7 +1405,6 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
 const DEFAULT_STATE_PATH = 'F:\\CDG\\PRODUCT\\TRANSCON\\Shared\\Clients\\HPE\\Workboard\\dispatch_state.json';
 
 let g_master   = [];  // dossiers actifs
-let g_archive  = [];  // dossiers terminés archivés
 let g_operatorFilter = localStorage.getItem('dispatch_operator') || ''; // restauré immédiatement
 let g_rawData  = {};  // {fileId -> {client,svct,poids,vol,taxable,dept,rdl}}
 let g_cpData   = [];  // [{client,files[],palettes,colis,poids,vol,taxable,doc}]
@@ -1720,6 +1715,7 @@ function buildKanban() {
 let g_kabSelected = new Set(); // fichiers sélectionnés
 
 function renderKanban() {
+  const kSort = document.getElementById('kanban-sort')?.value || '';
   K_CFG.forEach(k => {
     let items = g_master.filter(r => parseInt(statutNum(r.statut))===k.n && (!g_operatorFilter || (r.operator||'')===g_operatorFilter));
     for (const [col, allowed] of Object.entries(g_colFilters)) {
@@ -1727,6 +1723,14 @@ function renderKanban() {
       items = items.filter(r => {
         const v = col === 'statut' ? statutLabel(statutNum(r.statut)) : String(r[col]||'');
         return allowed.has(v);
+      });
+    }
+    // Tri Kanban
+    if (kSort) {
+      items.sort((a, b) => {
+        const va = (a[kSort]||'').toString().toLowerCase();
+        const vb = (b[kSort]||'').toString().toLowerCase();
+        return va < vb ? -1 : va > vb ? 1 : 0;
       });
     }
     document.getElementById(`k-cnt-${k.n}`).textContent = items.length;
@@ -1828,7 +1832,7 @@ function kabChangeStatus() {
 
 function kabApplyStatus() {
   const newStat = document.getElementById('kab-new-status').value;
-  kabGetSelected().forEach(r => { r.statut = newStat; });
+  kabGetSelected().forEach(r => { r.statut = newStat; stampRecord(r); });
   closeModal('modal-kab-status');
   kabClearSel();
   renderMaster(); renderKanban(); updateStats(); markDirty();
@@ -1896,6 +1900,7 @@ function onKDrop(event, status) {
   const idx = g_master.findIndex(r => r.file===g_dragFile);
   if (idx<0) return;
   g_master[idx].statut = String(status);
+  stampRecord(g_master[idx]);
   if (status>=2 && g_master[idx].cc!=='Cc') g_master[idx].cc='Cc';
   renderMaster(); renderKanban(); updateStats(); g_dragFile=null;
 }
@@ -2486,7 +2491,7 @@ function saveEdit() {
   r.email=document.getElementById('ed-email').value;
   r.comment=document.getElementById('ed-comment').value;
   r.operator=document.getElementById('ed-operator').value.trim();
-  r.statut=document.getElementById('ed-statut').value;
+  r.statut=document.getElementById('ed-statut').value; stampRecord(r);
   // Si contact renseigné → enrichir g_contacts auto
   if (r.contact&&r.email) {
     const existing=g_contacts.find(c=>c.email===r.email);
@@ -2734,17 +2739,17 @@ function saveManual() {
 document.getElementById('btn-clear-done').onclick = () => {
   const done = g_master.filter(r => String(r.statut)==='8' && !String(r.statut).includes('9'));
   if (!done.length) return toast('Aucun dossier terminé.');
-  if (!confirm(`Archiver ${done.length} dossier(s) terminés dans l'Historique ?`)) return;
-  // Ajouter la date d'archivage et pousser dans g_archive
-  const now = new Date().toISOString().slice(0,10);
+  if (!confirm(`Supprimer ${done.length} dossier(s) terminés de la mémoire ?\n(Les contacts clients sont conservés)`)) return;
+  // Supprimer les rawData associés
   done.forEach(r => {
-    r._dateArchived = now;
-    // Éviter les doublons
-    if (!g_archive.find(a => a.file === r.file)) g_archive.push(r);
+    (r.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean).forEach(f => {
+      delete g_rawData[f];
+    });
   });
+  // Retirer de g_master — libère la mémoire
   g_master = g_master.filter(r => String(r.statut)!=='8');
   renderMaster(); renderKanban(); updateStats(); markDirty();
-  toast(`${done.length} dossier(s) archivé(s) → onglet Historique.`);
+  toast(`${done.length} dossier(s) supprimés. Contacts conservés.`);
 };
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -2754,6 +2759,40 @@ document.getElementById('btn-save').onclick = () => {
   const data=JSON.stringify({master:g_master,rawData:g_rawData,cpData:g_cpData,contacts:g_contacts},null,2);
   downloadText('DispatchMaster_'+new Date().toISOString().slice(0,16).replace('T','_')+'.json', data);
   toast('Sauvegarde téléchargée.');
+};
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  EXPORT EXCEL — Tableau Dispatch complet                                ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.getElementById('btn-export-excel').onclick = () => {
+  if (!g_master.length) return toast('Aucun dossier à exporter.');
+  const headers = ['N° Dossier','Client','RDL','Service','Transporteur','Poids (kg)','Volume (m³)','Taxable','Dept','Contact','Téléphone','Email','CC','Statut','Opérateur','Commentaire','Date création'];
+  const rows = g_master.map(r => [
+    r.file || '',
+    r.client || '',
+    r.rdl || '',
+    r.svct || '',
+    r.transp || '',
+    r.poids || '',
+    r.vol || '',
+    r.taxable || '',
+    r.dept || '',
+    r.contact || '',
+    r.tel || '',
+    r.email || '',
+    r.cc || '',
+    STATUT_LABELS[String(r.statut||'')] || r.statut || '',
+    r.operator || '',
+    r.comment || '',
+    r._dateCreated || ''
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  // Auto-largeur colonnes
+  ws['!cols'] = headers.map((h,i) => ({ wch: Math.max(h.length, ...rows.map(r => String(r[i]).length).slice(0,50)) + 2 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Dispatch');
+  XLSX.writeFile(wb, 'Dispatch_Export_' + new Date().toISOString().slice(0,10) + '.xlsx');
+  toast('Export Excel téléchargé.');
 };
 
 document.getElementById('btn-load-json').onclick = () => document.getElementById('json-input').click();
@@ -2767,7 +2806,6 @@ document.getElementById('json-input').addEventListener('change', e => {
       g_rawData = d.rawData  || {};
       g_cpData  = d.cpData   || [];
       g_contacts= d.contacts || [];
-      g_archive = d.archive  || [];
       renderMaster(); renderKanban(); renderCP(); renderContacts(); updateStats();
       toast('Sauvegarde chargée — tous vos dossiers et contacts sont restaurés.');
     } catch(err){ alert('Erreur lecture JSON : '+err.message); }
@@ -3048,6 +3086,12 @@ const SAVE_DELAY = 1500; // 1.5s après dernière modification
 
 function markDirty() { _dirty = true; scheduleSave(); }
 
+// Marquer un dossier comme modifié par cet opérateur (pour la fusion réseau)
+function stampRecord(r) {
+  r._ts = Date.now();
+  r._by = localStorage.getItem('dispatch_operator') || '';
+}
+
 function scheduleSave() {
   if (_saveTimer) clearTimeout(_saveTimer);
   _saveTimer = setTimeout(autoSave, SAVE_DELAY);
@@ -3056,41 +3100,56 @@ function scheduleSave() {
 async function autoSave() {
   if (!_dirty) return;
   _dirty = false;
-  const data = { master: g_master, rawData: g_rawData, cpData: g_cpData, contacts: g_contacts, archive: g_archive };
-  // Sauvegarder en parallèle : IndexedDB + API AutoIt + Réseau partagé
+  // Fichier ÉTAT : statut + opérateur de chaque dossier (léger)
+  const statusData = g_master.map(r => ({ file: r.file, statut: r.statut, operator: r.operator || '', cc: r.cc || '' }));
+  // Fichier DATA : toutes les infos dossiers + rawData + cpData (sans contacts)
+  const infoData = { master: g_master, rawData: g_rawData, cpData: g_cpData };
+  // Fichier CONTACTS : g_contacts (séparé, persistant)
+  const contactsData = g_contacts;
+
+  // Sauvegarder en parallèle : IndexedDB + API AutoIt (3 fichiers) + Réseau
   const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
   try { await Promise.all([
-    idbSave(data),
+    idbSave(infoData),
     idbSaveContacts(),
-    apiCall('save', data),
-    path ? netSave(path, buildSaveState()) : Promise.resolve()
+    apiCall('save-status', statusData),
+    apiCall('save-data', infoData),
+    saveContactsChunked(),
+    path ? smartNetSave(path) : Promise.resolve()
   ]); }
   catch(e) { console.warn('autoSave error:', e); }
 }
 
+// Sauvegarde contacts avec auto-split si trop gros (>500 KB par fichier)
+const CONTACTS_CHUNK_SIZE = 500 * 1024; // 500 KB
+async function saveContactsChunked() {
+  const json = JSON.stringify(g_contacts);
+  if (json.length <= CONTACTS_CHUNK_SIZE) {
+    // Un seul fichier suffit
+    await apiCall('save-contacts', { chunk: 0, total: 1, data: g_contacts });
+  } else {
+    // Découper en morceaux
+    const chunkCount = Math.ceil(json.length / CONTACTS_CHUNK_SIZE);
+    const perChunk = Math.ceil(g_contacts.length / chunkCount);
+    const promises = [];
+    for (let i = 0; i < chunkCount; i++) {
+      const slice = g_contacts.slice(i * perChunk, (i + 1) * perChunk);
+      promises.push(apiCall('save-contacts', { chunk: i, total: chunkCount, data: slice }));
+    }
+    await Promise.all(promises);
+  }
+}
+
 // Sauvegarde contacts uniquement (après ajout/modif/suppression)
 async function saveContacts() {
-  try { await idbSaveContacts(); } catch(e) { console.warn('contacts save:', e); }
+  try { await Promise.all([idbSaveContacts(), saveContactsChunked()]); }
+  catch(e) { console.warn('contacts save:', e); }
 }
 
 // Écoute intelligente : ne marque dirty que sur vrais changements
 document.addEventListener('input', markDirty);
 // Les fonctions appellent markDirty() après modification — le save est debounced automatiquement
 
-// ╔══════════════════════════════════════════════════════════════════════════╗
-// ║  AUTO-PURGE — nettoie les archives > 45 jours pour alléger la mémoire  ║
-// ╚══════════════════════════════════════════════════════════════════════════╝
-function autoPurgeArchive() {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 45);
-  const before = g_archive.length;
-  g_archive = g_archive.filter(r => {
-    const d = r._dateArchived || r._dateCreated;
-    return d && new Date(d) >= cutoff;
-  });
-  const purged = before - g_archive.length;
-  if (purged > 0) console.log(`Auto-purge: ${purged} archives > 45j supprimées.`);
-}
 
 // Chargement automatique au démarrage — IndexedDB prioritaire, API fallback
 window.onload = async () => {
@@ -3115,32 +3174,54 @@ window.onload = async () => {
       g_master = idbData.master || [];
       g_rawData = idbData.rawData || {};
       g_cpData = idbData.cpData || [];
-      // Contacts : prendre IDB dédié en priorité, sinon ceux du state global
       if (!g_contacts.length && idbData.contacts) g_contacts = idbData.contacts;
-      g_archive = idbData.archive || [];
       loaded = true;
       console.log('Chargé depuis IndexedDB (local).');
     }
   } catch(e) { console.warn('IDB load error:', e); }
 
-  // 4. Fallback : charger depuis API AutoIt
+  // 4. Fallback : charger depuis API AutoIt (3 fichiers séparés)
   if (!loaded) {
     try {
-      const response = await fetch(`${API_URL}/load`);
-      const d = await response.json();
+      // Charger data (master + rawData + cpData)
+      const respData = await fetch(`${API_URL}/load-data`);
+      const d = await respData.json();
       if (d && d.master && d.master.length > 0) {
         g_master = d.master || [];
         g_rawData = d.rawData || {};
         g_cpData = d.cpData || [];
-        if (!g_contacts.length && d.contacts) g_contacts = d.contacts;
-        g_archive = d.archive || [];
         loaded = true;
-        // Syncer vers IndexedDB pour la prochaine fois
-        idbSave({ master: g_master, rawData: g_rawData, cpData: g_cpData, contacts: g_contacts, archive: g_archive });
-        idbSaveContacts();
       }
-    } catch (err) {
-      console.log("Serveur hors ligne ou premier démarrage.");
+    } catch(e) { console.log('load-data:', e); }
+
+    // Charger contacts séparément (multi-chunks)
+    if (!g_contacts.length) {
+      try {
+        const respC = await fetch(`${API_URL}/load-contacts`);
+        const c = await respC.json();
+        if (Array.isArray(c) && c.length > 0) g_contacts = c;
+      } catch(e) { console.log('load-contacts:', e); }
+    }
+
+    // Fallback ultime : ancien format monolithique
+    if (!loaded) {
+      try {
+        const response = await fetch(`${API_URL}/load`);
+        const d = await response.json();
+        if (d && d.master && d.master.length > 0) {
+          g_master = d.master || [];
+          g_rawData = d.rawData || {};
+          g_cpData = d.cpData || [];
+          if (!g_contacts.length && d.contacts) g_contacts = d.contacts;
+          loaded = true;
+        }
+      } catch(e) { console.log("Serveur hors ligne ou premier démarrage."); }
+    }
+
+    if (loaded) {
+      // Syncer vers IndexedDB pour la prochaine fois
+      idbSave({ master: g_master, rawData: g_rawData, cpData: g_cpData });
+      idbSaveContacts();
     }
   }
 
@@ -3153,7 +3234,6 @@ window.onload = async () => {
         });
       }
     });
-    autoPurgeArchive(); // Nettoyer les vieilles archives automatiquement
     renderMaster(); renderKanban(); renderCP(); renderContacts(); updateStats();
     populateOperatorFilter();
     toast(loaded ? '✓ Données restaurées.' : 'Premier démarrage.');
@@ -3162,6 +3242,17 @@ window.onload = async () => {
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  ENVOI DES ACTIONS VERS AUTOIT                                           ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
+// Spinner ETMS — affiché pendant les actions longues
+function showSpinner(msg, sub) {
+  const el = document.getElementById('etms-spinner');
+  document.getElementById('etms-spinner-msg').textContent = msg || 'Action en cours...';
+  document.getElementById('etms-spinner-sub').textContent = sub || 'Ne touchez pas à E.TMS pendant l\'exécution';
+  el.classList.add('active');
+}
+function hideSpinner() {
+  document.getElementById('etms-spinner').classList.remove('active');
+}
+
 async function sendAction(actionType, cmd = '') {
   // Récupération des données depuis la fenêtre d'édition (Modal Edit)
   const file = document.getElementById('ed-file').value.trim();
@@ -3181,10 +3272,22 @@ async function sendAction(actionType, cmd = '') {
     email: email
   };
 
-  if (actionType === 'ETMS_CMD') toast(`E.TMS : Envoi de ${cmd} pour ${file}...`);
-  if (actionType === 'MAIL_RDV') toast(`Outlook : Préparation du mail pour ${client}...`);
+  if (actionType === 'ETMS_CMD') {
+    showSpinner(`E.TMS : ${cmd} → ${file}`, 'Commande envoyée à E.TMS — patientez...');
+  }
+  if (actionType === 'MAIL_RDV') {
+    showSpinner(`Outlook : Mail RDV pour ${client}`, 'Préparation du mail en cours...');
+  }
 
-  await apiCall('action', payload);
+  try {
+    await apiCall('action', payload);
+    if (actionType === 'ETMS_CMD') toast(`✓ E.TMS : ${cmd} terminé pour ${file}`);
+    if (actionType === 'MAIL_RDV') toast(`✓ Mail RDV envoyé pour ${client}`);
+  } catch(e) {
+    toast(`Erreur : ${e.message || 'Action échouée'}`);
+  } finally {
+    hideSpinner();
+  }
 }
 
 // Fonction pour les boutons du header (lit le champ hdr-file)
@@ -3210,10 +3313,17 @@ async function sendActionHeader(actionType, cmd = '') {
     email: email
   };
 
-  if (actionType === 'ETMS_CMD') toast(`E.TMS : ${cmd} → ${file}`);
-  if (actionType === 'MAIL_RDV') toast(`Outlook : Mail RDV pour ${client || file}...`);
+  if (actionType === 'ETMS_CMD') showSpinner(`E.TMS : ${cmd} → ${file}`);
+  if (actionType === 'MAIL_RDV') showSpinner(`Mail RDV pour ${client || file}...`);
 
-  await apiCall('action', payload);
+  try {
+    await apiCall('action', payload);
+    if (actionType === 'ETMS_CMD') toast(`✓ E.TMS : ${cmd} → ${file}`);
+  } catch(e) {
+    toast(`Erreur : ${e.message || 'Action échouée'}`);
+  } finally {
+    hideSpinner();
+  }
 }
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -3958,7 +4068,7 @@ function identitySkip() {
 // ║  OPTIONS — NAVIGATION SOUS-PANELS                                        ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 function optsShowPanel(panel) {
-  ['cp','pj','reseau','nto','diag'].forEach(p => {
+  ['cp','pj','reseau','nto','diag','stockage'].forEach(p => {
     const el = document.getElementById('opts-panel-' + p);
     const btn = document.getElementById('otab-' + p);
     if (el) el.style.display = p === panel ? '' : 'none';
@@ -3978,6 +4088,54 @@ async function runDiagnostic() {
     if (st) st.textContent = '✓ Diagnostic lancé — regarde la fenêtre AutoIt';
   } catch (e) {
     if (st) st.textContent = '✗ Erreur : ' + e.message;
+  }
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  OPTIONS — STOCKAGE + NETTOYAGE CONTACTS                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+async function loadStorageInfo() {
+  const st = document.getElementById('storage-status');
+  if (st) st.textContent = 'Analyse en cours...';
+  try {
+    const info = await apiCall('action', { action: 'STORAGE_INFO' });
+    const el = document.getElementById('storage-info');
+    if (info && info.files) {
+      el.innerHTML = info.files.map(f => {
+        const kb = (f.size / 1024).toFixed(1);
+        const color = f.size > 500000 ? 'var(--red)' : f.size > 100000 ? 'var(--orange)' : 'var(--green)';
+        return `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
+          <span style="font-family:var(--mono)">${f.name}</span>
+          <span style="color:${color};font-weight:600;font-family:var(--mono)">${kb} KB</span>
+        </div>`;
+      }).join('') +
+        `<div style="margin-top:8px;font-weight:700;font-size:13px">Total : ${info.totalKB} KB (${info.totalMB} MB)</div>`;
+    }
+    if (st) st.textContent = '✓ Analyse terminée';
+  } catch(e) {
+    if (st) st.textContent = '✗ Erreur : ' + (e.message || 'Serveur hors ligne');
+  }
+  // Mémoire locale
+  const fmtSize = (obj) => { const s = JSON.stringify(obj).length; return (s/1024).toFixed(1) + ' KB'; };
+  const m = document.getElementById('mem-master');
+  const c = document.getElementById('mem-contacts');
+  const r = document.getElementById('mem-rawdata');
+  const p = document.getElementById('mem-cpdata');
+  if (m) m.textContent = g_master.length + ' dossiers (' + fmtSize(g_master) + ')';
+  if (c) c.textContent = g_contacts.length + ' contacts (' + fmtSize(g_contacts) + ')';
+  if (r) r.textContent = Object.keys(g_rawData).length + ' entrées (' + fmtSize(g_rawData) + ')';
+  if (p) p.textContent = g_cpData.length + ' entrées (' + fmtSize(g_cpData) + ')';
+}
+
+async function cleanContacts() {
+  const st = document.getElementById('storage-status');
+  if (st) st.textContent = 'Nettoyage en cours...';
+  try {
+    await apiCall('action', { action: 'CLEAN_CONTACTS' });
+    if (st) st.textContent = '✓ Contacts nettoyés — vérifiez les TrayTip';
+    toast('Nettoyage contacts terminé.');
+  } catch(e) {
+    if (st) st.textContent = '✗ Erreur nettoyage';
   }
 }
 
@@ -4037,7 +4195,7 @@ async function reseauForceSave() {
   const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
   if (!path) return toast('Chemin réseau non configuré. Aller dans Options → Réseau partagé.');
   try {
-    await netSave(path, buildSaveState());
+    await smartNetSave(path);
     const st = document.getElementById('opts-reseau-status');
     if (st) st.textContent = '✓ Sauvegardé sur réseau — ' + new Date().toLocaleTimeString();
     toast('État sauvegardé sur ' + path);
@@ -4056,18 +4214,93 @@ async function reseauForceLoad() {
   } catch(e) { toast('Erreur chargement réseau : ' + e.message); }
 }
 
-// ── État réseau = tableau de bord : juste file + statut + operator ──
-// S'écrase à chaque save (pas de fusion, pas de cumul)
+// ── État réseau = tableau de bord : file + statut + operator + timestamp ──
+// Chaque entrée porte un _ts (timestamp) pour savoir quelle version est la plus récente
 function buildSaveState() {
+  const myName = localStorage.getItem('dispatch_operator') || '';
   return g_master.map(r => ({
     file: r.file,
     statut: r.statut,
-    operator: r.operator || ''
+    operator: r.operator || '',
+    _ts: r._ts || Date.now(),
+    _by: myName
   }));
 }
 
+// Sauvegarde intelligente : merge avant écriture
+// Si le fichier réseau a été modifié par un autre utilisateur, on fusionne :
+// - Pour chaque dossier, on garde la version avec le timestamp le plus récent
+// - Les dossiers inconnus localement sont conservés tels quels (ajoutés par l'autre)
+async function smartNetSave(path) {
+  const myName = localStorage.getItem('dispatch_operator') || '';
+  try {
+    // 1. Charger l'état réseau actuel
+    const remote = await netLoad(path);
+    const remoteBoard = Array.isArray(remote) ? remote : (remote?.board || remote?.master || []);
+
+    // 2. Construire l'état local
+    const localBoard = buildSaveState();
+
+    // 3. Fusionner
+    const merged = new Map();
+
+    // D'abord, charger tout le réseau
+    remoteBoard.forEach(r => merged.set(r.file, r));
+
+    // Ensuite, écraser avec le local SEULEMENT si :
+    // - Le dossier n'existe pas en remote
+    // - OU l'opérateur du dossier local est le même que moi (c'est mon dossier)
+    // - OU le timestamp local est plus récent que le remote
+    localBoard.forEach(local => {
+      const existing = merged.get(local.file);
+      if (!existing) {
+        // Nouveau dossier, ajouter
+        merged.set(local.file, local);
+      } else if ((existing._by || '') === myName || !existing._by) {
+        // C'est mon propre dossier, je l'écrase
+        merged.set(local.file, local);
+      } else if ((local._ts || 0) >= (existing._ts || 0)) {
+        // Mon timestamp est plus récent ou égal
+        merged.set(local.file, local);
+      }
+      // Sinon : le remote est plus récent ET c'est un autre opérateur → on garde le remote
+    });
+
+    // 4. Sauvegarder le résultat fusionné
+    const finalState = [...merged.values()];
+    await netSave(path, finalState);
+
+    // 5. Appliquer les changements remote qu'on a gardés (syncer l'interface)
+    let synced = 0;
+    remoteBoard.forEach(remote => {
+      const kept = merged.get(remote.file);
+      if (kept === remote) {
+        // On a gardé la version remote, syncer en local
+        const local = g_master.find(r => r.file === remote.file);
+        if (local && local.statut !== remote.statut) {
+          local.statut = remote.statut;
+          if (remote.operator) local.operator = remote.operator;
+          local._ts = remote._ts;
+          synced++;
+        }
+      }
+    });
+
+    if (synced > 0) {
+      renderMaster(); renderKanban(); updateStats();
+      console.log(`Réseau merge : ${synced} dossier(s) mis à jour depuis l'autre utilisateur.`);
+      toast(`Sync réseau : ${synced} dossier(s) fusionnés avec l'autre opérateur.`);
+    }
+
+    return finalState;
+  } catch(e) {
+    console.warn('smartNetSave error:', e);
+    // Fallback : sauvegarde classique
+    await smartNetSave(path);
+  }
+}
+
 // Au load : on écrase le statut local avec celui du réseau (si le dossier existe)
-// On n'ajoute rien, on ne touche à rien d'autre
 function applyLoadedState(state) {
   const board = Array.isArray(state) ? state : (state.board || state.master || []);
   let synced = 0;
@@ -4076,6 +4309,7 @@ function applyLoadedState(state) {
     if (local && local.statut !== remote.statut) {
       local.statut = remote.statut;
       if (remote.operator) local.operator = remote.operator;
+      if (remote._ts) local._ts = remote._ts;
       synced++;
     }
   });
@@ -4640,83 +4874,8 @@ async function comatStartBatch(affected, toStatus) {
 }
 
 
-// ╔══════════════════════════════════════════════════════════════════════════╗
-// ║  HISTORIQUE                                                              ║
-// ╚══════════════════════════════════════════════════════════════════════════╝
-let _histSortCol = '_dateCreated';
-let _histSortDir = -1;
 const STATUT_LABELS = {'1':'Import','2':'CC','3':'Attente','4':'Pré-alerte','5':'Prêt FC','6':'COMAT','7':'NTO','8':'Terminé','9':'En attente'};
 const STATUT_COLORS = {'1':'var(--text3)','2':'var(--blue)','3':'var(--orange)','4':'var(--purple)','5':'#00c08b','6':'#ff6b35','7':'var(--teal)','8':'var(--green)','9':'#d4a017'};
-
-function histRender() {
-  const search  = (document.getElementById('hist-search')?.value||'').toLowerCase();
-  const fStatut = document.getElementById('hist-filter-statut')?.value||'';
-  const fTransp = document.getElementById('hist-filter-transp')?.value||'';
-  let rows = [...g_archive];
-  if (fStatut) rows = rows.filter(r => String(r.statut||'') === fStatut);
-  if (fTransp) rows = rows.filter(r => (r.transp||'').includes(fTransp));
-  if (search)  rows = rows.filter(r =>
-    (r.file||'').toLowerCase().includes(search) ||
-    (r.client||'').toLowerCase().includes(search) ||
-    (r.comment||'').toLowerCase().includes(search) ||
-    (r.rdl||'').includes(search)
-  );
-  rows.sort((a, b) => {
-    let va = a[_histSortCol]||'', vb = b[_histSortCol]||'';
-    if (_histSortCol === 'statut') { va = parseInt(va)||0; vb = parseInt(vb)||0; }
-    return va < vb ? -_histSortDir : va > vb ? _histSortDir : 0;
-  });
-  const tbody = document.getElementById('hist-tbody');
-  const empty = document.getElementById('hist-empty');
-  if (!tbody) return;
-  if (!rows.length) { tbody.innerHTML = ''; if (empty) empty.style.display='block'; return; }
-  if (empty) empty.style.display = 'none';
-  tbody.innerHTML = rows.map((r, idx) => {
-    const statLabel = STATUT_LABELS[String(r.statut||'')] || ('Statut '+r.statut);
-    const statColor = STATUT_COLORS[String(r.statut||'')] || 'var(--text3)';
-    const safeCom   = (r.comment||'').replace(/"/g,'&quot;').replace(/</g,'&lt;');
-    const rowBg     = idx % 2 === 0 ? 'var(--surface)' : 'var(--surface2)';
-    return `<tr style="background:${rowBg};border-bottom:1px solid var(--border)">
-      <td style="padding:7px 10px;font-family:var(--mono);font-size:11px;font-weight:600;white-space:nowrap">${r.file||''}</td>
-      <td style="padding:7px 10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.client||''}">${r.client||''}</td>
-      <td style="padding:7px 10px;font-family:var(--mono);font-size:11px;white-space:nowrap">${r.rdl||''}</td>
-      <td style="padding:7px 10px;font-size:11px;white-space:nowrap">${r.transp||''}</td>
-      <td style="padding:7px 10px;white-space:nowrap">
-        <span style="font-size:10px;font-weight:700;color:${statColor};background:${statColor}22;padding:2px 7px;border-radius:10px">${statLabel}</span>
-      </td>
-      <td style="padding:7px 10px;font-family:var(--mono);font-size:11px;white-space:nowrap">${r._dateCreated||''}</td>
-      <td style="padding:7px 10px;font-family:var(--mono);font-size:11px;white-space:nowrap;color:var(--text3)">${r._dateArchived||''}</td>
-      <td style="padding:7px 10px;min-width:200px">
-        <input type="text" value="${safeCom}" placeholder="Ajouter un commentaire..."
-          style="width:100%;height:24px;font-size:11px;border:1px solid transparent;border-radius:3px;background:transparent;color:var(--text);padding:0 6px;outline:none;cursor:text"
-          onfocus="this.style.borderColor='var(--border2)';this.style.background='var(--surface2)'"
-          onblur="this.style.borderColor='transparent';this.style.background='transparent';histSaveComment('${(r.file||'').replace(/'/g,"\'")}',this.value)"
-          onkeydown="if(event.key==='Enter')this.blur()">
-      </td>
-    </tr>`;
-  }).join('');
-}
-function histFilter()  { histRender(); }
-function histClearFilters() {
-  document.getElementById('hist-search').value = '';
-  document.getElementById('hist-filter-statut').value = '';
-  document.getElementById('hist-filter-transp').value = '';
-  histRender();
-}
-function histSort(col) {
-  if (_histSortCol === col) _histSortDir *= -1;
-  else { _histSortCol = col; _histSortDir = -1; }
-  histRender();
-}
-function histSaveComment(file, val) {
-  const r = g_archive.find(x => x.file === file);
-  if (!r) return;
-  r.comment = val;
-  markDirty();
-}
-document.querySelectorAll('.tab').forEach(t => {
-  t.addEventListener('click', () => { if (t.dataset.tab === 'historique') setTimeout(histRender, 50); });
-});
 
 </script>
 

@@ -196,6 +196,9 @@ Func _HandleClient($iSocket)
     If $sURL = "/" Then
         _SendHttpResponse($iSocket, 200, "text/html", $g_sHTML)
 
+    ElseIf $sURL = "/api/ping" Then
+        _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
+
     ElseIf $sURL = "/api/load" Then
         Local $sJson = "{}"
         If FileExists($g_sSaveFile) Then
@@ -395,14 +398,28 @@ Func _HandleClient($iSocket)
                 _Action_COMAT_Solo($sFile_a)
 
             Case "FC_PAUSE"
-                $bFC_Pause = Not $bFC_Pause
+                $bFC_Pause = True
+
+            Case "FC_PLAY"
+                $bFC_Pause = False
+
+            Case "FC_SKIP"
+                $bFC_Skip = True
+                $bFC_Pause = False
 
             Case "FC_STOP"
                 $bFC_Stop = True
                 $bFC_Pause = False
 
             Case "COMAT_PAUSE"
-                $bCOMAT_Pause = Not $bCOMAT_Pause
+                $bCOMAT_Pause = True
+
+            Case "COMAT_PLAY"
+                $bCOMAT_Pause = False
+
+            Case "COMAT_SKIP"
+                $bCOMAT_Skip = True
+                $bCOMAT_Pause = False
 
             Case "COMAT_STOP"
                 $bCOMAT_Stop = True
@@ -2057,7 +2074,8 @@ Func _Run_COMAT_Single($Num)
     ControlSend($hWnd, "", $COMAT_LOG_CTRL, "{F8}")
     Sleep($COMAT_DELAY_LOAD)
     _COMAT_WaitIfPaused()
-    If $bCOMAT_Stop Then Return
+    _Tracker_PollButtons()
+    If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
 
     _COMAT_Spinner("COMAT [" & $Num & "] 2/5 - F3...")
     WinActivate($hWnd)
@@ -2065,7 +2083,8 @@ Func _Run_COMAT_Single($Num)
     Send("{F3}")
     Sleep($COMAT_DELAY_L)
     _COMAT_WaitIfPaused()
-    If $bCOMAT_Stop Then Return
+    _Tracker_PollButtons()
+    If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
 
     _COMAT_Spinner("COMAT [" & $Num & "] 3/5 - F5 x4...")
     Local $k
@@ -2075,7 +2094,8 @@ Func _Run_COMAT_Single($Num)
     Next
     Sleep($COMAT_DELAY_L)
     _COMAT_WaitIfPaused()
-    If $bCOMAT_Stop Then Return
+    _Tracker_PollButtons()
+    If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
 
     _COMAT_Spinner("COMAT [" & $Num & "] 4/5 - F1 + TAB + C...")
     Send("{F1}")
@@ -2097,7 +2117,8 @@ Func _Run_COMAT_Single($Num)
     Next
     Sleep(800)
     _COMAT_WaitIfPaused()
-    If $bCOMAT_Stop Then Return
+    _Tracker_PollButtons()
+    If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
 
     _COMAT_Spinner("COMAT [" & $Num & "] 5/5 - Retour LOG...")
     WinActivate($hWnd)
@@ -2178,19 +2199,44 @@ EndIf
                 ReDim $aValidGui[$iTotalGui]
                 If MsgBox(1+32+262144, "Confirmation", $iTotalGui & " dossier(s) à traiter. GO ?") = 2 Then Return
                 _Tracker_Start("COMAT Multi - Suivi", $aValidGui)
+                HotKeySet("{F9}", "_HK_COMAT_PauseToggle")
+                HotKeySet("{ESCAPE}", "_HK_COMAT_Stop")
+                $bCOMAT_Stop = False
+                $bCOMAT_Pause = False
+                $bCOMAT_Skip = False
                 For $j = 0 To $iTotalGui - 1
+                    $bCOMAT_Skip = False
                     _Tracker_Update($j, 1)
+                    _COMAT_WaitIfPaused2()
+                    If $bCOMAT_Stop Then
+                        _Tracker_Update($j, 3)
+                        ExitLoop
+                    EndIf
+                    If $bCOMAT_Skip Then
+                        _Tracker_Update($j, 4)
+                        $bCOMAT_Skip = False
+                        ContinueLoop
+                    EndIf
                     _Run_COMAT_Single($aValidGui[$j])
                     If $bCOMAT_Stop Then
                         _Tracker_Update($j, 3)
                         ExitLoop
                     EndIf
-                    _Tracker_Update($j, 2)
-                    Sleep(500)
+                    If $bCOMAT_Skip Then
+                        _Tracker_Update($j, 4)
+                        $bCOMAT_Skip = False
+                    Else
+                        _Tracker_Update($j, 2)
+                    EndIf
+                    _Tracker_PollButtons()
+                    Sleep(300)
                 Next
+                HotKeySet("{F9}")
+                HotKeySet("{ESCAPE}")
                 _Tracker_End()
                 $bCOMAT_Stop = False
                 $bCOMAT_Pause = False
+                $bCOMAT_Skip = False
                 MsgBox(64+262144, "Terminé", "Traitement COMAT terminé.")
                 Return
         EndSwitch

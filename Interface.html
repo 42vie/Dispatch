@@ -53,6 +53,47 @@
   --mono: 'DM Mono', monospace;
 }
 
+/* ── DARK MODE ── */
+html.dark {
+  --bg:       #1A1D23;
+  --surface:  #23272E;
+  --surface2: #2A2E36;
+  --border:   #3A3F4A;
+  --border2:  #4A5060;
+  --text:     #E0E4EC;
+  --text2:    #A0A8B8;
+  --text3:    #6A7080;
+  --blue:     #4A9FE5;
+  --blue-bg:  #1A2D44;
+  --green:    #3ABB6E;
+  --green-bg: #1A3328;
+  --orange:   #E88030;
+  --orange-bg:#3A2810;
+  --red:      #E84040;
+  --red-bg:   #3A1818;
+  --purple:   #9B6FD0;
+  --purple-bg:#2A1E40;
+  --teal:     #3AC0C8;
+  --teal-bg:  #1A3030;
+  --gold:     #D4A840;
+  --gold-bg:  #2A2410;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow:    0 2px 8px rgba(0,0,0,0.4);
+  --shadow-lg: 0 4px 20px rgba(0,0,0,0.5);
+  --k1-c: #8A90A0; --k1-bg: #2A2E36;
+  --k9-c: #D4A840; --k9-bg: #2A2410;
+  --k2-c: #E84040; --k2-bg: #3A1818;
+  --k3-c: #E88030; --k3-bg: #3A2810;
+  --k4-c: #D4A840; --k4-bg: #2A2410;
+  --k5-c: #3ABB6E; --k5-bg: #1A3328;
+  --k6-c: #4A9FE5; --k6-bg: #1A2D44;
+  --k7-c: #9B6FD0; --k7-bg: #2A1E40;
+}
+html.dark input, html.dark textarea, html.dark select {
+  background: var(--surface2); color: var(--text); border-color: var(--border2);
+}
+html.dark .btn { border-color: var(--border2); }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; }
 
@@ -534,6 +575,8 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     <div class="header-sep"></div>
     <button class="btn btn-purple-out btn-sm" onclick="reseauForceSave()" title="Sauvegarder sur le réseau partagé">⬆ Réseau</button>
     <button class="btn btn-purple-out btn-sm" onclick="reseauForceLoad()" title="Recharger depuis le réseau partagé">⬇ Réseau</button>
+    <div class="header-sep"></div>
+    <button class="btn btn-ghost btn-sm" onclick="toggleDarkMode()" title="Basculer mode sombre (Ctrl+D)">🌓</button>
   </div>
 
   <div id="header-actions">
@@ -1450,6 +1493,9 @@ let g_colFilters = {}; // {colName: Set of allowed values}
 
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 
+// ── Utilitaires perf ──
+function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  MÉTIER                                                                  ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
@@ -1612,7 +1658,7 @@ function renderMaster(filter='') {
         ${fileDisp}${isGroup?'<span class="tag-group">GROUPE</span>':''}${sibBadge}
       </td>
       <td title="${r.client||''}">${trunc(r.client,20)}</td>
-      <td>${r.rdl||''}</td>
+      <td>${r.rdl||''}${isRdlOverdue(r.rdl)&&+sn>=2&&+sn<=6?'<span style="color:var(--red);font-weight:700;font-size:10px;margin-left:3px" title="RDL dépassée">⚠</span>':''}</td>
       <td style="font-family:var(--mono);font-size:11px">${r.svct||''}</td>
       <td title="${r.transp||''}">${trunc(r.transp,17)}</td>
       <td class="poids-val" style="text-align:right">${fmt(r.poids)}</td>
@@ -1750,7 +1796,9 @@ function clearColFilter(col) {
 // Recherche
 document.getElementById('inp-search').addEventListener('input', e => renderMaster(e.target.value));
 document.addEventListener('keydown', e => {
-  if (e.ctrlKey && e.key==='f'){e.preventDefault();document.getElementById('inp-search').focus();}
+  if (e.ctrlKey && e.key==='f'){e.preventDefault();document.getElementById('inp-search').focus();return;}
+  if (e.ctrlKey && e.key==='s'){e.preventDefault();autoSave();toast('Sauvegarde lancée.');return;}
+  if (e.ctrlKey && e.key==='z'){e.preventDefault();undoLast();return;}
 });
 
 function onCCCheck(idx, checked) {
@@ -2016,6 +2064,7 @@ function onKDrop(event, status) {
   if (!g_dragFile) return;
   const idx = g_master.findIndex(r => r.file===g_dragFile);
   if (idx<0) return;
+  pushUndo('Déplacement ' + g_dragFile + ' → statut ' + status);
   g_master[idx].statut = String(status);
   stampRecord(g_master[idx]);
   if (status>=2 && g_master[idx].cc!=='Cc') g_master[idx].cc='Cc';
@@ -2028,6 +2077,7 @@ function onCardDrop(event, targetFile) {
   const srcIdx = g_master.findIndex(r => r.file === g_dragFile);
   const tgtIdx = g_master.findIndex(r => r.file === targetFile);
   if (srcIdx < 0 || tgtIdx < 0) { g_dragFile = null; return; }
+  pushUndo('Fusion ' + g_dragFile + ' + ' + targetFile);
   const src = g_master[srcIdx], tgt = g_master[tgtIdx];
   // Collecter tous les fichiers individuels
   const srcFiles = (src.file||'').split(' + ').map(s=>s.trim()).filter(Boolean);
@@ -2130,6 +2180,7 @@ async function kanbanAction(from) {
 // ║  CC PROCESSING                                                           ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 function processCC(idx) {
+  pushUndo('CC ' + (g_master[idx]?.file||''));
   const r = g_master[idx];
   r.cc = 'Cc';
 
@@ -2401,13 +2452,14 @@ function renderCP() {
       <td><input class="inline-inp" style="width:100%;font-family:var(--mono);font-size:11px" value="${cp.files.join(' + ')}" oninput="g_cpData[${i}].files=this.value.split(/\\s*\\+\\s*/).map(s=>s.trim()).filter(Boolean)"></td>
       <td><input class="inline-inp" style="width:55px" value="${cp.palettes||''}" oninput="g_cpData[${i}].palettes=this.value"></td>
       <td><input class="inline-inp" style="width:55px" value="${cp.colis||''}" oninput="g_cpData[${i}].colis=this.value"></td>
-      <td><input class="inline-inp" style="width:65px;text-align:right" type="number" step="0.01" value="${cp.poids||0}" oninput="g_cpData[${i}].poids=+this.value;g_cpData[${i}]._poidsManual=true;g_cpData[${i}].taxable=+calcTaxable(+this.value,g_cpData[${i}].vol).toFixed(2);renderCP()"></td>
-      <td><input class="inline-inp" style="width:60px;text-align:right" type="number" step="0.001" value="${cp.vol||0}" oninput="g_cpData[${i}].vol=+this.value;g_cpData[${i}]._poidsManual=true;g_cpData[${i}].taxable=+calcTaxable(g_cpData[${i}].poids,+this.value).toFixed(2);renderCP()"></td>
+      <td><input class="inline-inp" style="width:65px;text-align:right" type="number" step="0.01" value="${cp.poids||0}" oninput="g_cpData[${i}].poids=+this.value;g_cpData[${i}]._poidsManual=true;g_cpData[${i}].taxable=+calcTaxable(+this.value,g_cpData[${i}].vol).toFixed(2);_debouncedRenderCP()"></td>
+      <td><input class="inline-inp" style="width:60px;text-align:right" type="number" step="0.001" value="${cp.vol||0}" oninput="g_cpData[${i}].vol=+this.value;g_cpData[${i}]._poidsManual=true;g_cpData[${i}].taxable=+calcTaxable(g_cpData[${i}].poids,+this.value).toFixed(2);_debouncedRenderCP()"></td>
       <td class="taxable-val" style="text-align:right;font-weight:600">${fmt(cp.taxable)}</td>
       <td><input class="inline-inp" value="${cp.doc||''}" oninput="g_cpData[${i}].doc=this.value"></td>
       <td style="text-align:center"><button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="cpDelete(${i})">✕</button></td>
     </tr>`).join('');
 }
+const _debouncedRenderCP = debounce(renderCP, 300);
 
 function cpAddManual() {
   const client = prompt('Nom du client CP :');
@@ -4981,26 +5033,58 @@ async function fcLancer() {
 }
 
 // ── Barre de progression FC / COMAT ──
+let _batchPaused = false;
+let _batchLabel = '';
+
 function _batchShowBar(label, done, total, currentFile) {
+  _batchLabel = label;
   let bar = document.getElementById('batch-progress-bar');
   if (!bar) {
     bar = document.createElement('div');
     bar.id = 'batch-progress-bar';
-    bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9999;background:var(--surface2);border-top:2px solid var(--blue);padding:10px 16px;display:flex;align-items:center;gap:12px;font-size:12px;color:var(--text)';
+    bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9999;background:var(--surface2);border-top:2px solid var(--blue);padding:8px 16px;display:flex;align-items:center;gap:12px;font-size:12px;color:var(--text)';
     document.body.appendChild(bar);
   }
   const pct = total ? Math.round(done/total*100) : 0;
   const cur = currentFile ? ` — ${currentFile}` : '';
+  const pauseAct = label === 'FC' ? 'FC_PAUSE' : 'COMAT_PAUSE';
+  const playAct  = label === 'FC' ? 'FC_PLAY'  : 'COMAT_PLAY';
+  const skipAct  = label === 'FC' ? 'FC_SKIP'  : 'COMAT_SKIP';
+  const stopAct  = label === 'FC' ? 'FC_STOP'  : 'COMAT_STOP';
   bar.innerHTML = `
-    <div style="flex:1;display:flex;align-items:center;gap:10px">
+    <div style="flex:1;display:flex;align-items:center;gap:8px">
       <span style="font-weight:700;color:var(--blue)">${label}</span>
       <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
-        <div style="width:${pct}%;height:100%;background:var(--blue);border-radius:3px;transition:width .3s"></div>
+        <div style="width:${pct}%;height:100%;background:${_batchPaused?'var(--orange)':'var(--blue)'};border-radius:3px;transition:width .3s"></div>
       </div>
       <span style="font-family:var(--mono);min-width:80px">${done} / ${total}${cur}</span>
-      <span style="color:var(--text3);font-size:10px">F9=Pause | Echap=Stop</span>
+      ${_batchPaused ? '<span style="color:var(--orange);font-weight:700;font-size:11px">⏸ PAUSE</span>' : ''}
+      <button onclick="_batchCtrl('${pauseAct}')" style="padding:3px 8px;border:1px solid var(--orange);background:${_batchPaused?'var(--orange)':'transparent'};color:${_batchPaused?'#fff':'var(--orange)'};border-radius:4px;cursor:pointer;font-size:11px;font-weight:600" ${_batchPaused?'disabled':''}>⏸</button>
+      <button onclick="_batchCtrl('${playAct}')" style="padding:3px 8px;border:1px solid var(--green);background:${!_batchPaused?'var(--green)':'transparent'};color:${!_batchPaused?'#fff':'var(--green)'};border-radius:4px;cursor:pointer;font-size:11px;font-weight:600" ${!_batchPaused?'disabled':''}>▶</button>
+      <button onclick="_batchCtrl('${skipAct}')" style="padding:3px 8px;border:1px solid var(--blue);background:transparent;color:var(--blue);border-radius:4px;cursor:pointer;font-size:11px;font-weight:600">⏭</button>
+      <button onclick="_batchCtrl('${stopAct}')" style="padding:3px 8px;border:1px solid var(--red);background:transparent;color:var(--red);border-radius:4px;cursor:pointer;font-size:11px;font-weight:600">⏹</button>
     </div>`;
   bar.style.display = 'flex';
+}
+
+function _batchCtrl(action) {
+  if (action.includes('PAUSE')) { _batchPaused = true; }
+  else if (action.includes('PLAY')) { _batchPaused = false; }
+  else if (action.includes('SKIP')) { _batchPaused = false; }
+  else if (action.includes('STOP')) {
+    _batchPaused = false;
+    _comatRunning = false;
+  }
+  apiCall('action', { action }).catch(()=>{});
+  // Refresh bar visuals
+  const bar = document.getElementById('batch-progress-bar');
+  if (bar) {
+    const spans = bar.querySelectorAll('span');
+    if (spans.length) _batchShowBar(_batchLabel,
+      parseInt((spans[2]||{}).textContent)||0,
+      parseInt(((spans[2]||{}).textContent||'').split('/')[1])||0
+    );
+  }
 }
 
 function _batchHideBar() {
@@ -5052,6 +5136,72 @@ async function comatStartBatch(affected, toStatus) {
 
 const STATUT_LABELS = {'1':'Import','2':'CC','3':'Attente','4':'Pré-alerte','5':'Prêt FC','6':'COMAT','7':'NTO','8':'Terminé','9':'En attente'};
 const STATUT_COLORS = {'1':'var(--text3)','2':'var(--blue)','3':'var(--orange)','4':'var(--purple)','5':'#00c08b','6':'#ff6b35','7':'var(--teal)','8':'var(--green)','9':'#d4a017'};
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  UNDO — historique de 5 actions                                          ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+const _undoStack = [];
+const UNDO_MAX = 5;
+function pushUndo(label) {
+  _undoStack.push({ label, master: JSON.parse(JSON.stringify(g_master)), cpData: JSON.parse(JSON.stringify(g_cpData)) });
+  if (_undoStack.length > UNDO_MAX) _undoStack.shift();
+}
+function undoLast() {
+  if (!_undoStack.length) return toast('Rien à annuler.');
+  const snap = _undoStack.pop();
+  g_master = snap.master;
+  g_cpData = snap.cpData;
+  renderMaster(); renderKanban(); renderCP(); updateStats(); markDirty();
+  toast('Annulé : ' + snap.label);
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  OFFLINE INDICATOR — polling serveur AU3                                 ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+let _serverOnline = true;
+function _checkServerStatus() {
+  fetch(API_URL + '/ping', { method: 'POST', body: '{}' })
+    .then(r => { if (!_serverOnline) { _serverOnline = true; _updateOnlineIndicator(); } })
+    .catch(() => { if (_serverOnline) { _serverOnline = false; _updateOnlineIndicator(); } });
+}
+function _updateOnlineIndicator() {
+  let el = document.getElementById('offline-banner');
+  if (!_serverOnline) {
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'offline-banner';
+      el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10000;background:var(--red);color:#fff;text-align:center;padding:5px 0;font-size:12px;font-weight:600;letter-spacing:.5px';
+      el.textContent = 'HORS LIGNE — Serveur AutoIt non joignable';
+      document.body.appendChild(el);
+    }
+  } else {
+    if (el) el.remove();
+  }
+}
+setInterval(_checkServerStatus, 30000);
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  RDL OVERDUE ALERT                                                       ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function isRdlOverdue(rdl) {
+  if (!rdl) return false;
+  const parts = rdl.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (!parts) return false;
+  let y = +parts[3]; if (y < 100) y += 2000;
+  const d = new Date(y, +parts[2]-1, +parts[1]); d.setHours(0,0,0,0);
+  return d < TODAY;
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  DARK MODE                                                               ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function toggleDarkMode() {
+  const isDark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('dispatch_dark', isDark ? '1' : '0');
+  toast(isDark ? 'Mode sombre activé' : 'Mode clair activé');
+}
+// Restaurer au chargement
+if (localStorage.getItem('dispatch_dark') === '1') document.documentElement.classList.add('dark');
 
 </script>
 

@@ -19,9 +19,20 @@ Global $g_idTrackLbl  = 0
 Global $g_idTrackLV   = 0
 Global $bFC_Stop        = False
 Global $bFC_Pause       = False
+Global $bFC_Skip        = False
 Global $iFC_StepCurrent = 0
 Global $g_sFC_AuditLog  = ""
 Global $g_bFC_Audit     = True
+Global $bCOMAT_Stop  = False
+Global $bCOMAT_Pause = False
+Global $bCOMAT_Skip  = False
+
+; GUI Batch control buttons
+Global $g_idBtnPause  = 0
+Global $g_idBtnPlay   = 0
+Global $g_idBtnSkip   = 0
+Global $g_idBtnStop   = 0
+Global $g_idBatchInfo = 0
 
 Global $sClassFileOpen  = "[CLASS:#32770; TITLE:Open]"
 Global $sClassMenu      = "[CLASS:TfmMenuSelection]"
@@ -36,8 +47,6 @@ Global Const $COMAT_DELAY_S    = 150
 Global Const $COMAT_DELAY_M    = 300
 Global Const $COMAT_DELAY_L    = 500
 Global Const $COMAT_DELAY_LOAD = 3000
-Global $bCOMAT_Stop  = False
-Global $bCOMAT_Pause = False
 
 Opt("TrayIconDebug", 0)
 Opt("TrayMenuMode", 3)        ; pas de menu Pause/Exit par défaut
@@ -340,6 +349,17 @@ Func _HandleClient($iSocket)
 
         _AuditLog("ACTION", $sAction & " — " & StringLeft($sBody, 200))
 
+        ; ══ RÉPONSE IMMÉDIATE — l'HTML est débloqué avant l'exécution ══
+        ; Pour les actions longues (ETMS, COMAT, FC), on répond OK tout de suite
+        ; puis on exécute l'action. Le HTML n'attend plus.
+        If $sAction = "ETMS_CMD" Or $sAction = "MAIL_RDV" Or $sAction = "KANBAN_2" Or _
+           $sAction = "KANBAN_4" Or $sAction = "KANBAN_5" Or $sAction = "KANBAN_6" Or _
+           $sAction = "COMAT_MULTI" Or $sAction = "COMAT_SOLO" Or $sAction = "BATCH_CP" Then
+            _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok","async":true}')
+            TCPCloseSocket($iSocket)
+            $iSocket = -1  ; Marquer comme déjà fermé
+        EndIf
+
         Switch $sAction
 
             Case "ETMS_CMD"
@@ -467,13 +487,16 @@ Func _HandleClient($iSocket)
 
         EndSwitch
 
-        _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
+        ; Réponse seulement si pas déjà envoyée (actions async)
+        If $iSocket <> -1 Then
+            _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
+        EndIf
 
     Else
         _SendHttpResponse($iSocket, 404, "text/plain", "Not Found")
     EndIf
 
-    TCPCloseSocket($iSocket)
+    If $iSocket <> -1 Then TCPCloseSocket($iSocket)
 EndFunc
 
 Func _SendHttpResponse($iSocket, $iCode, $sContentType, $sData)
@@ -700,40 +723,36 @@ Func _FC_AuditShow($sNum)
 EndFunc
 
 Func _FC_WaitIfPaused()
-    While $bFC_Pause
-        _Spinner("FC EN PAUSE — F9 pour reprendre, Echap pour arrêter")
-        Sleep(500)
+    While $bFC_Pause And Not $bFC_Stop And Not $bFC_Skip
+        _Tracker_PollButtons()
+        Sleep(100)
     WEnd
 EndFunc
 
+Func _COMAT_WaitIfPaused2()
+    While $bCOMAT_Pause And Not $bCOMAT_Stop And Not $bCOMAT_Skip
+        _Tracker_PollButtons()
+        Sleep(100)
+    WEnd
+EndFunc
+
+; Les HotKeys restent comme fallback (si la GUI n'est pas visible)
 Func _HK_FC_PauseToggle()
     $bFC_Pause = Not $bFC_Pause
-    If $bFC_Pause Then
-        ToolTip("FC EN PAUSE — F9 pour reprendre", 0, 0, "Dispatch", 1)
-    Else
-        ToolTip("")
-    EndIf
 EndFunc
 
 Func _HK_FC_Stop()
     $bFC_Stop = True
     $bFC_Pause = False
-    ToolTip("FC ARRÊTÉ", 0, 0, "Dispatch", 3)
 EndFunc
 
 Func _HK_COMAT_PauseToggle()
     $bCOMAT_Pause = Not $bCOMAT_Pause
-    If $bCOMAT_Pause Then
-        ToolTip("COMAT EN PAUSE — F9 pour reprendre", 0, 0, "Dispatch", 1)
-    Else
-        ToolTip("")
-    EndIf
 EndFunc
 
 Func _HK_COMAT_Stop()
     $bCOMAT_Stop = True
     $bCOMAT_Pause = False
-    ToolTip("COMAT ARRÊTÉ", 0, 0, "Dispatch", 3)
 EndFunc
 
 ; ==============================================================================
@@ -753,8 +772,7 @@ Func _ActionEDOC($sNumDossier)
     Local $hWndEdoc = WinGetHandle("[CLASS:TfmEdocViewerMainDlg]")
     If Not WinExists($hWndEdoc) Then Return False
     $sNumDossier = StringStripWS($sNumDossier, 8)
-    WinActivate($hWndEdoc)
-    WinWaitActive($hWndEdoc, "", 2)
+    ; Mode arrière-plan — pas de WinActivate
     ControlSetText($hWndEdoc, "", "[CLASS:Edit; INSTANCE:1]", $sNumDossier)
     ControlSend($hWndEdoc, "", "[CLASS:Edit; INSTANCE:1]", "{ENTER}")
     Return True
@@ -770,23 +788,23 @@ Func _ActionETMS($sBouton, $sNumDossier)
         Return
     EndIf
 
-    ; Préparer la commande AVANT d'activer (gagner du temps)
+    ; Préparer la commande
     Local $sCommande = $sBouton & " " & $sNumDossier
     If $sBouton = "LOG X" Then $sCommande = "LOG X"
     Local $sInst = _GetETMSInstance($hWnd)
     Local $sCtrl = "[CLASS:TEIEdit; INSTANCE:" & $sInst & "]"
 
-    ; Activer + PgUp via ControlSend (évite Send global lent ~500ms)
-    WinActivate($hWnd)
-    WinWaitActive($hWnd, "", 3)
+    ; ══ MODE ARRIÈRE-PLAN : ControlSend/ControlSetText SANS WinActivate ══
+    ; L'utilisateur garde le focus sur sa fenêtre active
+    ; PgUp pour remonter en haut du champ de commande
     ControlSend($hWnd, "", $sCtrl, "{PGUP}")
-    Sleep(50)
-
-    ; Écrire la commande et exécuter
-    ControlFocus($hWnd, "", $sCtrl)
+    Sleep(30)
+    ; Écrire la commande directement dans le contrôle (pas besoin de focus)
     ControlSetText($hWnd, "", $sCtrl, $sCommande)
-    Sleep(50)
+    Sleep(30)
+    ; Exécuter avec F8 envoyé au contrôle (pas au clavier global)
     ControlSend($hWnd, "", $sCtrl, "{F8}")
+    _AuditLog("ETMS", "BG: " & $sCommande)
 EndFunc
 
 ; ==============================================================================
@@ -1124,6 +1142,7 @@ Func _Batch_FC($sData)
     If $sData = "" Then Return
     $bFC_Stop = False
     $bFC_Pause = False
+    $bFC_Skip = False
     HotKeySet("{F9}", "_HK_FC_PauseToggle")
     HotKeySet("{ESCAPE}", "_HK_FC_Stop")
 
@@ -1174,7 +1193,19 @@ Func _Batch_FC($sData)
             For $s = 1 To $aSubs[0]
                 Local $sNumJ = StringStripWS($aSubs[$s], 3)
                 If $sNumJ = "" Then ContinueLoop
+                $bFC_Skip = False
                 _Tracker_Update($iTrackIdx, 1)
+                _FC_WaitIfPaused()
+                If $bFC_Stop Then
+                    _Tracker_Update($iTrackIdx, 3)
+                    ExitLoop 2
+                EndIf
+                If $bFC_Skip Then
+                    _Tracker_Update($iTrackIdx, 4) ; 4 = Passé
+                    $bFC_Skip = False
+                    $iTrackIdx += 1
+                    ContinueLoop
+                EndIf
                 If $sCarrier = "UPS" Then
                     _Run_FileClosing_UPS($sNumJ)
                 Else
@@ -1184,9 +1215,15 @@ Func _Batch_FC($sData)
                     _Tracker_Update($iTrackIdx, 3)
                     ExitLoop 2
                 EndIf
-                _Tracker_Update($iTrackIdx, 2)
+                If $bFC_Skip Then
+                    _Tracker_Update($iTrackIdx, 4)
+                    $bFC_Skip = False
+                Else
+                    _Tracker_Update($iTrackIdx, 2)
+                EndIf
                 $iTrackIdx += 1
-                Sleep(500)
+                _Tracker_PollButtons()
+                Sleep(300)
             Next
         EndIf
     Next
@@ -1807,33 +1844,68 @@ EndFunc
 
 
 ; ==============================================================================
-; TRACKER VISUEL
+; TRACKER VISUEL — avec boutons Pause / Play / Passer / Stop
 ; ==============================================================================
 Func _Tracker_Start($sTitle, $aList)
     $g_iTrackCount = UBound($aList)
     If $g_iTrackCount = 0 Then Return False
     ReDim $g_aTrackIDs[$g_iTrackCount]
-    $g_hTracker    = GUICreate($sTitle, 280, 400, @DesktopWidth - 300, 50, -1, 0x00000008)
+
+    ; GUI toujours au premier plan (0x00000008 = WS_EX_TOPMOST) mais sans voler le focus
+    $g_hTracker = GUICreate($sTitle, 320, 460, @DesktopWidth - 340, 50, -1, 0x00000008)
     GUISetBkColor(0x2D2D30, $g_hTracker)
     GUISetFont(9, 400, 0, "Segoe UI")
-    $g_idTrackProg = GUICtrlCreateProgress(10, 10, 260, 15)
-    $g_idTrackLbl  = GUICtrlCreateLabel("0 / " & $g_iTrackCount & " dossiers", 10, 30, 260, 20, 1)
+
+    ; Barre de progression
+    $g_idTrackProg = GUICtrlCreateProgress(10, 10, 300, 18)
+
+    ; Label info
+    $g_idTrackLbl = GUICtrlCreateLabel("0 / " & $g_iTrackCount & " dossiers", 10, 33, 300, 18, 1)
     GUICtrlSetColor(-1, 0xFFFFFF)
-    $g_idTrackLV   = GUICtrlCreateListView("Statut|Numero J", 10, 55, 260, 335)
+
+    ; Info dossier en cours
+    $g_idBatchInfo = GUICtrlCreateLabel("", 10, 52, 300, 18, 1)
+    GUICtrlSetColor(-1, 0xFFCC00)
+
+    ; ══ BOUTONS DE CONTRÔLE ══
+    $g_idBtnPause = GUICtrlCreateButton("⏸ Pause", 10, 74, 72, 30)
+    GUICtrlSetFont(-1, 10, 700)
+    GUICtrlSetBkColor(-1, 0xFF9900)
+
+    $g_idBtnPlay = GUICtrlCreateButton("▶ Play", 86, 74, 72, 30)
+    GUICtrlSetFont(-1, 10, 700)
+    GUICtrlSetBkColor(-1, 0x00CC55)
+    GUICtrlSetState(-1, $GUI_DISABLE)
+
+    $g_idBtnSkip = GUICtrlCreateButton("⏭ Passer", 162, 74, 78, 30)
+    GUICtrlSetFont(-1, 10, 700)
+    GUICtrlSetBkColor(-1, 0x3399FF)
+
+    $g_idBtnStop = GUICtrlCreateButton("⏹ Stop", 244, 74, 66, 30)
+    GUICtrlSetFont(-1, 10, 700)
+    GUICtrlSetBkColor(-1, 0xFF4444)
+
+    ; Liste des dossiers
+    $g_idTrackLV = GUICtrlCreateListView("Statut|Numero J", 10, 110, 300, 340)
     GUICtrlSetBkColor(-1, 0x1E1E1E)
     GUICtrlSetColor(-1, 0xCCCCCC)
     GUICtrlSendMsg($g_idTrackLV, 0x101E, 0, 80)
-    GUICtrlSendMsg($g_idTrackLV, 0x101E, 1, 150)
+    GUICtrlSendMsg($g_idTrackLV, 0x101E, 1, 190)
     For $i = 0 To $g_iTrackCount - 1
         $g_aTrackIDs[$i] = GUICtrlCreateListViewItem("Attente|" & $aList[$i], $g_idTrackLV)
         GUICtrlSetColor($g_aTrackIDs[$i], 0xAAAAAA)
     Next
+
     GUISetState(@SW_SHOWNOACTIVATE, $g_hTracker)
     Return True
 EndFunc
 
 Func _Tracker_Update($iIndex, $iStatus)
     If $g_hTracker = 0 Then Return
+
+    ; Vérifier les boutons à chaque update (polling GUI)
+    _Tracker_PollButtons()
+
     Local $sText = "Attente"
     Local $iColor = 0xAAAAAA
     Switch $iStatus
@@ -1842,24 +1914,67 @@ Func _Tracker_Update($iIndex, $iStatus)
             $iColor = 0xFFCC00
             GUICtrlSetData($g_idTrackLbl, "Traitement : " & ($iIndex+1) & " / " & $g_iTrackCount)
             GUICtrlSetData($g_idTrackProg, ($iIndex / $g_iTrackCount) * 100)
+            ; Afficher le numéro de dossier en cours
+            Local $sJ = GUICtrlRead($g_aTrackIDs[$iIndex])
+            $sJ = StringMid($sJ, StringInStr($sJ, "|") + 1)
+            GUICtrlSetData($g_idBatchInfo, "→ " & $sJ)
         Case 2
-            $sText = "Terminé"
+            $sText = "OK"
             $iColor = 0x00CC55
             GUICtrlSetData($g_idTrackProg, (($iIndex+1) / $g_iTrackCount) * 100)
         Case 3
             $sText = "Stop/Err"
             $iColor = 0xFF4444
+        Case 4
+            $sText = "Passé"
+            $iColor = 0x3399FF
     EndSwitch
-    Local $sJ = GUICtrlRead($g_aTrackIDs[$iIndex])
-    $sJ = StringMid($sJ, StringInStr($sJ, "|") + 1)
-    GUICtrlSetData($g_aTrackIDs[$iIndex], $sText & "|" & $sJ)
+    Local $sJ2 = GUICtrlRead($g_aTrackIDs[$iIndex])
+    $sJ2 = StringMid($sJ2, StringInStr($sJ2, "|") + 1)
+    GUICtrlSetData($g_aTrackIDs[$iIndex], $sText & "|" & $sJ2)
     GUICtrlSetColor($g_aTrackIDs[$iIndex], $iColor)
+EndFunc
+
+; Polling des boutons GUI — appelé dans les boucles d'attente et entre chaque dossier
+Func _Tracker_PollButtons()
+    If $g_hTracker = 0 Then Return
+    Local $iMsg = GUIGetMsg()
+    Switch $iMsg
+        Case $g_idBtnPause
+            $bFC_Pause = True
+            $bCOMAT_Pause = True
+            GUICtrlSetState($g_idBtnPause, $GUI_DISABLE)
+            GUICtrlSetState($g_idBtnPlay, $GUI_ENABLE)
+            GUICtrlSetData($g_idBatchInfo, "⏸ EN PAUSE — Cliquez Play pour reprendre")
+        Case $g_idBtnPlay
+            $bFC_Pause = False
+            $bCOMAT_Pause = False
+            GUICtrlSetState($g_idBtnPlay, $GUI_DISABLE)
+            GUICtrlSetState($g_idBtnPause, $GUI_ENABLE)
+        Case $g_idBtnSkip
+            $bFC_Skip = True
+            $bCOMAT_Skip = True
+            $bFC_Pause = False
+            $bCOMAT_Pause = False
+            GUICtrlSetState($g_idBtnPlay, $GUI_DISABLE)
+            GUICtrlSetState($g_idBtnPause, $GUI_ENABLE)
+        Case $g_idBtnStop
+            $bFC_Stop = True
+            $bCOMAT_Stop = True
+            $bFC_Pause = False
+            $bCOMAT_Pause = False
+    EndSwitch
 EndFunc
 
 Func _Tracker_End()
     If $g_hTracker Then
         GUICtrlSetData($g_idTrackProg, 100)
         GUICtrlSetData($g_idTrackLbl, "Traitement terminé !")
+        GUICtrlSetData($g_idBatchInfo, "✓ Tout est fait")
+        GUICtrlSetState($g_idBtnPause, $GUI_DISABLE)
+        GUICtrlSetState($g_idBtnPlay, $GUI_DISABLE)
+        GUICtrlSetState($g_idBtnSkip, $GUI_DISABLE)
+        GUICtrlSetState($g_idBtnStop, $GUI_DISABLE)
         Sleep(2000)
         GUIDelete($g_hTracker)
         $g_hTracker = 0
@@ -1873,6 +1988,7 @@ Func _Batch_COMAT($sData)
     If $sData = "" Then Return
     $bCOMAT_Stop = False
     $bCOMAT_Pause = False
+    $bCOMAT_Skip = False
     HotKeySet("{F9}", "_HK_COMAT_PauseToggle")
     HotKeySet("{ESCAPE}", "_HK_COMAT_Stop")
 
@@ -1887,14 +2003,31 @@ Func _Batch_COMAT($sData)
         Local $aDetails = StringSplit($aJobs[$i], ";")
         If $aDetails[0] >= 1 Then
             Local $sNumJ = $aDetails[1]
+            $bCOMAT_Skip = False
             _Tracker_Update($i-1, 1)
+            _COMAT_WaitIfPaused2()
+            If $bCOMAT_Stop Then
+                _Tracker_Update($i-1, 3)
+                ExitLoop
+            EndIf
+            If $bCOMAT_Skip Then
+                _Tracker_Update($i-1, 4)
+                $bCOMAT_Skip = False
+                ContinueLoop
+            EndIf
             _Run_COMAT_Single($sNumJ)
             If $bCOMAT_Stop Then
                 _Tracker_Update($i-1, 3)
                 ExitLoop
             EndIf
-            _Tracker_Update($i-1, 2)
-            Sleep(500)
+            If $bCOMAT_Skip Then
+                _Tracker_Update($i-1, 4)
+                $bCOMAT_Skip = False
+            Else
+                _Tracker_Update($i-1, 2)
+            EndIf
+            _Tracker_PollButtons()
+            Sleep(300)
         EndIf
     Next
     HotKeySet("{F9}")
@@ -1902,6 +2035,7 @@ Func _Batch_COMAT($sData)
     _Tracker_End()
     $bCOMAT_Stop = False
     $bCOMAT_Pause = False
+    $bCOMAT_Skip = False
 EndFunc
 
 Func _Run_COMAT_Single($Num)
@@ -1909,14 +2043,11 @@ Func _Run_COMAT_Single($Num)
     If $Num = "" Then Return
     Local $hWnd = WinGetHandle("[CLASS:TfmBrowser]")
     If $hWnd = 0 Or Not WinExists($hWnd) Then
-        MsgBox(16+262144, "Erreur COMAT", "Fenêtre E.TMS introuvable.")
+        _NotifyError("COMAT", "Fenêtre E.TMS introuvable.")
         $bCOMAT_Stop = True
         Return
     EndIf
-    $bCOMAT_Stop = False
-    $bCOMAT_Pause = False
-    WinActivate($hWnd)
-    WinWaitActive($hWnd, "", 3)
+    ; Mode arrière-plan — pas de WinActivate, tout via ControlSend
 
     _COMAT_Spinner("COMAT [" & $Num & "] 1/5 - LOG J...")
     ControlSetText($hWnd, "", $COMAT_LOG_CTRL, "")
@@ -2071,10 +2202,10 @@ Func _COMAT_Spinner($sTxt)
 EndFunc
 
 Func _COMAT_WaitIfPaused()
-    While $bCOMAT_Pause
-        _COMAT_Spinner("EN PAUSE...")
-        Sleep(500)
-        If $bCOMAT_Stop Then Return
+    While $bCOMAT_Pause And Not $bCOMAT_Stop And Not $bCOMAT_Skip
+        _COMAT_Spinner("EN PAUSE — cliquez Play dans la fenêtre de contrôle")
+        _Tracker_PollButtons()
+        Sleep(100)
     WEnd
 EndFunc
 

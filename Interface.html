@@ -346,7 +346,7 @@ table.t-master tbody td {
   border-radius: 10px; padding: 10px 16px;
   box-shadow: 0 4px 24px rgba(0,0,0,.4);
   z-index: 9999; display: none;
-  gap: 10px; align-items: center; min-width: 520px; flex-wrap: wrap;
+  gap: 8px; align-items: center; min-width: 420px; flex-wrap: wrap;
 }
 #kanban-action-bar.visible { display: flex; }
 .kab-count { font-size: 13px; font-weight: 700; color: var(--purple); margin-right: 4px; }
@@ -1264,20 +1264,35 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
 <div id="kanban-action-bar">
   <span class="kab-count"><span id="kab-count">0</span> sélectionné(s)</span>
   <div style="width:1px;height:22px;background:var(--border2);margin:0 4px"></div>
-  <button class="btn btn-sm btn-ghost" onclick="kabChangeStatus()" title="Changer le statut">
-    🔄 Changer statut
-  </button>
-  <button class="btn btn-sm btn-ghost" onclick="kabOpenEdit()" title="Éditer contact / email">
-    ✏ Contact & email
-  </button>
-  <button class="btn btn-sm btn-ghost" onclick="kabSendMail()" title="Envoyer mail RDV">
+
+  <!-- Actions E.TMS -->
+  <button class="btn btn-sm" style="background:var(--blue-bg);color:var(--blue);border-color:var(--blue)" onclick="kabSendMail()" title="Envoyer mail RDV pour les dossiers sélectionnés">
     📧 Mail RDV
   </button>
+  <button class="btn btn-sm" style="background:var(--orange-bg);color:var(--orange);border-color:var(--orange)" onclick="kabSendAlerte()" title="Envoyer pré-alerte pour les dossiers sélectionnés">
+    ⚡ Pré-alerte
+  </button>
+  <button class="btn btn-sm" style="background:var(--green-bg);color:var(--green);border-color:var(--green)" onclick="kabLaunchFC()" title="Lancer le File Closing pour les dossiers sélectionnés">
+    📋 FC
+  </button>
+  <button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border-color:var(--purple)" onclick="kabLaunchCOMAT()" title="Lancer COMAT pour les dossiers sélectionnés">
+    🔎 COMAT
+  </button>
+
+  <div style="width:1px;height:22px;background:var(--border2);margin:0 4px"></div>
+
+  <!-- Actions édition -->
+  <button class="btn btn-sm btn-ghost" onclick="kabChangeStatus()" title="Changer le statut">
+    🔄 Statut
+  </button>
+  <button class="btn btn-sm btn-ghost" onclick="kabOpenEdit()" title="Éditer contact / email">
+    ✏ Contact
+  </button>
   <button class="btn btn-sm btn-ghost" onclick="kabSelectAll()" title="Tout sélectionner dans cette colonne">
-    ☑ Tout col.
+    ☑ Tout
   </button>
   <button class="btn btn-sm btn-ghost" style="color:var(--red)" onclick="kabClearSel()" title="Désélectionner tout">
-    ✕ Tout décocher
+    ✕
   </button>
 </div>
 
@@ -1768,7 +1783,6 @@ function renderKanban() {
         ondragover="event.preventDefault();event.stopPropagation();this.classList.add('k-drop-target')"
         ondragleave="this.classList.remove('k-drop-target')"
         ondrop="event.stopPropagation();this.classList.remove('k-drop-target');onCardDrop(event,'${fileE}')"
-        onclick="kabToggle(event,'${fileE}')"
         ondblclick="openEdit(${idx})">
         <input type="checkbox" class="k-chk" ${sel?'checked':''} onclick="event.stopPropagation();kabToggle(event,'${fileE}')">
         <div class="k-file">${fileDisp}${isGrp?`<span class="tag-group" style="font-size:9px;margin-left:4px">GRP</span>`:''}</div>
@@ -1891,6 +1905,47 @@ Continuer pour les autres ?`)) return;
   kabClearSel();
   renderMaster(); renderKanban(); updateStats(); markDirty();
   toast(`Mail RDV envoyé pour ${withEmail.length} dossier(s).`);
+}
+
+// ══ Actions batch depuis la barre Kanban ══
+
+async function kabSendAlerte() {
+  const sel = kabGetSelected();
+  if (!sel.length) return toast('Sélectionnez au moins un dossier.');
+  const withEmail = sel.filter(r => r.email);
+  if (!withEmail.length) return toast('Aucun dossier avec email dans la sélection.');
+  if (!confirm(`Envoyer une pré-alerte pour ${withEmail.length} dossier(s) ?`)) return;
+  const strData = withEmail.map(r => {
+    const contactStr = `${r.contact||''} ${r.tel||''}`.trim();
+    return `${r.file};${r.email};${r.client};${r.transp||''};${contactStr}`;
+  }).join('|');
+  showSpinner(`Pré-alerte : ${withEmail.length} dossier(s)...`);
+  try {
+    await apiCall('action', { action: 'KANBAN_4', data: strData });
+    withEmail.forEach(r => { if (parseInt(statutNum(r.statut)) < 5) r.statut = '5'; stampRecord(r); });
+    kabClearSel();
+    renderMaster(); renderKanban(); updateStats(); markDirty();
+    toast(`Pré-alerte envoyée pour ${withEmail.length} dossier(s).`);
+  } catch(e) { toast('Erreur pré-alerte : ' + (e.message||'')); }
+  finally { hideSpinner(); }
+}
+
+function kabLaunchFC() {
+  const sel = kabGetSelected();
+  if (!sel.length) return toast('Sélectionnez au moins un dossier.');
+  // Ouvrir la modale FC avec les dossiers sélectionnés
+  fcOpenModal(sel);
+  kabClearSel();
+}
+
+async function kabLaunchCOMAT() {
+  const sel = kabGetSelected();
+  if (!sel.length) return toast('Sélectionnez au moins un dossier.');
+  if (!confirm(`Lancer COMAT pour ${sel.length} dossier(s) ?`)) return;
+  // Déterminer le statut cible (7 ou 8 selon d'où ils viennent)
+  const toStatus = 7;
+  comatStartBatch(sel, toStatus);
+  kabClearSel();
 }
 
 function onKDrop(event, status) {

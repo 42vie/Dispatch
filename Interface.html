@@ -977,19 +977,35 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     </div>
 
     <!-- Panel NTO / Fuel ────────────────────────────── -->
-    <div id="opts-panel-nto" style="display:none;padding:20px;max-width:580px;overflow-y:auto">
-      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">NTO — Taux fuel mensuel</div>
+    <div id="opts-panel-nto" style="display:none;padding:20px;max-width:620px;overflow-y:auto">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">NTO — Taux fuel par transporteur</div>
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:11px">
-        <!-- Fuel actuel -->
-        <div class="form-row" style="align-items:center">
-          <label style="min-width:200px">Taux fuel actuel (%)</label>
-          <input id="opts-fuel-val" type="number" min="0" max="30" step="0.1" placeholder="ex: 6.5"
-            style="max-width:100px;font-family:var(--mono);font-size:14px;font-weight:700;color:var(--purple)">
-          <span style="font-size:11px;color:var(--text3);margin-left:8px">0 = utiliser le tableau automatique</span>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:4px">
+          Chaque transporteur peut avoir un taux fuel différent. Laisser à 0 = taux automatique du mois.
         </div>
-        <div style="font-size:11px;color:var(--text3)">
-          Si renseigné, ce taux remplace le tableau historique pour tous les calculs NTO.<br>
-          Laisser à 0 pour utiliser le taux automatique du mois en cours.
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px">
+            <div style="font-size:12px;font-weight:700;color:var(--blue);margin-bottom:8px">Flex (IDF)</div>
+            <div class="form-row" style="align-items:center">
+              <label style="min-width:80px">Fuel %</label>
+              <input id="opts-fuel-flex" type="number" min="0" max="30" step="0.1" placeholder="ex: 6.5"
+                style="max-width:80px;font-family:var(--mono);font-size:14px;font-weight:700;color:var(--blue)">
+            </div>
+          </div>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px">
+            <div style="font-size:12px;font-weight:700;color:var(--orange);margin-bottom:8px">DGS (Province)</div>
+            <div class="form-row" style="align-items:center">
+              <label style="min-width:80px">Fuel %</label>
+              <input id="opts-fuel-dgs" type="number" min="0" max="30" step="0.1" placeholder="ex: 5.5"
+                style="max-width:80px;font-family:var(--mono);font-size:14px;font-weight:700;color:var(--orange)">
+            </div>
+          </div>
+        </div>
+        <div class="form-row" style="align-items:center;margin-top:4px">
+          <label style="min-width:200px">Taux global (si identique)</label>
+          <input id="opts-fuel-val" type="number" min="0" max="30" step="0.1" placeholder="ex: 6.5"
+            style="max-width:100px;font-family:var(--mono);font-size:13px;color:var(--purple)">
+          <span style="font-size:11px;color:var(--text3);margin-left:8px">Remplace les deux si renseigné</span>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button class="btn btn-purple-out" onclick="optsSaveFuel()" style="height:32px">💾 Enregistrer</button>
@@ -1442,15 +1458,28 @@ const IDF = new Set(['75','77','78','91','92','93','94','95','60']);
 function calcTaxable(p, v) {
   return Math.round(Math.max(+p||0, (+v||0)*333) * 100) / 100;
 }
-function calcTransp(svct, tax, dept, cpFlag) {
-  const noUPS = ['SZ','S8','SY','I2','I3'].some(c => (svct||'').includes(c));
-  // IDF → toujours Flex, quel que soit le SVCT, CP ou pas, poids ou pas
-  if (IDF.has(String(dept||'').trim())) return 'Flex (7)';
-  // CP hors IDF → EFDS
+function calcTransp(svct, tax, dept, cpFlag, poidsBrut) {
+  // poidsBrut = poids brut réel (pas taxable) — c'est lui qui détermine le transporteur
+  const brut = poidsBrut !== undefined ? +poidsBrut : +tax; // fallback sur taxable si brut absent
+  const isIDF = IDF.has(String(dept||'').trim());
+  // UPS uniquement si SVCT = S5, ST, ou vide
+  const sv = (svct||'').toUpperCase().trim();
+  const upsOK = (sv === '' || sv === 'S5' || sv === 'ST' || sv.includes('S5') || sv.includes('ST'));
+
+  // Règle 1 : 0–10 kg BRUT + SVCT compatible (S5/ST/vide) → UPS partout
+  if (brut <= 10 && upsOK) return 'UPS';
+
+  // Règle 2 : IDF (75,77,78,91,92,93,94,95,60) + > 10 kg brut (ou noUPS) → Flex
+  if (isIDF) return 'Flex (7)';
+
+  // Règle 3 : Hors IDF
+  // CP hors IDF → EFDS / Groussard
   if (cpFlag) return 'EFDS (1) / Groussard (12)';
-  // Hors IDF : SY/SZ/S8 interdit UPS seulement, mais DGS reste possible
-  if (!noUPS && tax < 10) return 'UPS';
-  if (tax < 100) return 'DGS (13)';
+
+  // 0–90 kg brut hors IDF (inclut noUPS <= 10kg) → DGS
+  if (brut <= 90) return 'DGS (13)';
+
+  // > 90 kg brut hors IDF → EFDS / Groussard
   return 'EFDS (1) / Groussard (12)';
 }
 function isCP(client) {
@@ -2079,7 +2108,7 @@ function processCC(idx) {
       const raw = g_rawData[sf]||{};
       const p=raw.poids||r.poids/subs.length, v=raw.vol||r.vol/subs.length;
       const sv=raw.svct||r.svct, d=raw.dept||r.dept, t=calcTaxable(p,v);
-      const cp=isCP(r.client), tr=calcTransp(sv,t,d,cp);
+      const cp=isCP(r.client), tr=calcTransp(sv,t,d,cp,p);
       const st=transpTarget(sv,r.client);
       const dup=g_master.find(x=>x.file===sf);
       if (dup) {
@@ -2127,7 +2156,7 @@ function processCC(idx) {
     ccGroup.vol     = +(ccGroup.vol   + r.vol  ).toFixed(3);
     ccGroup.taxable = +calcTaxable(ccGroup.poids, ccGroup.vol).toFixed(2);
     ccGroup.svct    = mergeSVCT(ccGroup.svct, r.svct);
-    ccGroup.transp  = calcTransp(ccGroup.svct, ccGroup.taxable, ccGroup.dept, isCP(ccGroup.client));
+    ccGroup.transp  = calcTransp(ccGroup.svct, ccGroup.taxable, ccGroup.dept, isCP(ccGroup.client), ccGroup.poids);
     // Supprimer le solo qui vient de rejoindre le groupe
     g_master.splice(g_master.indexOf(r), 1);
     toast(`Fichier ${r.file} rejoint le groupe CC de ${ccGroup.client} (${allFiles.length} dossiers)`);
@@ -2247,7 +2276,7 @@ function importRows(rows) {
         g.ccFiles.forEach(sf => {
           const raw=g_rawData[sf]||{};
           const p=raw.poids||0, v=raw.vol||0, t=calcTaxable(p,v);
-          const tr=calcTransp(g.svct,t,g.dept,cpFlag);
+          const tr=calcTransp(g.svct,t,g.dept,cpFlag,p);
           const dup=g_master.find(x=>x.file===sf);
           if (dup) {
             Object.assign(dup,{client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
@@ -2265,7 +2294,7 @@ function importRows(rows) {
         let ccP=0, ccV=0;
         g.ccFiles.forEach(sf=>{const r=g_rawData[sf]||{};ccP+=r.poids||0;ccV+=r.vol||0;});
         const ccT=calcTaxable(ccP,ccV);
-        const ccTr=calcTransp(g.svct,ccT,g.dept,false);
+        const ccTr=calcTransp(g.svct,ccT,g.dept,false,ccP);
         const st=g.svct.includes('S5')?'4':'5';
         g_master.push({file:g.ccFiles.join(' + '),client:g.client,rdl:g.rdl,svct:g.svct,
           transp:ccTr,poids:+ccP.toFixed(2),vol:+ccV.toFixed(3),taxable:+ccT.toFixed(2),
@@ -2280,7 +2309,7 @@ function importRows(rows) {
       g.nonFiles.forEach(sf => {
         const raw=g_rawData[sf]||{};
         const p=raw.poids||0, v=raw.vol||0, t=calcTaxable(p,v);
-        const tr=calcTransp(g.svct,t,g.dept,cpFlag);
+        const tr=calcTransp(g.svct,t,g.dept,cpFlag,p);
         const dup=g_master.find(x=>x.file===sf);
         if (dup) {
           Object.assign(dup,{client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
@@ -2520,7 +2549,7 @@ function recalcTransp() {
   const p=parseFloat(document.getElementById('ed-poids').value)||0;
   const v=parseFloat(document.getElementById('ed-vol').value)||0;
   const t=calcTaxable(p,v);
-  document.getElementById('ed-transp').value=calcTransp(svct,t,dept,isCP(r.client));
+  document.getElementById('ed-transp').value=calcTransp(svct,t,dept,isCP(r.client),p);
 }
 
 function saveEdit() {
@@ -2589,7 +2618,7 @@ function openGroup(idx) {
       <td style="text-align:right">${fmt(p)} kg</td>
       <td style="text-align:right">${fmt(v,3)} m³</td>
       <td style="text-align:right;color:var(--orange)">${fmt(t)} kg</td>
-      <td>${calcTransp(sv,t,d,isCP(r.client))}</td>
+      <td>${calcTransp(sv,t,d,isCP(r.client),p)}</td>
       <td style="color:var(--text2)">${sv}</td>
       <td><input type="number" step="0.01" min="0" value="${suppl}" style="width:70px;text-align:right;font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:3px;padding:2px 4px" onchange="grpSupplUpdate('${sf}',this.value)"></td>
     </tr>`;
@@ -2678,7 +2707,7 @@ function retirerCochesGroupe() {
   const nT=calcTaxable(nP,nV);
   r.file=remain.join(' + ');
   r.poids=+nP.toFixed(2); r.vol=+nV.toFixed(3); r.taxable=nT;
-  r.transp=calcTransp(r.svct,nT,r.dept,isCP(r.client));
+  r.transp=calcTransp(r.svct,nT,r.dept,isCP(r.client),nP);
   const today=new Date().toISOString().slice(0,10);
   toRet.forEach(sf=>{
     const raw=g_rawData[sf]||{};
@@ -2693,12 +2722,12 @@ function retirerCochesGroupe() {
     const dup=g_master.find(x=>x.file===sf);
     if (dup) {
       Object.assign(dup,{client:origClient,rdl:origRdl,svct:sv,
-        transp:calcTransp(sv,t,d,cp),poids:p,vol:v,taxable:t,dept:d,
+        transp:calcTransp(sv,t,d,cp,p),poids:p,vol:v,taxable:t,dept:d,
         contact:origContact?.nom||dup.contact||'',tel:origContact?.tel||dup.tel||'',email:origContact?.email||dup.email||'',
         cc:r.cc==='Cc'?'Cc':'Non',statut:st});
     } else {
       g_master.push({file:sf,client:origClient,rdl:origRdl,svct:sv,
-        transp:calcTransp(sv,t,d,cp),poids:p,vol:v,taxable:t,dept:d,
+        transp:calcTransp(sv,t,d,cp,p),poids:p,vol:v,taxable:t,dept:d,
         contact:origContact?.nom||r.contact||'',tel:origContact?.tel||r.tel||'',email:origContact?.email||r.email||'',
         cc:r.cc==='Cc'?'Cc':'Non',comment:'',statut:st,_dateCreated:today});
     }
@@ -2730,12 +2759,12 @@ function validerCCPartiels() {
     const dup=g_master.find(x=>x.file===sf);
     if (dup) {
       Object.assign(dup,{client:origClient,rdl:origRdl,svct:sv,
-        transp:calcTransp(sv,t,d,cp),poids:p,vol:v,taxable:t,dept:d,
+        transp:calcTransp(sv,t,d,cp,p),poids:p,vol:v,taxable:t,dept:d,
         contact:origContact?.nom||dup.contact||'',tel:origContact?.tel||dup.tel||'',email:origContact?.email||dup.email||'',
         cc:'Cc',statut:transpTarget(sv,origClient)});
     } else {
       g_master.push({file:sf,client:origClient,rdl:origRdl,svct:sv,
-        transp:calcTransp(sv,t,d,cp),poids:p,vol:v,taxable:t,dept:d,
+        transp:calcTransp(sv,t,d,cp,p),poids:p,vol:v,taxable:t,dept:d,
         contact:origContact?.nom||'',tel:origContact?.tel||'',email:origContact?.email||'',
         cc:'Cc',comment:'',
         statut:transpTarget(sv,origClient),_dateCreated:today});
@@ -2752,7 +2781,7 @@ function validerCCPartiels() {
       const origContact=g_contacts.find(c=>(c.societe||'').toLowerCase()===(origClient||'').toLowerCase());
       g_master.push({
         file:sf,client:origClient,rdl:origRdl,svct:sv,
-        transp:calcTransp(sv,t,d,isCP(origClient)),
+        transp:calcTransp(sv,t,d,isCP(origClient),p),
         poids:p,vol:v,taxable:t,dept:d,
         contact:origContact?.nom||r.contact||'',tel:origContact?.tel||r.tel||'',email:origContact?.email||r.email||'',
         cc:'Non',comment:'',statut:'1',_dateCreated:today
@@ -2764,7 +2793,7 @@ function validerCCPartiels() {
       const nT=calcTaxable(nP,nV);
       g_master.push({
         file:ccN.join(' + '),client:r.client,rdl:r.rdl,svct:r.svct,
-        transp:calcTransp(r.svct,nT,r.dept,isCP(r.client)),
+        transp:calcTransp(r.svct,nT,r.dept,isCP(r.client),nP),
         poids:+nP.toFixed(2),vol:+nV.toFixed(3),taxable:nT,dept:r.dept,
         contact:r.contact||'',tel:r.tel||'',email:r.email||'',cc:'Non',
         comment:'[Groupe - CC en attente]',
@@ -3649,10 +3678,20 @@ const NTO_FUEL = {
 // ── Utilitaires
 const IDF_DEPTS = new Set(["60","75","77","78","91","92","93","94","95"]);
 
-function ntoGetFuel() {
-  // Override manuel (Options → NTO)
+function ntoGetFuel(transpType) {
+  // Override par transporteur (Options → NTO)
+  if (transpType === 'UTE' || transpType === 'Flex') {
+    const flexVal = parseFloat(localStorage.getItem('nto_fuel_flex') || '');
+    if (!isNaN(flexVal) && flexVal > 0) return flexVal / 100;
+  }
+  if (transpType === 'DGS') {
+    const dgsVal = parseFloat(localStorage.getItem('nto_fuel_dgs') || '');
+    if (!isNaN(dgsVal) && dgsVal > 0) return dgsVal / 100;
+  }
+  // Override global
   const override = parseFloat(localStorage.getItem('nto_fuel_override') || '');
-  if (!isNaN(override) && override >= 0) return override / 100;
+  if (!isNaN(override) && override > 0) return override / 100;
+  // Tableau automatique mensuel
   const now = new Date();
   const key = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   return NTO_FUEL[key] !== undefined ? NTO_FUEL[key] : 0.065;
@@ -3673,7 +3712,7 @@ function ntoCalcDGS(dept, taxable) {
   }
   const base      = row[2 + col];
   const avecFrais = base + NTO_DGS_FRAIS;
-  const fuel      = ntoGetFuel();
+  const fuel      = ntoGetFuel('DGS');
   const fuelMt    = avecFrais * fuel;
   const total     = avecFrais + fuelMt;
   return { type:'DGS', nom:row[1], dept:deptNum, taxable, tranche:NTO_DGS_TRANCHES[col],
@@ -3692,7 +3731,7 @@ function ntoCalcUTE(dept, taxable) {
   const rate       = d.rates[rateIdx];
   const calculated = taxable * rate;
   const base       = Math.max(d.min, calculated);
-  const fuel       = ntoGetFuel();
+  const fuel       = ntoGetFuel('UTE');
   const fuelMt     = base * fuel;
   const total      = base + fuelMt;
   return { type:'UTE', nom:'IDF Dept '+dept, dept, taxable, tranche:NTO_UTE_TRANCHES[rateIdx+1],
@@ -4423,22 +4462,38 @@ window.addEventListener('load', () => {
 // ║  OPTIONS — NTO FUEL                                                       ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 function optsSaveFuel() {
-  const v = parseFloat(document.getElementById('opts-fuel-val').value || '0');
-  localStorage.setItem('nto_fuel_override', isNaN(v) ? '0' : String(v));
+  const vGlobal = parseFloat(document.getElementById('opts-fuel-val').value || '0');
+  const vFlex   = parseFloat(document.getElementById('opts-fuel-flex').value || '0');
+  const vDgs    = parseFloat(document.getElementById('opts-fuel-dgs').value || '0');
+  // Si global est renseigné, il écrase les deux
+  if (vGlobal > 0) {
+    localStorage.setItem('nto_fuel_override', String(vGlobal));
+    localStorage.setItem('nto_fuel_flex', String(vGlobal));
+    localStorage.setItem('nto_fuel_dgs', String(vGlobal));
+  } else {
+    localStorage.setItem('nto_fuel_override', '0');
+    if (vFlex > 0) localStorage.setItem('nto_fuel_flex', String(vFlex));
+    else localStorage.removeItem('nto_fuel_flex');
+    if (vDgs > 0) localStorage.setItem('nto_fuel_dgs', String(vDgs));
+    else localStorage.removeItem('nto_fuel_dgs');
+  }
   const st = document.getElementById('opts-fuel-status');
   if (st) {
-    st.textContent = v > 0
-      ? '✓ Fuel fixé à ' + v.toFixed(1) + '%'
-      : '✓ Mode auto activé';
-    setTimeout(() => st.textContent = '', 2500);
+    if (vGlobal > 0) st.textContent = '✓ Fuel global ' + vGlobal.toFixed(1) + '%';
+    else if (vFlex > 0 || vDgs > 0) st.textContent = '✓ Flex=' + (vFlex||'auto') + '% DGS=' + (vDgs||'auto') + '%';
+    else st.textContent = '✓ Mode auto activé';
+    setTimeout(() => st.textContent = '', 3000);
   }
-  // Mettre à jour l'indicateur NTO
   if (typeof ntoInitFuel === 'function') ntoInitFuel();
 }
 
 function optsResetFuel() {
   localStorage.removeItem('nto_fuel_override');
+  localStorage.removeItem('nto_fuel_flex');
+  localStorage.removeItem('nto_fuel_dgs');
   document.getElementById('opts-fuel-val').value = '0';
+  document.getElementById('opts-fuel-flex').value = '0';
+  document.getElementById('opts-fuel-dgs').value = '0';
   const st = document.getElementById('opts-fuel-status');
   if (st) { st.textContent = '✓ Mode auto — tableau mensuel'; setTimeout(() => st.textContent = '', 2500); }
   if (typeof ntoInitFuel === 'function') ntoInitFuel();
@@ -4448,6 +4503,10 @@ function optsLoadFuel() {
   const v = localStorage.getItem('nto_fuel_override') || '';
   const el = document.getElementById('opts-fuel-val');
   if (el) el.value = v || '0';
+  const elFlex = document.getElementById('opts-fuel-flex');
+  const elDgs  = document.getElementById('opts-fuel-dgs');
+  if (elFlex) elFlex.value = localStorage.getItem('nto_fuel_flex') || '0';
+  if (elDgs)  elDgs.value  = localStorage.getItem('nto_fuel_dgs')  || '0';
   // Remplir le tableau historique
   const tbl = document.getElementById('opts-fuel-table');
   if (tbl && typeof NTO_FUEL !== 'undefined') {

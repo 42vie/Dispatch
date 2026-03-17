@@ -1541,6 +1541,36 @@ function autoFillContact(file, client) {
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  RENDER MASTER                                                           ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
+// Détecte les dossiers allant au même endroit (client+dept) pour signaler les regroupements possibles
+function buildSiblingsMap() {
+  const map = {}; // clé = "client_lower|dept" → [fichiers]
+  g_master.forEach(r => {
+    const key = (r.client||'').toLowerCase().trim() + '|' + (r.dept||'').trim();
+    if (!map[key]) map[key] = [];
+    map[key].push(r);
+  });
+  return map;
+}
+
+function getSiblingBadge(r, siblingsMap) {
+  const key = (r.client||'').toLowerCase().trim() + '|' + (r.dept||'').trim();
+  const siblings = siblingsMap[key];
+  if (!siblings || siblings.length < 2) return '';
+  // Compter ceux qui ne sont pas encore CC
+  const notCC = siblings.filter(s => s.cc !== 'Cc' && s.file !== r.file);
+  const alreadyCC = siblings.filter(s => s.cc === 'Cc' && s.file !== r.file);
+  if (notCC.length === 0 && alreadyCC.length === 0) return '';
+  // S'il y a des frères pas encore CC → badge orange "X en attente CC"
+  if (notCC.length > 0) {
+    return `<span title="${siblings.length} dossiers pour ${r.client} dept ${r.dept} — ${notCC.length} pas encore CC" style="font-size:9px;font-weight:700;color:var(--orange);background:var(--orange-bg);padding:1px 5px;border-radius:8px;margin-left:4px;white-space:nowrap">🔗 ${notCC.length} att. CC</span>`;
+  }
+  // Tous les frères sont CC → badge vert "groupable"
+  if (alreadyCC.length > 0) {
+    return `<span title="${alreadyCC.length + 1} dossiers CC pour ${r.client} dept ${r.dept} — regroupement possible" style="font-size:9px;font-weight:700;color:var(--green);background:var(--green-bg);padding:1px 5px;border-radius:8px;margin-left:4px;white-space:nowrap">🔗 ${alreadyCC.length + 1} groupable</span>`;
+  }
+  return '';
+}
+
 function renderMaster(filter='') {
   const fl = (filter||'').toLowerCase();
   let rows = g_master;
@@ -1565,6 +1595,7 @@ function renderMaster(filter='') {
       return (va<vb?-1:va>vb?1:0) * (g_sortAsc?1:-1);
     });
   }
+  const siblingsMap = buildSiblingsMap();
   const tbody = document.getElementById('master-tbody');
   tbody.innerHTML = rows.map(r => {
     const idx = g_master.indexOf(r);
@@ -1572,12 +1603,13 @@ function renderMaster(filter='') {
     const isGroup = (r.file||'').includes(' + ');
     const days = daysSince(r._dateCreated);
     const fileDisp = (r.file||'').length>15 ? r.file.substring(0,15)+'…' : r.file;
+    const sibBadge = getSiblingBadge(r, siblingsMap);
     return `<tr class="${isGroup?'is-group':''}" ondblclick="openEdit(${idx})">
       <td style="text-align:center">
         <input type="checkbox" ${r.cc==='Cc'?'checked':''} onchange="onCCCheck(${idx},this.checked)" style="accent-color:var(--green)">
       </td>
       <td title="${r.file||''}">
-        ${fileDisp}${isGroup?'<span class="tag-group">GROUPE</span>':''}
+        ${fileDisp}${isGroup?'<span class="tag-group">GROUPE</span>':''}${sibBadge}
       </td>
       <td title="${r.client||''}">${trunc(r.client,20)}</td>
       <td>${r.rdl||''}</td>
@@ -1760,6 +1792,7 @@ let g_kabSelected = new Set(); // fichiers sélectionnés
 
 function renderKanban() {
   const kSort = document.getElementById('kanban-sort')?.value || '';
+  const siblingsMap = buildSiblingsMap();
   K_CFG.forEach(k => {
     let items = g_master.filter(r => parseInt(statutNum(r.statut))===k.n && (!g_operatorFilter || (r.operator||'')===g_operatorFilter));
     for (const [col, allowed] of Object.entries(g_colFilters)) {
@@ -1815,7 +1848,7 @@ function renderKanban() {
         ondblclick="openEdit(${idx})">
         <input type="checkbox" class="k-chk" ${sel?'checked':''} onclick="event.stopPropagation();kabToggle(event,'${fileE}')">
         <div class="k-file">${fileDisp}${isGrp?`<span class="tag-group" style="font-size:9px;margin-left:4px">GRP</span>`:''}</div>
-        <div class="k-client">${trunc(r.client,20)}</div>
+        <div class="k-client">${trunc(r.client,20)}${getSiblingBadge(r, siblingsMap)}</div>
         ${(k.n>=2&&k.n<=7||k.n===9) ? `<div class="k-meta">${daysBadge(days)}</div>` : ''}
         ${fcRow}
       </div>`;

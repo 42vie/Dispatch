@@ -2627,18 +2627,25 @@ function retirerCochesGroupe() {
   const today=new Date().toISOString().slice(0,10);
   toRet.forEach(sf=>{
     const raw=g_rawData[sf]||{};
+    // Reprendre les données ORIGINALES du fichier (pas celles du groupe)
+    const origClient=raw.client||r.client;
+    const origRdl=raw.rdl||r.rdl;
     const p=raw.poids||0,v=raw.vol||0,sv=raw.svct||r.svct,d=raw.dept||r.dept,t=calcTaxable(p,v);
-    const st=r.cc==='Cc'?transpTarget(sv,r.client):'1';
+    const cp=isCP(origClient);
+    const st=r.cc==='Cc'?transpTarget(sv,origClient):'1';
+    // Retrouver le contact original pour ce client
+    const origContact=g_contacts.find(c=>(c.societe||'').toLowerCase()===(origClient||'').toLowerCase());
     const dup=g_master.find(x=>x.file===sf);
     if (dup) {
-      Object.assign(dup,{client:r.client,rdl:r.rdl,svct:sv,
-        transp:calcTransp(sv,t,d,isCP(r.client)),poids:p,vol:v,taxable:t,dept:d,
+      Object.assign(dup,{client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp),poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||dup.contact||'',tel:origContact?.tel||dup.tel||'',email:origContact?.email||dup.email||'',
         cc:r.cc==='Cc'?'Cc':'Non',statut:st});
     } else {
-      g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,
-        transp:calcTransp(sv,t,d,isCP(r.client)),poids:p,vol:v,taxable:t,dept:d,
-        contact:r.contact||'',tel:r.tel||'',email:r.email||'',
-        cc:r.cc==='Cc'?'Cc':'Non',comment:'[Retiré du groupe]',statut:st,_dateCreated:today});
+      g_master.push({file:sf,client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp),poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||r.contact||'',tel:origContact?.tel||r.tel||'',email:origContact?.email||r.email||'',
+        cc:r.cc==='Cc'?'Cc':'Non',comment:'',statut:st,_dateCreated:today});
     }
   });
   closeModal('modal-group');
@@ -2660,33 +2667,55 @@ function validerCCPartiels() {
   const today=new Date().toISOString().slice(0,10);
   ccY.forEach(sf=>{
     const raw=g_rawData[sf]||{};
+    const origClient=raw.client||r.client;
+    const origRdl=raw.rdl||r.rdl;
     const p=raw.poids||0,v=raw.vol||0,sv=raw.svct||r.svct,d=raw.dept||r.dept,t=calcTaxable(p,v);
-    const cp=isCP(r.client);
+    const cp=isCP(origClient);
+    const origContact=g_contacts.find(c=>(c.societe||'').toLowerCase()===(origClient||'').toLowerCase());
     const dup=g_master.find(x=>x.file===sf);
     if (dup) {
-      Object.assign(dup,{client:r.client,rdl:r.rdl,svct:sv,
+      Object.assign(dup,{client:origClient,rdl:origRdl,svct:sv,
         transp:calcTransp(sv,t,d,cp),poids:p,vol:v,taxable:t,dept:d,
-        cc:'Cc',statut:transpTarget(sv,r.client)});
+        contact:origContact?.nom||dup.contact||'',tel:origContact?.tel||dup.tel||'',email:origContact?.email||dup.email||'',
+        cc:'Cc',statut:transpTarget(sv,origClient)});
     } else {
-      g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,
+      g_master.push({file:sf,client:origClient,rdl:origRdl,svct:sv,
         transp:calcTransp(sv,t,d,cp),poids:p,vol:v,taxable:t,dept:d,
-        contact:'',tel:'',email:'',cc:'Cc',comment:'[CC partielle]',
-        statut:transpTarget(sv,r.client),_dateCreated:today});
+        contact:origContact?.nom||'',tel:origContact?.tel||'',email:origContact?.email||'',
+        cc:'Cc',comment:'',
+        statut:transpTarget(sv,origClient),_dateCreated:today});
     }
-    if (cp) addOrUpdateCP(r.client,sf,p,v,t,r.operator);
+    if (cp) addOrUpdateCP(origClient,sf,p,v,t,r.operator);
   });
   if (ccN.length){
-    let nP=0,nV=0;
-    ccN.forEach(sf=>{const rw=g_rawData[sf]||{};nP+=rw.poids||0;nV+=rw.vol||0;});
-    const nT=calcTaxable(nP,nV);
-    g_master.push({
-      file:ccN.join(' + '),client:r.client,rdl:r.rdl,svct:r.svct,
-      transp:calcTransp(r.svct,nT,r.dept,isCP(r.client)),
-      poids:+nP.toFixed(2),vol:+nV.toFixed(3),taxable:nT,dept:r.dept,
-      contact:'',tel:'',email:'',cc:'Non',
-      comment:ccN.length>1?'[Groupe - CC en attente]':'[Solo - CC en attente]',
-      statut:'1',_dateCreated:today
-    });
+    if (ccN.length === 1) {
+      // Un seul fichier restant → remettre en solo avec ses infos originales
+      const sf=ccN[0], raw=g_rawData[sf]||{};
+      const origClient=raw.client||r.client;
+      const origRdl=raw.rdl||r.rdl;
+      const p=raw.poids||0,v=raw.vol||0,sv=raw.svct||r.svct,d=raw.dept||r.dept,t=calcTaxable(p,v);
+      const origContact=g_contacts.find(c=>(c.societe||'').toLowerCase()===(origClient||'').toLowerCase());
+      g_master.push({
+        file:sf,client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,isCP(origClient)),
+        poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||r.contact||'',tel:origContact?.tel||r.tel||'',email:origContact?.email||r.email||'',
+        cc:'Non',comment:'',statut:'1',_dateCreated:today
+      });
+    } else {
+      // Plusieurs fichiers restants → garder en groupe
+      let nP=0,nV=0;
+      ccN.forEach(sf=>{const rw=g_rawData[sf]||{};nP+=rw.poids||0;nV+=rw.vol||0;});
+      const nT=calcTaxable(nP,nV);
+      g_master.push({
+        file:ccN.join(' + '),client:r.client,rdl:r.rdl,svct:r.svct,
+        transp:calcTransp(r.svct,nT,r.dept,isCP(r.client)),
+        poids:+nP.toFixed(2),vol:+nV.toFixed(3),taxable:nT,dept:r.dept,
+        contact:r.contact||'',tel:r.tel||'',email:r.email||'',cc:'Non',
+        comment:'[Groupe - CC en attente]',
+        statut:'1',_dateCreated:today
+      });
+    }
   }
   closeModal('modal-group'); g_groupIdx=-1;
   renderMaster(); renderKanban(); renderCP(); updateStats();

@@ -840,11 +840,19 @@ Func _ActionETMS($sBouton, $sNumDossier)
         Return
     EndIf
 
+    Local $sInst = _GetETMSInstance($hWnd)
+    Local $sCtrl = "[CLASS:TEIEdit; INSTANCE:" & $sInst & "]"
+
+    ; ══ F8 seul : envoyer F8 sans écrire de commande ══
+    If $sBouton = "F8" Then
+        ControlSend($hWnd, "", $sCtrl, "{F8}")
+        _AuditLog("ETMS", "BG: F8 (execute)")
+        Return
+    EndIf
+
     ; Préparer la commande
     Local $sCommande = $sBouton & " " & $sNumDossier
     If $sBouton = "LOG X" Then $sCommande = "LOG X"
-    Local $sInst = _GetETMSInstance($hWnd)
-    Local $sCtrl = "[CLASS:TEIEdit; INSTANCE:" & $sInst & "]"
 
     ; ══ MODE ARRIÈRE-PLAN : ControlSend/ControlSetText SANS WinActivate ══
     ; L'utilisateur garde le focus sur sa fenêtre active

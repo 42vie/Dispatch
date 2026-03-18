@@ -597,6 +597,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     <button class="etms-btn" onclick="sendActionHeader('ETMS_CMD','NOTES')">NOTES</button>
     <button class="etms-btn" onclick="sendActionHeader('ETMS_CMD','HIST')">HIST</button>
     <button class="etms-btn" onclick="sendActionHeader('ETMS_CMD','REFS')">REFS</button>
+    <button class="etms-btn" style="color:var(--orange);font-weight:700" onclick="sendActionHeader('ETMS_CMD','F8')">F8</button>
     <button class="etms-btn warn" onclick="sendActionHeader('ETMS_CMD','LOG X')">LOG X</button>
     <div class="etms-sep"></div>
     <button class="etms-btn" style="color:var(--teal)" onclick="sendActionHeader('MAIL_RDV','')">Mails HPE</button>
@@ -1167,6 +1168,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
         <button class="etms-btn" onclick="sendAction('ETMS_CMD', 'NOTES')">NOTES</button>
         <button class="etms-btn" onclick="sendAction('ETMS_CMD', 'HIST')">HIST</button>
         <button class="etms-btn" onclick="sendAction('ETMS_CMD', 'REFS')">REFS</button>
+        <button class="etms-btn" style="color:var(--orange);font-weight:700" onclick="sendAction('ETMS_CMD', 'F8')">F8</button>
         <button class="etms-btn warn" onclick="sendAction('ETMS_CMD', 'LOG X')">LOG X</button>
         <div class="etms-sep" style="margin-top:4px"></div>
         <button class="etms-btn" style="color:var(--teal); border-color:var(--teal);" onclick="sendAction('MAIL_RDV')">📧</button>
@@ -4047,7 +4049,7 @@ function ntoBatchLancer(affected) {
         const res = ntoCalcUTE(dept, taxable);
         if (!res) {
           skipped++;
-          rows += _ntoBatchRow(f, transp, '<span style="color:var(--red)">Dept IDF inconnu : ' + dept + '</span>', '—', 'var(--red-bg)');
+          rows += _ntoBatchRow(f, transp, '<span style="color:var(--red)">Dept IDF inconnu : ' + (dept||'').replace(/[<>&"]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'})[c]) + '</span>', '—', 'var(--red-bg)');
           return;
         }
         prix   = Math.round(res.total * 100) / 100;
@@ -4058,7 +4060,7 @@ function ntoBatchLancer(affected) {
         const res = ntoCalcDGS(dept, taxable);
         if (!res) {
           skipped++;
-          rows += _ntoBatchRow(f, transp, '<span style="color:var(--red)">Dept inconnu : ' + dept + '</span>', '—', 'var(--red-bg)');
+          rows += _ntoBatchRow(f, transp, '<span style="color:var(--red)">Dept inconnu : ' + (dept||'').replace(/[<>&"]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'})[c]) + '</span>', '—', 'var(--red-bg)');
           return;
         }
         prix   = Math.round(res.total * 100) / 100;
@@ -4224,12 +4226,6 @@ function optsUpdateMyName() {
   const sel = document.getElementById('operator-filter');
   if (sel) sel.value = v;
   renderMaster(); renderKanban(); updateStats();
-}
-
-// Patch renderMaster pour filtrer par opérateur
-const _origRenderMaster = typeof renderMaster === 'function' ? renderMaster : null;
-function renderMasterFiltered() {
-  renderMaster(); // Le filtre g_operatorFilter est maintenant natif dans renderMaster
 }
 
 // Démarrage : afficher popup si pas de nom mémorisé

@@ -4464,11 +4464,11 @@ async function reseauForceLoad() {
     const files = await netListFiles(pattern);
 
     if (!files.length) {
-      // Migration : essayer l'ancien fichier monolithique
+      // Fallback : charger le fichier de base (somme des opérateurs)
       const oldData = await netLoad(path);
       if (oldData) {
-        applyLoadedState(oldData);
-        toast('Migration : chargé depuis l\'ancien fichier unique.');
+        applyLoadedState(Array.isArray(oldData) ? oldData : (oldData.board || oldData.master || []));
+        toast('Réseau : chargé depuis le fichier de base.');
         return;
       }
       return toast('Aucun fichier opérateur trouvé.');
@@ -4550,6 +4550,32 @@ async function smartNetSave(path) {
       renderMaster(); renderKanban(); updateStats();
       toast(`Sync réseau : ${synced} dossier(s) mis à jour depuis un autre opérateur.`);
     }
+
+    // 4. Reconstruire le fichier de base = somme de tous les opérateurs
+    try {
+      const allOps = [];
+      for (const f of files) {
+        const fNorm = f.replace(/\\\\/g, '\\');
+        const myNorm = myPath.replace(/\\\\/g, '\\');
+        let data;
+        if (fNorm === myNorm) {
+          data = myBoard; // on a déjà nos données, pas besoin de recharger
+        } else {
+          data = await netLoad(fNorm);
+        }
+        if (Array.isArray(data)) allOps.push(...data);
+      }
+      // Dédupliquer par file (garder le plus récent _ts)
+      const merged = new Map();
+      allOps.forEach(r => {
+        const existing = merged.get(r.file);
+        if (!existing || (r._ts || 0) >= (existing._ts || 0)) {
+          merged.set(r.file, r);
+        }
+      });
+      await netSave(path, [...merged.values()]);
+    } catch(e2) { console.warn('smartNetSave base rebuild:', e2); }
+
   } catch(e) {
     console.warn('smartNetSave error:', e);
   }
@@ -4561,7 +4587,11 @@ function applyLoadedState(state) {
   let synced = 0;
   board.forEach(remote => {
     const local = g_master.find(r => r.file === remote.file);
-    if (local && local.statut !== remote.statut) {
+    if (!local) return;
+    // Syncer si statut OU opérateur différent (et remote plus récent ou même timestamp)
+    const dominated = (remote._ts || 0) >= (local._ts || 0);
+    const changed = local.statut !== remote.statut || (remote.operator && local.operator !== remote.operator);
+    if (changed && dominated) {
       local.statut = remote.statut;
       if (remote.operator) local.operator = remote.operator;
       if (remote._ts) local._ts = remote._ts;
@@ -4570,7 +4600,7 @@ function applyLoadedState(state) {
   });
   if (synced > 0) {
     renderMaster(); renderKanban(); updateStats();
-    console.log(`Réseau : ${synced} statut(s) mis à jour.`);
+    console.log(`Réseau : ${synced} dossier(s) synchronisés.`);
   }
 }
 

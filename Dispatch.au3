@@ -43,10 +43,10 @@ Global $DELAY_LONG      = 1000
 Global $DELAY_ETMS_LOAD = 1500
 
 Global Const $COMAT_LOG_CTRL   = "[CLASS:TEIEdit; INSTANCE:91]"
-Global Const $COMAT_DELAY_S    = 150
-Global Const $COMAT_DELAY_M    = 300
-Global Const $COMAT_DELAY_L    = 500
-Global Const $COMAT_DELAY_LOAD = 3000
+Global Const $COMAT_DELAY_S    = 80
+Global Const $COMAT_DELAY_M    = 150
+Global Const $COMAT_DELAY_L    = 300
+Global Const $COMAT_DELAY_LOAD = 1500
 
 Opt("TrayIconDebug", 0)
 Opt("TrayMenuMode", 3)        ; pas de menu Pause/Exit par défaut
@@ -2147,7 +2147,7 @@ Func _Batch_COMAT($sData)
                 $iDone += 1
             EndIf
             _Tracker_PollButtons()
-            _COMAT_SmartSleep(300)
+            _COMAT_SmartSleep(150)
         EndIf
     Next
     HotKeySet("{F9}")
@@ -2177,12 +2177,14 @@ Func _Run_COMAT_Single($Num)
         $bCOMAT_Stop = True
         Return
     EndIf
-    ; Mode arrière-plan — pas de WinActivate, tout via ControlSend
+    WinActivate($hWnd)
+    WinWaitActive($hWnd, "", 3)
 
     _COMAT_Spinner("COMAT [" & $Num & "] 1/5 - LOG J...")
-    ControlSetText($hWnd, "", $COMAT_LOG_CTRL, "")
+    Send("{PGUP}")
     _COMAT_SmartSleep($COMAT_DELAY_M)
     If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
+    ControlFocus($hWnd, "", $COMAT_LOG_CTRL)
     ControlSetText($hWnd, "", $COMAT_LOG_CTRL, "LOG " & $Num)
     _COMAT_SmartSleep($COMAT_DELAY_M)
     If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
@@ -2230,7 +2232,7 @@ Func _Run_COMAT_Single($Num)
         EndIf
         If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
     Next
-    _COMAT_SmartSleep(800)
+    _COMAT_SmartSleep(400)
     If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
 
     _COMAT_Spinner("COMAT [" & $Num & "] 5/5 - Retour LOG...")
@@ -2238,11 +2240,12 @@ Func _Run_COMAT_Single($Num)
     WinWaitActive($hWnd, "", 3)
     _COMAT_SmartSleep($COMAT_DELAY_M)
     If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
+    ControlFocus($hWnd, "", $COMAT_LOG_CTRL)
     ControlSetText($hWnd, "", $COMAT_LOG_CTRL, "LOG")
     _COMAT_SmartSleep($COMAT_DELAY_M)
     If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
     ControlSend($hWnd, "", $COMAT_LOG_CTRL, "{F8}")
-    _COMAT_SmartSleep(2000)
+    _COMAT_SmartSleep(1000)
     ToolTip("")
 EndFunc
 

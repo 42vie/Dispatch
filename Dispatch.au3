@@ -871,7 +871,9 @@ Func _ActionETMS($sBouton, $sNumDossier)
 
     ; ══ F8 seul : envoyer F8 sans écrire de commande ══
     If $sBouton = "F8" Then
-        ControlSend($hWnd, "", $sCtrl, "{F8}")
+        WinActivate($hWnd)
+        WinWaitActive($hWnd, "", 1)
+        Send("{F8}")
         _AuditLog("ETMS", "BG: F8 (execute)")
         Return
     EndIf
@@ -880,11 +882,12 @@ Func _ActionETMS($sBouton, $sNumDossier)
     Local $sCommande = $sBouton & " " & $sNumDossier
     If $sBouton = "LOG X" Then $sCommande = "LOG X"
 
-    ; ══ MODE ARRIÈRE-PLAN : ControlSetText/ControlSend SANS WinActivate ══
-    ; L'utilisateur garde le focus — pas de vol de fenêtre
+    ; ══ ControlSetText en arrière-plan, puis WinActivate bref pour F8 ══
     ControlSetText($hWnd, "", $sCtrl, $sCommande)
     Sleep(20)
-    ControlSend($hWnd, "", $sCtrl, "{F8}")
+    WinActivate($hWnd)
+    WinWaitActive($hWnd, "", 1)
+    Send("{F8}")
     _AuditLog("ETMS", "BG: " & $sCommande)
 EndFunc
 

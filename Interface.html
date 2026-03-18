@@ -53,6 +53,47 @@
   --mono: 'DM Mono', monospace;
 }
 
+/* ── DARK MODE ── */
+html.dark {
+  --bg:       #1A1D23;
+  --surface:  #23272E;
+  --surface2: #2A2E36;
+  --border:   #3A3F4A;
+  --border2:  #4A5060;
+  --text:     #E0E4EC;
+  --text2:    #A0A8B8;
+  --text3:    #6A7080;
+  --blue:     #4A9FE5;
+  --blue-bg:  #1A2D44;
+  --green:    #3ABB6E;
+  --green-bg: #1A3328;
+  --orange:   #E88030;
+  --orange-bg:#3A2810;
+  --red:      #E84040;
+  --red-bg:   #3A1818;
+  --purple:   #9B6FD0;
+  --purple-bg:#2A1E40;
+  --teal:     #3AC0C8;
+  --teal-bg:  #1A3030;
+  --gold:     #D4A840;
+  --gold-bg:  #2A2410;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow:    0 2px 8px rgba(0,0,0,0.4);
+  --shadow-lg: 0 4px 20px rgba(0,0,0,0.5);
+  --k1-c: #8A90A0; --k1-bg: #2A2E36;
+  --k9-c: #D4A840; --k9-bg: #2A2410;
+  --k2-c: #E84040; --k2-bg: #3A1818;
+  --k3-c: #E88030; --k3-bg: #3A2810;
+  --k4-c: #D4A840; --k4-bg: #2A2410;
+  --k5-c: #3ABB6E; --k5-bg: #1A3328;
+  --k6-c: #4A9FE5; --k6-bg: #1A2D44;
+  --k7-c: #9B6FD0; --k7-bg: #2A1E40;
+}
+html.dark input, html.dark textarea, html.dark select {
+  background: var(--surface2); color: var(--text); border-color: var(--border2);
+}
+html.dark .btn { border-color: var(--border2); }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; }
 
@@ -346,7 +387,7 @@ table.t-master tbody td {
   border-radius: 10px; padding: 10px 16px;
   box-shadow: 0 4px 24px rgba(0,0,0,.4);
   z-index: 9999; display: none;
-  gap: 10px; align-items: center; min-width: 520px; flex-wrap: wrap;
+  gap: 8px; align-items: center; min-width: 420px; flex-wrap: wrap;
 }
 #kanban-action-bar.visible { display: flex; }
 .kab-count { font-size: 13px; font-weight: 700; color: var(--purple); margin-right: 4px; }
@@ -534,6 +575,8 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     <div class="header-sep"></div>
     <button class="btn btn-purple-out btn-sm" onclick="reseauForceSave()" title="Sauvegarder sur le réseau partagé">⬆ Réseau</button>
     <button class="btn btn-purple-out btn-sm" onclick="reseauForceLoad()" title="Recharger depuis le réseau partagé">⬇ Réseau</button>
+    <div class="header-sep"></div>
+    <button class="btn btn-ghost btn-sm" onclick="toggleDarkMode()" title="Basculer mode sombre (Ctrl+D)">🌓</button>
   </div>
 
   <div id="header-actions">
@@ -977,19 +1020,35 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     </div>
 
     <!-- Panel NTO / Fuel ────────────────────────────── -->
-    <div id="opts-panel-nto" style="display:none;padding:20px;max-width:580px;overflow-y:auto">
-      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">NTO — Taux fuel mensuel</div>
+    <div id="opts-panel-nto" style="display:none;padding:20px;max-width:620px;overflow-y:auto">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">NTO — Taux fuel par transporteur</div>
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:11px">
-        <!-- Fuel actuel -->
-        <div class="form-row" style="align-items:center">
-          <label style="min-width:200px">Taux fuel actuel (%)</label>
-          <input id="opts-fuel-val" type="number" min="0" max="30" step="0.1" placeholder="ex: 6.5"
-            style="max-width:100px;font-family:var(--mono);font-size:14px;font-weight:700;color:var(--purple)">
-          <span style="font-size:11px;color:var(--text3);margin-left:8px">0 = utiliser le tableau automatique</span>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:4px">
+          Chaque transporteur peut avoir un taux fuel différent. Laisser à 0 = taux automatique du mois.
         </div>
-        <div style="font-size:11px;color:var(--text3)">
-          Si renseigné, ce taux remplace le tableau historique pour tous les calculs NTO.<br>
-          Laisser à 0 pour utiliser le taux automatique du mois en cours.
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px">
+            <div style="font-size:12px;font-weight:700;color:var(--blue);margin-bottom:8px">Flex (IDF)</div>
+            <div class="form-row" style="align-items:center">
+              <label style="min-width:80px">Fuel %</label>
+              <input id="opts-fuel-flex" type="number" min="0" max="30" step="0.1" placeholder="ex: 6.5"
+                style="max-width:80px;font-family:var(--mono);font-size:14px;font-weight:700;color:var(--blue)">
+            </div>
+          </div>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px">
+            <div style="font-size:12px;font-weight:700;color:var(--orange);margin-bottom:8px">DGS (Province)</div>
+            <div class="form-row" style="align-items:center">
+              <label style="min-width:80px">Fuel %</label>
+              <input id="opts-fuel-dgs" type="number" min="0" max="30" step="0.1" placeholder="ex: 5.5"
+                style="max-width:80px;font-family:var(--mono);font-size:14px;font-weight:700;color:var(--orange)">
+            </div>
+          </div>
+        </div>
+        <div class="form-row" style="align-items:center;margin-top:4px">
+          <label style="min-width:200px">Taux global (si identique)</label>
+          <input id="opts-fuel-val" type="number" min="0" max="30" step="0.1" placeholder="ex: 6.5"
+            style="max-width:100px;font-family:var(--mono);font-size:13px;color:var(--purple)">
+          <span style="font-size:11px;color:var(--text3);margin-left:8px">Remplace les deux si renseigné</span>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button class="btn btn-purple-out" onclick="optsSaveFuel()" style="height:32px">💾 Enregistrer</button>
@@ -1264,20 +1323,35 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
 <div id="kanban-action-bar">
   <span class="kab-count"><span id="kab-count">0</span> sélectionné(s)</span>
   <div style="width:1px;height:22px;background:var(--border2);margin:0 4px"></div>
-  <button class="btn btn-sm btn-ghost" onclick="kabChangeStatus()" title="Changer le statut">
-    🔄 Changer statut
-  </button>
-  <button class="btn btn-sm btn-ghost" onclick="kabOpenEdit()" title="Éditer contact / email">
-    ✏ Contact & email
-  </button>
-  <button class="btn btn-sm btn-ghost" onclick="kabSendMail()" title="Envoyer mail RDV">
+
+  <!-- Actions E.TMS -->
+  <button class="btn btn-sm" style="background:var(--blue-bg);color:var(--blue);border-color:var(--blue)" onclick="kabSendMail()" title="Envoyer mail RDV pour les dossiers sélectionnés">
     📧 Mail RDV
   </button>
+  <button class="btn btn-sm" style="background:var(--orange-bg);color:var(--orange);border-color:var(--orange)" onclick="kabSendAlerte()" title="Envoyer pré-alerte pour les dossiers sélectionnés">
+    ⚡ Pré-alerte
+  </button>
+  <button class="btn btn-sm" style="background:var(--green-bg);color:var(--green);border-color:var(--green)" onclick="kabLaunchFC()" title="Lancer le File Closing pour les dossiers sélectionnés">
+    📋 FC
+  </button>
+  <button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border-color:var(--purple)" onclick="kabLaunchCOMAT()" title="Lancer COMAT pour les dossiers sélectionnés">
+    🔎 COMAT
+  </button>
+
+  <div style="width:1px;height:22px;background:var(--border2);margin:0 4px"></div>
+
+  <!-- Actions édition -->
+  <button class="btn btn-sm btn-ghost" onclick="kabChangeStatus()" title="Changer le statut">
+    🔄 Statut
+  </button>
+  <button class="btn btn-sm btn-ghost" onclick="kabOpenEdit()" title="Éditer contact / email">
+    ✏ Contact
+  </button>
   <button class="btn btn-sm btn-ghost" onclick="kabSelectAll()" title="Tout sélectionner dans cette colonne">
-    ☑ Tout col.
+    ☑ Tout
   </button>
   <button class="btn btn-sm btn-ghost" style="color:var(--red)" onclick="kabClearSel()" title="Désélectionner tout">
-    ✕ Tout décocher
+    ✕
   </button>
 </div>
 
@@ -1419,6 +1493,9 @@ let g_colFilters = {}; // {colName: Set of allowed values}
 
 const TODAY = new Date(); TODAY.setHours(0,0,0,0);
 
+// ── Utilitaires perf ──
+function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  MÉTIER                                                                  ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
@@ -1427,15 +1504,28 @@ const IDF = new Set(['75','77','78','91','92','93','94','95','60']);
 function calcTaxable(p, v) {
   return Math.round(Math.max(+p||0, (+v||0)*333) * 100) / 100;
 }
-function calcTransp(svct, tax, dept, cpFlag) {
-  const noUPS = ['SZ','S8','SY','I2','I3'].some(c => (svct||'').includes(c));
-  // IDF → toujours Flex, quel que soit le SVCT, CP ou pas, poids ou pas
-  if (IDF.has(String(dept||'').trim())) return 'Flex (7)';
-  // CP hors IDF → EFDS
+function calcTransp(svct, tax, dept, cpFlag, poidsBrut) {
+  // poidsBrut = poids brut réel (pas taxable) — c'est lui qui détermine le transporteur
+  const brut = poidsBrut !== undefined ? +poidsBrut : +tax; // fallback sur taxable si brut absent
+  const isIDF = IDF.has(String(dept||'').trim());
+  // UPS uniquement si SVCT = S5, ST, ou vide
+  const sv = (svct||'').toUpperCase().trim();
+  const upsOK = (sv === '' || sv === 'S5' || sv === 'ST' || sv.includes('S5') || sv.includes('ST'));
+
+  // Règle 1 : 0–10 kg BRUT + SVCT compatible (S5/ST/vide) → UPS partout
+  if (brut <= 10 && upsOK) return 'UPS';
+
+  // Règle 2 : IDF (75,77,78,91,92,93,94,95,60) + > 10 kg brut (ou noUPS) → Flex
+  if (isIDF) return 'Flex (7)';
+
+  // Règle 3 : Hors IDF
+  // CP hors IDF → EFDS / Groussard
   if (cpFlag) return 'EFDS (1) / Groussard (12)';
-  // Hors IDF : SY/SZ/S8 interdit UPS seulement, mais DGS reste possible
-  if (!noUPS && tax < 10) return 'UPS';
-  if (tax < 100) return 'DGS (13)';
+
+  // 0–90 kg brut hors IDF (inclut noUPS <= 10kg) → DGS
+  if (brut <= 90) return 'DGS (13)';
+
+  // > 90 kg brut hors IDF → EFDS / Groussard
   return 'EFDS (1) / Groussard (12)';
 }
 function isCP(client) {
@@ -1497,6 +1587,36 @@ function autoFillContact(file, client) {
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  RENDER MASTER                                                           ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
+// Détecte les dossiers allant au même endroit (client+dept) pour signaler les regroupements possibles
+function buildSiblingsMap() {
+  const map = {}; // clé = "client_lower|dept" → [fichiers]
+  g_master.forEach(r => {
+    const key = (r.client||'').toLowerCase().trim() + '|' + (r.dept||'').trim();
+    if (!map[key]) map[key] = [];
+    map[key].push(r);
+  });
+  return map;
+}
+
+function getSiblingBadge(r, siblingsMap) {
+  const key = (r.client||'').toLowerCase().trim() + '|' + (r.dept||'').trim();
+  const siblings = siblingsMap[key];
+  if (!siblings || siblings.length < 2) return '';
+  // Compter ceux qui ne sont pas encore CC
+  const notCC = siblings.filter(s => s.cc !== 'Cc' && s.file !== r.file);
+  const alreadyCC = siblings.filter(s => s.cc === 'Cc' && s.file !== r.file);
+  if (notCC.length === 0 && alreadyCC.length === 0) return '';
+  // S'il y a des frères pas encore CC → badge orange "X en attente CC"
+  if (notCC.length > 0) {
+    return `<span title="${siblings.length} dossiers pour ${r.client} dept ${r.dept} — ${notCC.length} pas encore CC" style="font-size:9px;font-weight:700;color:var(--orange);background:var(--orange-bg);padding:1px 5px;border-radius:8px;margin-left:4px;white-space:nowrap">🔗 ${notCC.length} att. CC</span>`;
+  }
+  // Tous les frères sont CC → badge vert "groupable"
+  if (alreadyCC.length > 0) {
+    return `<span title="${alreadyCC.length + 1} dossiers CC pour ${r.client} dept ${r.dept} — regroupement possible" style="font-size:9px;font-weight:700;color:var(--green);background:var(--green-bg);padding:1px 5px;border-radius:8px;margin-left:4px;white-space:nowrap">🔗 ${alreadyCC.length + 1} groupable</span>`;
+  }
+  return '';
+}
+
 function renderMaster(filter='') {
   const fl = (filter||'').toLowerCase();
   let rows = g_master;
@@ -1521,6 +1641,7 @@ function renderMaster(filter='') {
       return (va<vb?-1:va>vb?1:0) * (g_sortAsc?1:-1);
     });
   }
+  const siblingsMap = buildSiblingsMap();
   const tbody = document.getElementById('master-tbody');
   tbody.innerHTML = rows.map(r => {
     const idx = g_master.indexOf(r);
@@ -1528,15 +1649,16 @@ function renderMaster(filter='') {
     const isGroup = (r.file||'').includes(' + ');
     const days = daysSince(r._dateCreated);
     const fileDisp = (r.file||'').length>15 ? r.file.substring(0,15)+'…' : r.file;
+    const sibBadge = getSiblingBadge(r, siblingsMap);
     return `<tr class="${isGroup?'is-group':''}" ondblclick="openEdit(${idx})">
       <td style="text-align:center">
         <input type="checkbox" ${r.cc==='Cc'?'checked':''} onchange="onCCCheck(${idx},this.checked)" style="accent-color:var(--green)">
       </td>
       <td title="${r.file||''}">
-        ${fileDisp}${isGroup?'<span class="tag-group">GROUPE</span>':''}
+        ${fileDisp}${isGroup?'<span class="tag-group">GROUPE</span>':''}${sibBadge}
       </td>
       <td title="${r.client||''}">${trunc(r.client,20)}</td>
-      <td>${r.rdl||''}</td>
+      <td>${r.rdl||''}${isRdlOverdue(r.rdl)&&+sn>=2&&+sn<=6?'<span style="color:var(--red);font-weight:700;font-size:10px;margin-left:3px" title="RDL dépassée">⚠</span>':''}</td>
       <td style="font-family:var(--mono);font-size:11px">${r.svct||''}</td>
       <td title="${r.transp||''}">${trunc(r.transp,17)}</td>
       <td class="poids-val" style="text-align:right">${fmt(r.poids)}</td>
@@ -1674,7 +1796,9 @@ function clearColFilter(col) {
 // Recherche
 document.getElementById('inp-search').addEventListener('input', e => renderMaster(e.target.value));
 document.addEventListener('keydown', e => {
-  if (e.ctrlKey && e.key==='f'){e.preventDefault();document.getElementById('inp-search').focus();}
+  if (e.ctrlKey && e.key==='f'){e.preventDefault();document.getElementById('inp-search').focus();return;}
+  if (e.ctrlKey && e.key==='s'){e.preventDefault();autoSave();toast('Sauvegarde lancée.');return;}
+  if (e.ctrlKey && e.key==='z'){e.preventDefault();undoLast();return;}
 });
 
 function onCCCheck(idx, checked) {
@@ -1716,6 +1840,7 @@ let g_kabSelected = new Set(); // fichiers sélectionnés
 
 function renderKanban() {
   const kSort = document.getElementById('kanban-sort')?.value || '';
+  const siblingsMap = buildSiblingsMap();
   K_CFG.forEach(k => {
     let items = g_master.filter(r => parseInt(statutNum(r.statut))===k.n && (!g_operatorFilter || (r.operator||'')===g_operatorFilter));
     for (const [col, allowed] of Object.entries(g_colFilters)) {
@@ -1768,11 +1893,10 @@ function renderKanban() {
         ondragover="event.preventDefault();event.stopPropagation();this.classList.add('k-drop-target')"
         ondragleave="this.classList.remove('k-drop-target')"
         ondrop="event.stopPropagation();this.classList.remove('k-drop-target');onCardDrop(event,'${fileE}')"
-        onclick="kabToggle(event,'${fileE}')"
         ondblclick="openEdit(${idx})">
         <input type="checkbox" class="k-chk" ${sel?'checked':''} onclick="event.stopPropagation();kabToggle(event,'${fileE}')">
         <div class="k-file">${fileDisp}${isGrp?`<span class="tag-group" style="font-size:9px;margin-left:4px">GRP</span>`:''}</div>
-        <div class="k-client">${trunc(r.client,20)}</div>
+        <div class="k-client">${trunc(r.client,20)}${getSiblingBadge(r, siblingsMap)}</div>
         ${(k.n>=2&&k.n<=7||k.n===9) ? `<div class="k-meta">${daysBadge(days)}</div>` : ''}
         ${fcRow}
       </div>`;
@@ -1893,12 +2017,54 @@ Continuer pour les autres ?`)) return;
   toast(`Mail RDV envoyé pour ${withEmail.length} dossier(s).`);
 }
 
+// ══ Actions batch depuis la barre Kanban ══
+
+async function kabSendAlerte() {
+  const sel = kabGetSelected();
+  if (!sel.length) return toast('Sélectionnez au moins un dossier.');
+  const withEmail = sel.filter(r => r.email);
+  if (!withEmail.length) return toast('Aucun dossier avec email dans la sélection.');
+  if (!confirm(`Envoyer une pré-alerte pour ${withEmail.length} dossier(s) ?`)) return;
+  const strData = withEmail.map(r => {
+    const contactStr = `${r.contact||''} ${r.tel||''}`.trim();
+    return `${r.file};${r.email};${r.client};${r.transp||''};${contactStr}`;
+  }).join('|');
+  showSpinner(`Pré-alerte : ${withEmail.length} dossier(s)...`);
+  try {
+    await apiCall('action', { action: 'KANBAN_4', data: strData });
+    withEmail.forEach(r => { if (parseInt(statutNum(r.statut)) < 5) r.statut = '5'; stampRecord(r); });
+    kabClearSel();
+    renderMaster(); renderKanban(); updateStats(); markDirty();
+    toast(`Pré-alerte envoyée pour ${withEmail.length} dossier(s).`);
+  } catch(e) { toast('Erreur pré-alerte : ' + (e.message||'')); }
+  finally { hideSpinner(); }
+}
+
+function kabLaunchFC() {
+  const sel = kabGetSelected();
+  if (!sel.length) return toast('Sélectionnez au moins un dossier.');
+  // Ouvrir la modale FC avec les dossiers sélectionnés
+  fcOpenModal(sel);
+  kabClearSel();
+}
+
+async function kabLaunchCOMAT() {
+  const sel = kabGetSelected();
+  if (!sel.length) return toast('Sélectionnez au moins un dossier.');
+  if (!confirm(`Lancer COMAT pour ${sel.length} dossier(s) ?`)) return;
+  // Déterminer le statut cible (7 ou 8 selon d'où ils viennent)
+  const toStatus = 7;
+  comatStartBatch(sel, toStatus);
+  kabClearSel();
+}
+
 function onKDrop(event, status) {
   event.preventDefault();
   document.getElementById(`k-col-${status}`).classList.remove('drag-over');
   if (!g_dragFile) return;
   const idx = g_master.findIndex(r => r.file===g_dragFile);
   if (idx<0) return;
+  pushUndo('Déplacement ' + g_dragFile + ' → statut ' + status);
   g_master[idx].statut = String(status);
   stampRecord(g_master[idx]);
   if (status>=2 && g_master[idx].cc!=='Cc') g_master[idx].cc='Cc';
@@ -1911,6 +2077,7 @@ function onCardDrop(event, targetFile) {
   const srcIdx = g_master.findIndex(r => r.file === g_dragFile);
   const tgtIdx = g_master.findIndex(r => r.file === targetFile);
   if (srcIdx < 0 || tgtIdx < 0) { g_dragFile = null; return; }
+  pushUndo('Fusion ' + g_dragFile + ' + ' + targetFile);
   const src = g_master[srcIdx], tgt = g_master[tgtIdx];
   // Collecter tous les fichiers individuels
   const srcFiles = (src.file||'').split(' + ').map(s=>s.trim()).filter(Boolean);
@@ -2013,6 +2180,7 @@ async function kanbanAction(from) {
 // ║  CC PROCESSING                                                           ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 function processCC(idx) {
+  pushUndo('CC ' + (g_master[idx]?.file||''));
   const r = g_master[idx];
   r.cc = 'Cc';
 
@@ -2024,7 +2192,7 @@ function processCC(idx) {
       const raw = g_rawData[sf]||{};
       const p=raw.poids||r.poids/subs.length, v=raw.vol||r.vol/subs.length;
       const sv=raw.svct||r.svct, d=raw.dept||r.dept, t=calcTaxable(p,v);
-      const cp=isCP(r.client), tr=calcTransp(sv,t,d,cp);
+      const cp=isCP(r.client), tr=calcTransp(sv,t,d,cp,p);
       const st=transpTarget(sv,r.client);
       const dup=g_master.find(x=>x.file===sf);
       if (dup) {
@@ -2072,7 +2240,7 @@ function processCC(idx) {
     ccGroup.vol     = +(ccGroup.vol   + r.vol  ).toFixed(3);
     ccGroup.taxable = +calcTaxable(ccGroup.poids, ccGroup.vol).toFixed(2);
     ccGroup.svct    = mergeSVCT(ccGroup.svct, r.svct);
-    ccGroup.transp  = calcTransp(ccGroup.svct, ccGroup.taxable, ccGroup.dept, isCP(ccGroup.client));
+    ccGroup.transp  = calcTransp(ccGroup.svct, ccGroup.taxable, ccGroup.dept, isCP(ccGroup.client), ccGroup.poids);
     // Supprimer le solo qui vient de rejoindre le groupe
     g_master.splice(g_master.indexOf(r), 1);
     toast(`Fichier ${r.file} rejoint le groupe CC de ${ccGroup.client} (${allFiles.length} dossiers)`);
@@ -2192,7 +2360,7 @@ function importRows(rows) {
         g.ccFiles.forEach(sf => {
           const raw=g_rawData[sf]||{};
           const p=raw.poids||0, v=raw.vol||0, t=calcTaxable(p,v);
-          const tr=calcTransp(g.svct,t,g.dept,cpFlag);
+          const tr=calcTransp(g.svct,t,g.dept,cpFlag,p);
           const dup=g_master.find(x=>x.file===sf);
           if (dup) {
             Object.assign(dup,{client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
@@ -2210,7 +2378,7 @@ function importRows(rows) {
         let ccP=0, ccV=0;
         g.ccFiles.forEach(sf=>{const r=g_rawData[sf]||{};ccP+=r.poids||0;ccV+=r.vol||0;});
         const ccT=calcTaxable(ccP,ccV);
-        const ccTr=calcTransp(g.svct,ccT,g.dept,false);
+        const ccTr=calcTransp(g.svct,ccT,g.dept,false,ccP);
         const st=g.svct.includes('S5')?'4':'5';
         g_master.push({file:g.ccFiles.join(' + '),client:g.client,rdl:g.rdl,svct:g.svct,
           transp:ccTr,poids:+ccP.toFixed(2),vol:+ccV.toFixed(3),taxable:+ccT.toFixed(2),
@@ -2225,7 +2393,7 @@ function importRows(rows) {
       g.nonFiles.forEach(sf => {
         const raw=g_rawData[sf]||{};
         const p=raw.poids||0, v=raw.vol||0, t=calcTaxable(p,v);
-        const tr=calcTransp(g.svct,t,g.dept,cpFlag);
+        const tr=calcTransp(g.svct,t,g.dept,cpFlag,p);
         const dup=g_master.find(x=>x.file===sf);
         if (dup) {
           Object.assign(dup,{client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
@@ -2284,13 +2452,14 @@ function renderCP() {
       <td><input class="inline-inp" style="width:100%;font-family:var(--mono);font-size:11px" value="${cp.files.join(' + ')}" oninput="g_cpData[${i}].files=this.value.split(/\\s*\\+\\s*/).map(s=>s.trim()).filter(Boolean)"></td>
       <td><input class="inline-inp" style="width:55px" value="${cp.palettes||''}" oninput="g_cpData[${i}].palettes=this.value"></td>
       <td><input class="inline-inp" style="width:55px" value="${cp.colis||''}" oninput="g_cpData[${i}].colis=this.value"></td>
-      <td><input class="inline-inp" style="width:65px;text-align:right" type="number" step="0.01" value="${cp.poids||0}" oninput="g_cpData[${i}].poids=+this.value;g_cpData[${i}]._poidsManual=true;g_cpData[${i}].taxable=+calcTaxable(+this.value,g_cpData[${i}].vol).toFixed(2);renderCP()"></td>
-      <td><input class="inline-inp" style="width:60px;text-align:right" type="number" step="0.001" value="${cp.vol||0}" oninput="g_cpData[${i}].vol=+this.value;g_cpData[${i}]._poidsManual=true;g_cpData[${i}].taxable=+calcTaxable(g_cpData[${i}].poids,+this.value).toFixed(2);renderCP()"></td>
+      <td><input class="inline-inp" style="width:65px;text-align:right" type="number" step="0.01" value="${cp.poids||0}" oninput="g_cpData[${i}].poids=+this.value;g_cpData[${i}]._poidsManual=true;g_cpData[${i}].taxable=+calcTaxable(+this.value,g_cpData[${i}].vol).toFixed(2);_debouncedRenderCP()"></td>
+      <td><input class="inline-inp" style="width:60px;text-align:right" type="number" step="0.001" value="${cp.vol||0}" oninput="g_cpData[${i}].vol=+this.value;g_cpData[${i}]._poidsManual=true;g_cpData[${i}].taxable=+calcTaxable(g_cpData[${i}].poids,+this.value).toFixed(2);_debouncedRenderCP()"></td>
       <td class="taxable-val" style="text-align:right;font-weight:600">${fmt(cp.taxable)}</td>
       <td><input class="inline-inp" value="${cp.doc||''}" oninput="g_cpData[${i}].doc=this.value"></td>
       <td style="text-align:center"><button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="cpDelete(${i})">✕</button></td>
     </tr>`).join('');
 }
+const _debouncedRenderCP = debounce(renderCP, 300);
 
 function cpAddManual() {
   const client = prompt('Nom du client CP :');
@@ -2465,7 +2634,7 @@ function recalcTransp() {
   const p=parseFloat(document.getElementById('ed-poids').value)||0;
   const v=parseFloat(document.getElementById('ed-vol').value)||0;
   const t=calcTaxable(p,v);
-  document.getElementById('ed-transp').value=calcTransp(svct,t,dept,isCP(r.client));
+  document.getElementById('ed-transp').value=calcTransp(svct,t,dept,isCP(r.client),p);
 }
 
 function saveEdit() {
@@ -2534,7 +2703,7 @@ function openGroup(idx) {
       <td style="text-align:right">${fmt(p)} kg</td>
       <td style="text-align:right">${fmt(v,3)} m³</td>
       <td style="text-align:right;color:var(--orange)">${fmt(t)} kg</td>
-      <td>${calcTransp(sv,t,d,isCP(r.client))}</td>
+      <td>${calcTransp(sv,t,d,isCP(r.client),p)}</td>
       <td style="color:var(--text2)">${sv}</td>
       <td><input type="number" step="0.01" min="0" value="${suppl}" style="width:70px;text-align:right;font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:3px;padding:2px 4px" onchange="grpSupplUpdate('${sf}',this.value)"></td>
     </tr>`;
@@ -2623,22 +2792,29 @@ function retirerCochesGroupe() {
   const nT=calcTaxable(nP,nV);
   r.file=remain.join(' + ');
   r.poids=+nP.toFixed(2); r.vol=+nV.toFixed(3); r.taxable=nT;
-  r.transp=calcTransp(r.svct,nT,r.dept,isCP(r.client));
+  r.transp=calcTransp(r.svct,nT,r.dept,isCP(r.client),nP);
   const today=new Date().toISOString().slice(0,10);
   toRet.forEach(sf=>{
     const raw=g_rawData[sf]||{};
+    // Reprendre les données ORIGINALES du fichier (pas celles du groupe)
+    const origClient=raw.client||r.client;
+    const origRdl=raw.rdl||r.rdl;
     const p=raw.poids||0,v=raw.vol||0,sv=raw.svct||r.svct,d=raw.dept||r.dept,t=calcTaxable(p,v);
-    const st=r.cc==='Cc'?transpTarget(sv,r.client):'1';
+    const cp=isCP(origClient);
+    const st=r.cc==='Cc'?transpTarget(sv,origClient):'1';
+    // Retrouver le contact original pour ce client
+    const origContact=g_contacts.find(c=>(c.societe||'').toLowerCase()===(origClient||'').toLowerCase());
     const dup=g_master.find(x=>x.file===sf);
     if (dup) {
-      Object.assign(dup,{client:r.client,rdl:r.rdl,svct:sv,
-        transp:calcTransp(sv,t,d,isCP(r.client)),poids:p,vol:v,taxable:t,dept:d,
+      Object.assign(dup,{client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp,p),poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||dup.contact||'',tel:origContact?.tel||dup.tel||'',email:origContact?.email||dup.email||'',
         cc:r.cc==='Cc'?'Cc':'Non',statut:st});
     } else {
-      g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,
-        transp:calcTransp(sv,t,d,isCP(r.client)),poids:p,vol:v,taxable:t,dept:d,
-        contact:r.contact||'',tel:r.tel||'',email:r.email||'',
-        cc:r.cc==='Cc'?'Cc':'Non',comment:'[Retiré du groupe]',statut:st,_dateCreated:today});
+      g_master.push({file:sf,client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp,p),poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||r.contact||'',tel:origContact?.tel||r.tel||'',email:origContact?.email||r.email||'',
+        cc:r.cc==='Cc'?'Cc':'Non',comment:'',statut:st,_dateCreated:today});
     }
   });
   closeModal('modal-group');
@@ -2660,33 +2836,55 @@ function validerCCPartiels() {
   const today=new Date().toISOString().slice(0,10);
   ccY.forEach(sf=>{
     const raw=g_rawData[sf]||{};
+    const origClient=raw.client||r.client;
+    const origRdl=raw.rdl||r.rdl;
     const p=raw.poids||0,v=raw.vol||0,sv=raw.svct||r.svct,d=raw.dept||r.dept,t=calcTaxable(p,v);
-    const cp=isCP(r.client);
+    const cp=isCP(origClient);
+    const origContact=g_contacts.find(c=>(c.societe||'').toLowerCase()===(origClient||'').toLowerCase());
     const dup=g_master.find(x=>x.file===sf);
     if (dup) {
-      Object.assign(dup,{client:r.client,rdl:r.rdl,svct:sv,
-        transp:calcTransp(sv,t,d,cp),poids:p,vol:v,taxable:t,dept:d,
-        cc:'Cc',statut:transpTarget(sv,r.client)});
+      Object.assign(dup,{client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp,p),poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||dup.contact||'',tel:origContact?.tel||dup.tel||'',email:origContact?.email||dup.email||'',
+        cc:'Cc',statut:transpTarget(sv,origClient)});
     } else {
-      g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,
-        transp:calcTransp(sv,t,d,cp),poids:p,vol:v,taxable:t,dept:d,
-        contact:'',tel:'',email:'',cc:'Cc',comment:'[CC partielle]',
-        statut:transpTarget(sv,r.client),_dateCreated:today});
+      g_master.push({file:sf,client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp,p),poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||'',tel:origContact?.tel||'',email:origContact?.email||'',
+        cc:'Cc',comment:'',
+        statut:transpTarget(sv,origClient),_dateCreated:today});
     }
-    if (cp) addOrUpdateCP(r.client,sf,p,v,t,r.operator);
+    if (cp) addOrUpdateCP(origClient,sf,p,v,t,r.operator);
   });
   if (ccN.length){
-    let nP=0,nV=0;
-    ccN.forEach(sf=>{const rw=g_rawData[sf]||{};nP+=rw.poids||0;nV+=rw.vol||0;});
-    const nT=calcTaxable(nP,nV);
-    g_master.push({
-      file:ccN.join(' + '),client:r.client,rdl:r.rdl,svct:r.svct,
-      transp:calcTransp(r.svct,nT,r.dept,isCP(r.client)),
-      poids:+nP.toFixed(2),vol:+nV.toFixed(3),taxable:nT,dept:r.dept,
-      contact:'',tel:'',email:'',cc:'Non',
-      comment:ccN.length>1?'[Groupe - CC en attente]':'[Solo - CC en attente]',
-      statut:'1',_dateCreated:today
-    });
+    if (ccN.length === 1) {
+      // Un seul fichier restant → remettre en solo avec ses infos originales
+      const sf=ccN[0], raw=g_rawData[sf]||{};
+      const origClient=raw.client||r.client;
+      const origRdl=raw.rdl||r.rdl;
+      const p=raw.poids||0,v=raw.vol||0,sv=raw.svct||r.svct,d=raw.dept||r.dept,t=calcTaxable(p,v);
+      const origContact=g_contacts.find(c=>(c.societe||'').toLowerCase()===(origClient||'').toLowerCase());
+      g_master.push({
+        file:sf,client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,isCP(origClient),p),
+        poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||r.contact||'',tel:origContact?.tel||r.tel||'',email:origContact?.email||r.email||'',
+        cc:'Non',comment:'',statut:'1',_dateCreated:today
+      });
+    } else {
+      // Plusieurs fichiers restants → garder en groupe
+      let nP=0,nV=0;
+      ccN.forEach(sf=>{const rw=g_rawData[sf]||{};nP+=rw.poids||0;nV+=rw.vol||0;});
+      const nT=calcTaxable(nP,nV);
+      g_master.push({
+        file:ccN.join(' + '),client:r.client,rdl:r.rdl,svct:r.svct,
+        transp:calcTransp(r.svct,nT,r.dept,isCP(r.client),nP),
+        poids:+nP.toFixed(2),vol:+nV.toFixed(3),taxable:nT,dept:r.dept,
+        contact:r.contact||'',tel:r.tel||'',email:r.email||'',cc:'Non',
+        comment:'[Groupe - CC en attente]',
+        statut:'1',_dateCreated:today
+      });
+    }
   }
   closeModal('modal-group'); g_groupIdx=-1;
   renderMaster(); renderKanban(); renderCP(); updateStats();
@@ -3565,10 +3763,20 @@ const NTO_FUEL = {
 // ── Utilitaires
 const IDF_DEPTS = new Set(["60","75","77","78","91","92","93","94","95"]);
 
-function ntoGetFuel() {
-  // Override manuel (Options → NTO)
+function ntoGetFuel(transpType) {
+  // Override par transporteur (Options → NTO)
+  if (transpType === 'UTE' || transpType === 'Flex') {
+    const flexVal = parseFloat(localStorage.getItem('nto_fuel_flex') || '');
+    if (!isNaN(flexVal) && flexVal > 0) return flexVal / 100;
+  }
+  if (transpType === 'DGS') {
+    const dgsVal = parseFloat(localStorage.getItem('nto_fuel_dgs') || '');
+    if (!isNaN(dgsVal) && dgsVal > 0) return dgsVal / 100;
+  }
+  // Override global
   const override = parseFloat(localStorage.getItem('nto_fuel_override') || '');
-  if (!isNaN(override) && override >= 0) return override / 100;
+  if (!isNaN(override) && override > 0) return override / 100;
+  // Tableau automatique mensuel
   const now = new Date();
   const key = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   return NTO_FUEL[key] !== undefined ? NTO_FUEL[key] : 0.065;
@@ -3589,7 +3797,7 @@ function ntoCalcDGS(dept, taxable) {
   }
   const base      = row[2 + col];
   const avecFrais = base + NTO_DGS_FRAIS;
-  const fuel      = ntoGetFuel();
+  const fuel      = ntoGetFuel('DGS');
   const fuelMt    = avecFrais * fuel;
   const total     = avecFrais + fuelMt;
   return { type:'DGS', nom:row[1], dept:deptNum, taxable, tranche:NTO_DGS_TRANCHES[col],
@@ -3608,7 +3816,7 @@ function ntoCalcUTE(dept, taxable) {
   const rate       = d.rates[rateIdx];
   const calculated = taxable * rate;
   const base       = Math.max(d.min, calculated);
-  const fuel       = ntoGetFuel();
+  const fuel       = ntoGetFuel('UTE');
   const fuelMt     = base * fuel;
   const total      = base + fuelMt;
   return { type:'UTE', nom:'IDF Dept '+dept, dept, taxable, tranche:NTO_UTE_TRANCHES[rateIdx+1],
@@ -4339,22 +4547,38 @@ window.addEventListener('load', () => {
 // ║  OPTIONS — NTO FUEL                                                       ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 function optsSaveFuel() {
-  const v = parseFloat(document.getElementById('opts-fuel-val').value || '0');
-  localStorage.setItem('nto_fuel_override', isNaN(v) ? '0' : String(v));
+  const vGlobal = parseFloat(document.getElementById('opts-fuel-val').value || '0');
+  const vFlex   = parseFloat(document.getElementById('opts-fuel-flex').value || '0');
+  const vDgs    = parseFloat(document.getElementById('opts-fuel-dgs').value || '0');
+  // Si global est renseigné, il écrase les deux
+  if (vGlobal > 0) {
+    localStorage.setItem('nto_fuel_override', String(vGlobal));
+    localStorage.setItem('nto_fuel_flex', String(vGlobal));
+    localStorage.setItem('nto_fuel_dgs', String(vGlobal));
+  } else {
+    localStorage.setItem('nto_fuel_override', '0');
+    if (vFlex > 0) localStorage.setItem('nto_fuel_flex', String(vFlex));
+    else localStorage.removeItem('nto_fuel_flex');
+    if (vDgs > 0) localStorage.setItem('nto_fuel_dgs', String(vDgs));
+    else localStorage.removeItem('nto_fuel_dgs');
+  }
   const st = document.getElementById('opts-fuel-status');
   if (st) {
-    st.textContent = v > 0
-      ? '✓ Fuel fixé à ' + v.toFixed(1) + '%'
-      : '✓ Mode auto activé';
-    setTimeout(() => st.textContent = '', 2500);
+    if (vGlobal > 0) st.textContent = '✓ Fuel global ' + vGlobal.toFixed(1) + '%';
+    else if (vFlex > 0 || vDgs > 0) st.textContent = '✓ Flex=' + (vFlex||'auto') + '% DGS=' + (vDgs||'auto') + '%';
+    else st.textContent = '✓ Mode auto activé';
+    setTimeout(() => st.textContent = '', 3000);
   }
-  // Mettre à jour l'indicateur NTO
   if (typeof ntoInitFuel === 'function') ntoInitFuel();
 }
 
 function optsResetFuel() {
   localStorage.removeItem('nto_fuel_override');
+  localStorage.removeItem('nto_fuel_flex');
+  localStorage.removeItem('nto_fuel_dgs');
   document.getElementById('opts-fuel-val').value = '0';
+  document.getElementById('opts-fuel-flex').value = '0';
+  document.getElementById('opts-fuel-dgs').value = '0';
   const st = document.getElementById('opts-fuel-status');
   if (st) { st.textContent = '✓ Mode auto — tableau mensuel'; setTimeout(() => st.textContent = '', 2500); }
   if (typeof ntoInitFuel === 'function') ntoInitFuel();
@@ -4364,6 +4588,10 @@ function optsLoadFuel() {
   const v = localStorage.getItem('nto_fuel_override') || '';
   const el = document.getElementById('opts-fuel-val');
   if (el) el.value = v || '0';
+  const elFlex = document.getElementById('opts-fuel-flex');
+  const elDgs  = document.getElementById('opts-fuel-dgs');
+  if (elFlex) elFlex.value = localStorage.getItem('nto_fuel_flex') || '0';
+  if (elDgs)  elDgs.value  = localStorage.getItem('nto_fuel_dgs')  || '0';
   // Remplir le tableau historique
   const tbl = document.getElementById('opts-fuel-table');
   if (tbl && typeof NTO_FUEL !== 'undefined') {
@@ -4804,25 +5032,25 @@ async function fcLancer() {
   _fcProcessNext();
 }
 
-// ── Barre de progression FC / COMAT ──
+// ── Barre de progression FC / COMAT (affichage seulement — contrôles dans la fenêtre AU3) ──
 function _batchShowBar(label, done, total, currentFile) {
   let bar = document.getElementById('batch-progress-bar');
   if (!bar) {
     bar = document.createElement('div');
     bar.id = 'batch-progress-bar';
-    bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9999;background:var(--surface2);border-top:2px solid var(--blue);padding:10px 16px;display:flex;align-items:center;gap:12px;font-size:12px;color:var(--text)';
+    bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9999;background:var(--surface2);border-top:2px solid var(--blue);padding:8px 16px;display:flex;align-items:center;gap:12px;font-size:12px;color:var(--text)';
     document.body.appendChild(bar);
   }
   const pct = total ? Math.round(done/total*100) : 0;
-  const cur = currentFile ? ` — ${currentFile}` : '';
+  const cur = currentFile ? ` — <b>${currentFile}</b>` : '';
   bar.innerHTML = `
     <div style="flex:1;display:flex;align-items:center;gap:10px">
       <span style="font-weight:700;color:var(--blue)">${label}</span>
-      <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
-        <div style="width:${pct}%;height:100%;background:var(--blue);border-radius:3px;transition:width .3s"></div>
+      <div style="flex:1;height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:var(--blue);border-radius:4px;transition:width .3s"></div>
       </div>
-      <span style="font-family:var(--mono);min-width:80px">${done} / ${total}${cur}</span>
-      <span style="color:var(--text3);font-size:10px">F9=Pause | Echap=Stop</span>
+      <span style="font-family:var(--mono);font-weight:600;min-width:90px">${done} / ${total}${cur}</span>
+      <span style="color:var(--text3);font-size:10px;white-space:nowrap">⏸ F9 = Pause &nbsp;|&nbsp; ⏭ Passer &nbsp;|&nbsp; ⏹ Echap = Stop &nbsp;— fenêtre AutoIt</span>
     </div>`;
   bar.style.display = 'flex';
 }
@@ -4876,6 +5104,72 @@ async function comatStartBatch(affected, toStatus) {
 
 const STATUT_LABELS = {'1':'Import','2':'CC','3':'Attente','4':'Pré-alerte','5':'Prêt FC','6':'COMAT','7':'NTO','8':'Terminé','9':'En attente'};
 const STATUT_COLORS = {'1':'var(--text3)','2':'var(--blue)','3':'var(--orange)','4':'var(--purple)','5':'#00c08b','6':'#ff6b35','7':'var(--teal)','8':'var(--green)','9':'#d4a017'};
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  UNDO — historique de 5 actions                                          ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+const _undoStack = [];
+const UNDO_MAX = 5;
+function pushUndo(label) {
+  _undoStack.push({ label, master: JSON.parse(JSON.stringify(g_master)), cpData: JSON.parse(JSON.stringify(g_cpData)) });
+  if (_undoStack.length > UNDO_MAX) _undoStack.shift();
+}
+function undoLast() {
+  if (!_undoStack.length) return toast('Rien à annuler.');
+  const snap = _undoStack.pop();
+  g_master = snap.master;
+  g_cpData = snap.cpData;
+  renderMaster(); renderKanban(); renderCP(); updateStats(); markDirty();
+  toast('Annulé : ' + snap.label);
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  OFFLINE INDICATOR — polling serveur AU3                                 ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+let _serverOnline = true;
+function _checkServerStatus() {
+  fetch(API_URL + '/ping', { method: 'POST', body: '{}' })
+    .then(r => { if (!_serverOnline) { _serverOnline = true; _updateOnlineIndicator(); } })
+    .catch(() => { if (_serverOnline) { _serverOnline = false; _updateOnlineIndicator(); } });
+}
+function _updateOnlineIndicator() {
+  let el = document.getElementById('offline-banner');
+  if (!_serverOnline) {
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'offline-banner';
+      el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10000;background:var(--red);color:#fff;text-align:center;padding:5px 0;font-size:12px;font-weight:600;letter-spacing:.5px';
+      el.textContent = 'HORS LIGNE — Serveur AutoIt non joignable';
+      document.body.appendChild(el);
+    }
+  } else {
+    if (el) el.remove();
+  }
+}
+setInterval(_checkServerStatus, 30000);
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  RDL OVERDUE ALERT                                                       ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function isRdlOverdue(rdl) {
+  if (!rdl) return false;
+  const parts = rdl.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (!parts) return false;
+  let y = +parts[3]; if (y < 100) y += 2000;
+  const d = new Date(y, +parts[2]-1, +parts[1]); d.setHours(0,0,0,0);
+  return d < TODAY;
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  DARK MODE                                                               ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function toggleDarkMode() {
+  const isDark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('dispatch_dark', isDark ? '1' : '0');
+  toast(isDark ? 'Mode sombre activé' : 'Mode clair activé');
+}
+// Restaurer au chargement
+if (localStorage.getItem('dispatch_dark') === '1') document.documentElement.classList.add('dark');
 
 </script>
 

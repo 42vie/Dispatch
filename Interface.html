@@ -2417,7 +2417,9 @@ function importRows(rows) {
   document.getElementById('import-info-text').textContent=
     `${added} dossier(s) ajouté(s) · ${skipped} déjà présent(s) (données conservées)`;
   infoEl.style.display='flex';
-  toast(`Import terminé : +${added} dossiers, ${skipped} conservés.`);
+  toast(skipped > 0 && added === 0
+    ? `Import : aucun nouveau dossier (${skipped} déjà présents).`
+    : `Import terminé : +${added} dossiers${skipped ? `, ${skipped} déjà présents (ignorés)` : ''}.`);
 }
 
 // ╔══════════════════════════════════════════════════════════════════════════╗

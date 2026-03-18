@@ -108,8 +108,9 @@ $g_sHTML = StringReplace($g_sHTML, "127.0.0.1:8080", "127.0.0.1:" & $g_iPort)
 
 ShellExecute("http://127.0.0.1:" & $g_iPort)
 
-; Créer le dossier logs s'il n'existe pas
+; Créer les dossiers nécessaires
 If Not FileExists(@ScriptDir & "\logs") Then DirCreate(@ScriptDir & "\logs")
+If Not FileExists(@ScriptDir & "\backups") Then DirCreate(@ScriptDir & "\backups")
 _AuditLog("INFO", "Serveur démarré sur le port " & $g_iPort)
 $g_iAuditCheckTimer = TimerInit()
 
@@ -238,6 +239,7 @@ Func _HandleClient($iSocket)
     ; ── Fichiers séparés : DATA ──
     ElseIf $sURL = "/api/save-data" Then
         _AuditLog("SAVE", "data — " & StringLen($sBody) & " bytes")
+        _BackupRotate($g_sDataFile, 5)
         Local $hFileD = FileOpen($g_sDataFile, 2 + 256)
         FileWrite($hFileD, $sBody)
         FileClose($hFileD)
@@ -604,6 +606,25 @@ Func _WinWaitSpinner($sClass, $sTxt)
 EndFunc
 
 ; ==============================================================================
+; BACKUP ROTATION — garder les N dernières sauvegardes
+; ==============================================================================
+Func _BackupRotate($sFile, $iMax)
+    If Not FileExists($sFile) Then Return
+    Local $sBackDir = @ScriptDir & "\backups"
+    Local $sBase = StringRegExpReplace($sFile, ".*\\", "")
+    ; Rotation : supprimer le plus ancien, décaler les autres
+    Local $sOldest = $sBackDir & "\" & $sBase & "." & $iMax & ".bak"
+    If FileExists($sOldest) Then FileDelete($sOldest)
+    For $b = $iMax - 1 To 1 Step -1
+        Local $sSrc = $sBackDir & "\" & $sBase & "." & $b & ".bak"
+        Local $sDst = $sBackDir & "\" & $sBase & "." & ($b + 1) & ".bak"
+        If FileExists($sSrc) Then FileMove($sSrc, $sDst, 1)
+    Next
+    ; Copier le fichier actuel en .1.bak
+    FileCopy($sFile, $sBackDir & "\" & $sBase & ".1.bak", 1)
+EndFunc
+
+; ==============================================================================
 ; AUDIT FC — Diagnostic détaillé pour FileClosing
 ; ==============================================================================
 Func _FC_AuditInit($sLabel)
@@ -741,8 +762,22 @@ EndFunc
 
 Func _FC_WaitIfPaused()
     While $bFC_Pause And Not $bFC_Stop And Not $bFC_Skip
+        _Spinner("EN PAUSE — cliquez Play dans la fenêtre de contrôle")
         _Tracker_PollButtons()
+        Sleep(80)
+    WEnd
+EndFunc
+
+; Sleep réactif FC : découpe en tranches de 100ms + poll GUI
+Func _FC_SmartSleep($iMs)
+    Local $iSlept = 0
+    While $iSlept < $iMs
+        _Tracker_PollButtons()
+        If $bFC_Stop Or $bFC_Skip Then Return
+        _FC_WaitIfPaused()
+        If $bFC_Stop Or $bFC_Skip Then Return
         Sleep(100)
+        $iSlept += 100
     WEnd
 EndFunc
 
@@ -1187,6 +1222,8 @@ Func _Batch_FC($sData)
     _Tracker_Start("File Closing — Kanban col 5", $aAllNums)
 
     Local $iTrackIdx = 0
+    Local $iDoneFC = 0, $iStoppedFC = 0
+    Local $sRemainingFC = ""
     For $i = 1 To $aJobs[0]
         Local $aDetails = StringSplit($aJobs[$i], ";")
         If $aDetails[0] >= 1 Then
@@ -1215,10 +1252,15 @@ Func _Batch_FC($sData)
                 _FC_WaitIfPaused()
                 If $bFC_Stop Then
                     _Tracker_Update($iTrackIdx, 3)
+                    $iStoppedFC = 1
+                    ; Collecter les dossiers restants
+                    For $rr = $iTrackIdx To $iTotal - 1
+                        $sRemainingFC &= $aAllNums[$rr] & @CRLF
+                    Next
                     ExitLoop 2
                 EndIf
                 If $bFC_Skip Then
-                    _Tracker_Update($iTrackIdx, 4) ; 4 = Passé
+                    _Tracker_Update($iTrackIdx, 4)
                     $bFC_Skip = False
                     $iTrackIdx += 1
                     ContinueLoop
@@ -1230,6 +1272,10 @@ Func _Batch_FC($sData)
                 EndIf
                 If $bFC_Stop Then
                     _Tracker_Update($iTrackIdx, 3)
+                    $iStoppedFC = 1
+                    For $rr = $iTrackIdx + 1 To $iTotal - 1
+                        $sRemainingFC &= $aAllNums[$rr] & @CRLF
+                    Next
                     ExitLoop 2
                 EndIf
                 If $bFC_Skip Then
@@ -1237,16 +1283,26 @@ Func _Batch_FC($sData)
                     $bFC_Skip = False
                 Else
                     _Tracker_Update($iTrackIdx, 2)
+                    $iDoneFC += 1
                 EndIf
                 $iTrackIdx += 1
                 _Tracker_PollButtons()
-                Sleep(300)
+                _FC_SmartSleep(300)
             Next
         EndIf
     Next
     HotKeySet("{F9}")
     HotKeySet("{ESCAPE}")
     _Tracker_End()
+    ; Bilan final FC
+    If $iStoppedFC And $sRemainingFC <> "" Then
+        ClipPut(StringStripWS($sRemainingFC, 2))
+        MsgBox(48+262144, "FC — Arrêté", _
+            $iDoneFC & " dossier(s) traité(s) sur " & $iTotal & "." & @CRLF & @CRLF & _
+            "Dossiers restants (copiés dans le presse-papier) :" & @CRLF & $sRemainingFC)
+    ElseIf $iStoppedFC Then
+        MsgBox(48+262144, "FC — Arrêté", $iDoneFC & " dossier(s) traité(s) sur " & $iTotal & ".")
+    EndIf
     $bFC_Stop = False
     $bFC_Pause = False
 EndFunc
@@ -1288,14 +1344,13 @@ Func _Run_FileClosing_UPS($Num)
     _Spinner("FC-UPS [" & $Num & "] 1/5 - LOG J...")
     _FC_AuditCtrl($hWnd, $sFC_LOG, "LOG avant")
     ControlSetText($hWnd, "", $sFC_LOG, "LOG " & $Num)
-    Sleep(300)
+    _FC_SmartSleep(300)
     _FC_AuditCtrl($hWnd, $sFC_LOG, "LOG apres")
     ControlSend($hWnd, "", $sFC_LOG, "{F8}")
-    Sleep(3000)
+    _FC_SmartSleep(3000)
     _FC_AuditTiming("Step1-LOGJ", TimerDiff($t1))
-    _FC_WaitIfPaused()
-    If $bFC_Stop Then
-        _FC_AuditLog("*** STOP par utilisateur Step 1 ***")
+    If $bFC_Stop Or $bFC_Skip Then
+        _FC_AuditLog("*** STOP/SKIP par utilisateur Step 1 ***")
         _FC_AuditShow($Num)
         Return
     EndIf
@@ -1307,7 +1362,7 @@ Func _Run_FileClosing_UPS($Num)
     _Spinner("FC-UPS [" & $Num & "] 2/5 - Lancement EDS...")
     WinActivate($hWnd)
     WinWaitActive($hWnd, "", 3)
-    Sleep(500)
+    _FC_SmartSleep(500)
     _FC_AuditWinState("[CLASS:TfmBrowser]", "ETMS avant click toolbar")
     ControlClick($hWnd, "", $sFC_TOOLBAR, "LEFT", 1, 54, 9)
     _FC_AuditTiming("Step2-ToolbarClick", TimerDiff($t2))
@@ -1414,16 +1469,15 @@ Func _Run_FileClosing_UPS($Num)
     _FC_AuditWinState($sFC_MENU, "Menu Selection")
     Local $hMenu = WinActivate($sFC_MENU)
     WinWaitActive($hMenu, "", 3)
-    Sleep(300)
+    _FC_SmartSleep(300)
     ControlSetText($hMenu, "", "[CLASS:TEdit; INSTANCE:1]", "1")
-    Sleep(300)
+    _FC_SmartSleep(300)
     ControlClick($hMenu, "", "[TEXT:OK]")
     WinWaitClose($hMenu, "", 5)
-    Sleep(500)
+    _FC_SmartSleep(500)
     _FC_AuditTiming("Step4-MenuSelection", TimerDiff($t4))
-    _FC_WaitIfPaused()
-    If $bFC_Stop Then
-        _FC_AuditLog("*** STOP Step 4 apres ***")
+    If $bFC_Stop Or $bFC_Skip Then
+        _FC_AuditLog("*** STOP/SKIP Step 4 apres ***")
         _FC_AuditShow($Num)
         Return
     EndIf
@@ -1434,23 +1488,22 @@ Func _Run_FileClosing_UPS($Num)
     Local $t5 = TimerInit()
     _WinWaitSpinner($sFC_INPUT, "FC-UPS [" & $Num & "] 5/5 - Numéro J...")
     _FC_AuditTiming("Attente Input Num J", TimerDiff($t5))
-    If $bFC_Stop Then
-        _FC_AuditLog("*** STOP Step 5 ***")
+    If $bFC_Stop Or $bFC_Skip Then
+        _FC_AuditLog("*** STOP/SKIP Step 5 ***")
         _FC_AuditShow($Num)
         Return
     EndIf
     Local $hInput1 = WinActivate($sFC_INPUT)
     WinWaitActive($hInput1, "", 3)
-    Sleep(300)
+    _FC_SmartSleep(300)
     ControlSetText($hInput1, "", "[CLASS:TEdit; INSTANCE:1]", $Num)
-    Sleep(300)
+    _FC_SmartSleep(300)
     ControlClick($hInput1, "", "[TEXT:OK]")
     WinWaitClose($hInput1, "", 5)
-    Sleep(3000) ; E.TMS charge
+    _FC_SmartSleep(3000) ; E.TMS charge
     _FC_AuditTiming("Step5-NumeroJ", TimerDiff($t5))
-    _FC_WaitIfPaused()
-    If $bFC_Stop Then
-        _FC_AuditLog("*** STOP Step 5 apres ***")
+    If $bFC_Stop Or $bFC_Skip Then
+        _FC_AuditLog("*** STOP/SKIP Step 5 apres ***")
         _FC_AuditShow($Num)
         Return
     EndIf
@@ -1460,26 +1513,25 @@ Func _Run_FileClosing_UPS($Num)
     _FC_AuditStep(6, "DEF")
     Local $t6 = TimerInit()
     _WinWaitSpinner($sFC_INPUT, "FC-UPS [" & $Num & "] DEF...")
-    If $bFC_Stop Then
-        _FC_AuditLog("*** STOP Step 6 ***")
+    If $bFC_Stop Or $bFC_Skip Then
+        _FC_AuditLog("*** STOP/SKIP Step 6 ***")
         _FC_AuditShow($Num)
         Return
     EndIf
     Local $hDef = WinActivate($sFC_INPUT)
     WinWaitActive($hDef, "", 3)
-    Sleep(300)
+    _FC_SmartSleep(300)
     ControlSetText($hDef, "", "[CLASS:TEdit; INSTANCE:1]", "DEF")
-    Sleep(300)
+    _FC_SmartSleep(300)
     ControlClick($hDef, "", "[TEXT:OK]")
     WinWaitClose($hDef, "", 5)
     _FC_AuditTiming("Step6-DEF", TimerDiff($t6))
 
     ; ── Attendre le script auto E.TMS (min 20s) ──────────────────────────────
     _Spinner("FC-UPS [" & $Num & "] Script auto en cours... (20s)")
-    Sleep(20000)
-    _FC_WaitIfPaused()
-    If $bFC_Stop Then
-        _FC_AuditLog("*** STOP pendant attente script auto ***")
+    _FC_SmartSleep(20000)
+    If $bFC_Stop Or $bFC_Skip Then
+        _FC_AuditLog("*** STOP/SKIP pendant attente script auto ***")
         _FC_AuditShow($Num)
         Return
     EndIf
@@ -1527,12 +1579,11 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
         Local $t1 = TimerInit()
         _Spinner("FC [" & $Num & "] 1/7 - LOG J...")
         ControlSetText($hWnd, "", $sFC_LOG, "LOG " & $Num)
-        Sleep(300)
+        _FC_SmartSleep(300)
         ControlSend($hWnd, "", $sFC_LOG, "{F8}")
-        Sleep(3000)
+        _FC_SmartSleep(3000)
         _FC_AuditTiming("Step1-LOGJ", TimerDiff($t1))
-        _FC_WaitIfPaused()
-        If $bFC_Stop Then
+        If $bFC_Stop Or $bFC_Skip Then
             _FC_AuditLog("*** STOP Step 1 ***")
             _FC_AuditShow($Num)
             Return
@@ -1546,11 +1597,10 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
         _Spinner("FC [" & $Num & "] 2/7 - Lancement EDS...")
         WinActivate($hWnd)
         WinWaitActive($hWnd, "", 3)
-        Sleep(500)
+        _FC_SmartSleep(500)
         ControlClick($hWnd, "", $sFC_TOOLBAR, "LEFT", 1, 54, 9)
         _FC_AuditTiming("Step2-Toolbar", TimerDiff($t2))
-        _FC_WaitIfPaused()
-        If $bFC_Stop Then
+        If $bFC_Stop Or $bFC_Skip Then
             _FC_AuditLog("*** STOP Step 2 ***")
             _FC_AuditShow($Num)
             Return
@@ -1654,16 +1704,15 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
         _FC_AuditWinState($sFC_MENU, "Menu Selection")
         Local $hMenu = WinActivate($sFC_MENU)
         WinWaitActive($hMenu, "", 3)
-        Sleep(300)
+        _FC_SmartSleep(300)
         ControlSetText($hMenu, "", "[CLASS:TEdit; INSTANCE:1]", "1")
-        Sleep(300)
+        _FC_SmartSleep(300)
         ControlClick($hMenu, "", "[TEXT:OK]")
         WinWaitClose($hMenu, "", 5)
-        Sleep(500)
+        _FC_SmartSleep(500)
         _FC_AuditTiming("Step4-Menu", TimerDiff($t4))
-        _FC_WaitIfPaused()
-        If $bFC_Stop Then
-            _FC_AuditLog("*** STOP Step 4 apres ***")
+        If $bFC_Stop Or $bFC_Skip Then
+            _FC_AuditLog("*** STOP/SKIP Step 4 apres ***")
             _FC_AuditShow($Num)
             Return
         EndIf
@@ -1682,16 +1731,15 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
         EndIf
         Local $hInput1 = WinActivate($sFC_INPUT)
         WinWaitActive($hInput1, "", 3)
-        Sleep(300)
+        _FC_SmartSleep(300)
         ControlSetText($hInput1, "", "[CLASS:TEdit; INSTANCE:1]", $Num)
-        Sleep(300)
+        _FC_SmartSleep(300)
         ControlClick($hInput1, "", "[TEXT:OK]")
         WinWaitClose($hInput1, "", 5)
-        Sleep(300)
+        _FC_SmartSleep(300)
         _FC_AuditTiming("Step5-NumJ", TimerDiff($t5))
-        _FC_WaitIfPaused()
-        If $bFC_Stop Then
-            _FC_AuditLog("*** STOP Step 5 apres ***")
+        If $bFC_Stop Or $bFC_Skip Then
+            _FC_AuditLog("*** STOP/SKIP Step 5 apres ***")
             _FC_AuditShow($Num)
             Return
         EndIf
@@ -1710,16 +1758,15 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
         EndIf
         Local $hCarrier = WinActivate($sFC_CARRIER)
         WinWaitActive($hCarrier, "", 3)
-        Sleep(300)
+        _FC_SmartSleep(300)
         ControlSetText($hCarrier, "", "[CLASS:TEdit; INSTANCE:1]", $CarrierID)
-        Sleep(300)
+        _FC_SmartSleep(300)
         ControlClick($hCarrier, "", "[TEXT:OK]")
         WinWaitClose($hCarrier, "", 5)
-        Sleep(3000)
+        _FC_SmartSleep(3000)
         _FC_AuditTiming("Step6-Carrier", TimerDiff($t6))
-        _FC_WaitIfPaused()
-        If $bFC_Stop Then
-            _FC_AuditLog("*** STOP Step 6 apres ***")
+        If $bFC_Stop Or $bFC_Skip Then
+            _FC_AuditLog("*** STOP/SKIP Step 6 apres ***")
             _FC_AuditShow($Num)
             Return
         EndIf

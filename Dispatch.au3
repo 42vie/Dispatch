@@ -2738,13 +2738,13 @@ Func _RunDiagnostic()
     ; ══════════════════════════════════════════════════════════════════════════
     $sLog &= "── 5. SERVEUR LOCAL ────────────────────────────────────────────" & @CRLF
     Local $tNet = TimerInit()
-    Local $iSock = TCPConnect("127.0.0.1", 8888)
+    Local $iSock = TCPConnect("127.0.0.1", $g_iPort)
     Local $nConnect = TimerDiff($tNet)
     If $iSock >= 0 Then
-        $sLog &= "  Connexion 127.0.0.1:8888   : " & Round($nConnect, 0) & " ms | OK" & @CRLF
+        $sLog &= "  Connexion 127.0.0.1:" & $g_iPort & "   : " & Round($nConnect, 0) & " ms | OK" & @CRLF
         TCPCloseSocket($iSock)
     Else
-        $sLog &= "  Connexion 127.0.0.1:8888   : ECHEC (err=" & @error & ")" & @CRLF
+        $sLog &= "  Connexion 127.0.0.1:" & $g_iPort & "   : ECHEC (err=" & @error & ")" & @CRLF
     EndIf
     $sLog &= @CRLF
 

@@ -5032,12 +5032,8 @@ async function fcLancer() {
   _fcProcessNext();
 }
 
-// ── Barre de progression FC / COMAT ──
-let _batchPaused = false;
-let _batchLabel = '';
-
+// ── Barre de progression FC / COMAT (affichage seulement — contrôles dans la fenêtre AU3) ──
 function _batchShowBar(label, done, total, currentFile) {
-  _batchLabel = label;
   let bar = document.getElementById('batch-progress-bar');
   if (!bar) {
     bar = document.createElement('div');
@@ -5046,45 +5042,17 @@ function _batchShowBar(label, done, total, currentFile) {
     document.body.appendChild(bar);
   }
   const pct = total ? Math.round(done/total*100) : 0;
-  const cur = currentFile ? ` — ${currentFile}` : '';
-  const pauseAct = label === 'FC' ? 'FC_PAUSE' : 'COMAT_PAUSE';
-  const playAct  = label === 'FC' ? 'FC_PLAY'  : 'COMAT_PLAY';
-  const skipAct  = label === 'FC' ? 'FC_SKIP'  : 'COMAT_SKIP';
-  const stopAct  = label === 'FC' ? 'FC_STOP'  : 'COMAT_STOP';
+  const cur = currentFile ? ` — <b>${currentFile}</b>` : '';
   bar.innerHTML = `
-    <div style="flex:1;display:flex;align-items:center;gap:8px">
+    <div style="flex:1;display:flex;align-items:center;gap:10px">
       <span style="font-weight:700;color:var(--blue)">${label}</span>
-      <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
-        <div style="width:${pct}%;height:100%;background:${_batchPaused?'var(--orange)':'var(--blue)'};border-radius:3px;transition:width .3s"></div>
+      <div style="flex:1;height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:var(--blue);border-radius:4px;transition:width .3s"></div>
       </div>
-      <span style="font-family:var(--mono);min-width:80px">${done} / ${total}${cur}</span>
-      ${_batchPaused ? '<span style="color:var(--orange);font-weight:700;font-size:11px">⏸ PAUSE</span>' : ''}
-      <button onclick="_batchCtrl('${pauseAct}')" style="padding:3px 8px;border:1px solid var(--orange);background:${_batchPaused?'var(--orange)':'transparent'};color:${_batchPaused?'#fff':'var(--orange)'};border-radius:4px;cursor:pointer;font-size:11px;font-weight:600" ${_batchPaused?'disabled':''}>⏸</button>
-      <button onclick="_batchCtrl('${playAct}')" style="padding:3px 8px;border:1px solid var(--green);background:${!_batchPaused?'var(--green)':'transparent'};color:${!_batchPaused?'#fff':'var(--green)'};border-radius:4px;cursor:pointer;font-size:11px;font-weight:600" ${!_batchPaused?'disabled':''}>▶</button>
-      <button onclick="_batchCtrl('${skipAct}')" style="padding:3px 8px;border:1px solid var(--blue);background:transparent;color:var(--blue);border-radius:4px;cursor:pointer;font-size:11px;font-weight:600">⏭</button>
-      <button onclick="_batchCtrl('${stopAct}')" style="padding:3px 8px;border:1px solid var(--red);background:transparent;color:var(--red);border-radius:4px;cursor:pointer;font-size:11px;font-weight:600">⏹</button>
+      <span style="font-family:var(--mono);font-weight:600;min-width:90px">${done} / ${total}${cur}</span>
+      <span style="color:var(--text3);font-size:10px;white-space:nowrap">⏸ F9 = Pause &nbsp;|&nbsp; ⏭ Passer &nbsp;|&nbsp; ⏹ Echap = Stop &nbsp;— fenêtre AutoIt</span>
     </div>`;
   bar.style.display = 'flex';
-}
-
-function _batchCtrl(action) {
-  if (action.includes('PAUSE')) { _batchPaused = true; }
-  else if (action.includes('PLAY')) { _batchPaused = false; }
-  else if (action.includes('SKIP')) { _batchPaused = false; }
-  else if (action.includes('STOP')) {
-    _batchPaused = false;
-    _comatRunning = false;
-  }
-  apiCall('action', { action }).catch(()=>{});
-  // Refresh bar visuals
-  const bar = document.getElementById('batch-progress-bar');
-  if (bar) {
-    const spans = bar.querySelectorAll('span');
-    if (spans.length) _batchShowBar(_batchLabel,
-      parseInt((spans[2]||{}).textContent)||0,
-      parseInt(((spans[2]||{}).textContent||'').split('/')[1])||0
-    );
-  }
 }
 
 function _batchHideBar() {

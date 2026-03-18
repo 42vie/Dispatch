@@ -2016,6 +2016,8 @@ Func _Batch_COMAT($sData)
         $aValid[$i-1] = $aInfos[1]
     Next
     _Tracker_Start("COMAT en masse", $aValid)
+    Local $iDone = 0, $iStopped = 0
+    Local $sRemaining = ""
     For $i = 1 To $aJobs[0]
         Local $aDetails = StringSplit($aJobs[$i], ";")
         If $aDetails[0] >= 1 Then
@@ -2025,6 +2027,12 @@ Func _Batch_COMAT($sData)
             _COMAT_WaitIfPaused2()
             If $bCOMAT_Stop Then
                 _Tracker_Update($i-1, 3)
+                $iStopped = 1
+                ; Collecter les dossiers restants (celui-ci + suivants)
+                For $r = $i To $aJobs[0]
+                    Local $aR = StringSplit($aJobs[$r], ";")
+                    If $aR[0] >= 1 Then $sRemaining &= $aR[1] & @CRLF
+                Next
                 ExitLoop
             EndIf
             If $bCOMAT_Skip Then
@@ -2035,6 +2043,12 @@ Func _Batch_COMAT($sData)
             _Run_COMAT_Single($sNumJ)
             If $bCOMAT_Stop Then
                 _Tracker_Update($i-1, 3)
+                $iStopped = 1
+                ; Collecter les dossiers restants (suivants seulement, celui-ci peut être partiel)
+                For $r = $i + 1 To $aJobs[0]
+                    Local $aR2 = StringSplit($aJobs[$r], ";")
+                    If $aR2[0] >= 1 Then $sRemaining &= $aR2[1] & @CRLF
+                Next
                 ExitLoop
             EndIf
             If $bCOMAT_Skip Then
@@ -2042,14 +2056,25 @@ Func _Batch_COMAT($sData)
                 $bCOMAT_Skip = False
             Else
                 _Tracker_Update($i-1, 2)
+                $iDone += 1
             EndIf
             _Tracker_PollButtons()
-            Sleep(300)
+            _COMAT_SmartSleep(300)
         EndIf
     Next
     HotKeySet("{F9}")
     HotKeySet("{ESCAPE}")
     _Tracker_End()
+    ; Bilan final
+    If $iStopped And $sRemaining <> "" Then
+        ; Copier les dossiers restants dans le presse-papier pour reprise facile
+        ClipPut(StringStripWS($sRemaining, 2))
+        MsgBox(48+262144, "COMAT — Arrêté", _
+            $iDone & " dossier(s) traité(s) sur " & $aJobs[0] & "." & @CRLF & @CRLF & _
+            "Dossiers restants (copiés dans le presse-papier) :" & @CRLF & $sRemaining)
+    ElseIf $iStopped Then
+        MsgBox(48+262144, "COMAT — Arrêté", $iDone & " dossier(s) traité(s) sur " & $aJobs[0] & ".")
+    EndIf
     $bCOMAT_Stop = False
     $bCOMAT_Pause = False
     $bCOMAT_Skip = False
@@ -2068,66 +2093,68 @@ Func _Run_COMAT_Single($Num)
 
     _COMAT_Spinner("COMAT [" & $Num & "] 1/5 - LOG J...")
     ControlSetText($hWnd, "", $COMAT_LOG_CTRL, "")
-    Sleep($COMAT_DELAY_M)
+    _COMAT_SmartSleep($COMAT_DELAY_M)
+    If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
     ControlSetText($hWnd, "", $COMAT_LOG_CTRL, "LOG " & $Num)
-    Sleep($COMAT_DELAY_M)
+    _COMAT_SmartSleep($COMAT_DELAY_M)
+    If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
     ControlSend($hWnd, "", $COMAT_LOG_CTRL, "{F8}")
-    Sleep($COMAT_DELAY_LOAD)
-    _COMAT_WaitIfPaused()
-    _Tracker_PollButtons()
+    _COMAT_SmartSleep($COMAT_DELAY_LOAD)
     If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
 
     _COMAT_Spinner("COMAT [" & $Num & "] 2/5 - F3...")
     WinActivate($hWnd)
     WinWaitActive($hWnd, "", 3)
     Send("{F3}")
-    Sleep($COMAT_DELAY_L)
-    _COMAT_WaitIfPaused()
-    _Tracker_PollButtons()
+    _COMAT_SmartSleep($COMAT_DELAY_L)
     If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
 
     _COMAT_Spinner("COMAT [" & $Num & "] 3/5 - F5 x4...")
     Local $k
     For $k = 1 To 4
         Send("{F5}")
-        Sleep($COMAT_DELAY_M)
+        _COMAT_SmartSleep($COMAT_DELAY_M)
+        If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
     Next
-    Sleep($COMAT_DELAY_L)
-    _COMAT_WaitIfPaused()
-    _Tracker_PollButtons()
+    _COMAT_SmartSleep($COMAT_DELAY_L)
     If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
 
     _COMAT_Spinner("COMAT [" & $Num & "] 4/5 - F1 + TAB + C...")
     Send("{F1}")
-    Sleep($COMAT_DELAY_L)
+    _COMAT_SmartSleep($COMAT_DELAY_L)
+    If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
     For $k = 1 To 6
         Send("{TAB}")
-        Sleep($COMAT_DELAY_S)
+        _COMAT_SmartSleep($COMAT_DELAY_S)
+        If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
     Next
-    Sleep($COMAT_DELAY_M)
+    _COMAT_SmartSleep($COMAT_DELAY_M)
+    If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
     Send("C")
-    Sleep($COMAT_DELAY_M)
+    _COMAT_SmartSleep($COMAT_DELAY_M)
+    If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
     For $k = 1 To 4
         Send("{F5}")
         If $k = 4 Then
-            Sleep($COMAT_DELAY_L)
+            _COMAT_SmartSleep($COMAT_DELAY_L)
         Else
-            Sleep($COMAT_DELAY_M)
+            _COMAT_SmartSleep($COMAT_DELAY_M)
         EndIf
+        If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
     Next
-    Sleep(800)
-    _COMAT_WaitIfPaused()
-    _Tracker_PollButtons()
+    _COMAT_SmartSleep(800)
     If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
 
     _COMAT_Spinner("COMAT [" & $Num & "] 5/5 - Retour LOG...")
     WinActivate($hWnd)
     WinWaitActive($hWnd, "", 3)
-    Sleep($COMAT_DELAY_M)
+    _COMAT_SmartSleep($COMAT_DELAY_M)
+    If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
     ControlSetText($hWnd, "", $COMAT_LOG_CTRL, "LOG")
-    Sleep($COMAT_DELAY_M)
+    _COMAT_SmartSleep($COMAT_DELAY_M)
+    If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
     ControlSend($hWnd, "", $COMAT_LOG_CTRL, "{F8}")
-    Sleep(2000)
+    _COMAT_SmartSleep(2000)
     ToolTip("")
 EndFunc
 
@@ -2204,12 +2231,18 @@ EndIf
                 $bCOMAT_Stop = False
                 $bCOMAT_Pause = False
                 $bCOMAT_Skip = False
+                Local $iDoneG = 0, $iStoppedG = 0
+                Local $sRemainingG = ""
                 For $j = 0 To $iTotalGui - 1
                     $bCOMAT_Skip = False
                     _Tracker_Update($j, 1)
                     _COMAT_WaitIfPaused2()
                     If $bCOMAT_Stop Then
                         _Tracker_Update($j, 3)
+                        $iStoppedG = 1
+                        For $rr = $j To $iTotalGui - 1
+                            $sRemainingG &= $aValidGui[$rr] & @CRLF
+                        Next
                         ExitLoop
                     EndIf
                     If $bCOMAT_Skip Then
@@ -2220,6 +2253,10 @@ EndIf
                     _Run_COMAT_Single($aValidGui[$j])
                     If $bCOMAT_Stop Then
                         _Tracker_Update($j, 3)
+                        $iStoppedG = 1
+                        For $rr = $j + 1 To $iTotalGui - 1
+                            $sRemainingG &= $aValidGui[$rr] & @CRLF
+                        Next
                         ExitLoop
                     EndIf
                     If $bCOMAT_Skip Then
@@ -2227,17 +2264,27 @@ EndIf
                         $bCOMAT_Skip = False
                     Else
                         _Tracker_Update($j, 2)
+                        $iDoneG += 1
                     EndIf
                     _Tracker_PollButtons()
-                    Sleep(300)
+                    _COMAT_SmartSleep(300)
                 Next
                 HotKeySet("{F9}")
                 HotKeySet("{ESCAPE}")
                 _Tracker_End()
+                If $iStoppedG And $sRemainingG <> "" Then
+                    ClipPut(StringStripWS($sRemainingG, 2))
+                    MsgBox(48+262144, "COMAT — Arrêté", _
+                        $iDoneG & " dossier(s) traité(s) sur " & $iTotalGui & "." & @CRLF & @CRLF & _
+                        "Dossiers restants (copiés dans le presse-papier) :" & @CRLF & $sRemainingG)
+                ElseIf $iStoppedG Then
+                    MsgBox(48+262144, "COMAT — Arrêté", $iDoneG & " dossier(s) traité(s) sur " & $iTotalGui & ".")
+                Else
+                    MsgBox(64+262144, "Terminé", "Traitement COMAT terminé — " & $iDoneG & " dossier(s).")
+                EndIf
                 $bCOMAT_Stop = False
                 $bCOMAT_Pause = False
                 $bCOMAT_Skip = False
-                MsgBox(64+262144, "Terminé", "Traitement COMAT terminé.")
                 Return
         EndSwitch
     WEnd
@@ -2251,7 +2298,21 @@ Func _COMAT_WaitIfPaused()
     While $bCOMAT_Pause And Not $bCOMAT_Stop And Not $bCOMAT_Skip
         _COMAT_Spinner("EN PAUSE — cliquez Play dans la fenêtre de contrôle")
         _Tracker_PollButtons()
+        Sleep(80)
+    WEnd
+EndFunc
+
+; Sleep réactif : découpe le sleep en tranches de 100ms et poll les boutons GUI
+; Permet Pause/Skip/Stop instantané même pendant les longues attentes
+Func _COMAT_SmartSleep($iMs)
+    Local $iSlept = 0
+    While $iSlept < $iMs
+        _Tracker_PollButtons()
+        If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
+        _COMAT_WaitIfPaused()
+        If $bCOMAT_Stop Or $bCOMAT_Skip Then Return
         Sleep(100)
+        $iSlept += 100
     WEnd
 EndFunc
 

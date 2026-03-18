@@ -3491,16 +3491,19 @@ async function sendAction(actionType, cmd = '') {
     email: email
   };
 
+  // ETMS_CMD : fire-and-forget, pas de spinner, réponse instantanée
   if (actionType === 'ETMS_CMD') {
-    showSpinner(`E.TMS : ${cmd} → ${file}`, 'Commande envoyée à E.TMS — patientez...');
+    toast(`→ ${cmd} ${file}`);
+    apiCall('action', payload).catch(e => toast(`Erreur : ${e.message || 'Action échouée'}`));
+    return;
   }
+
   if (actionType === 'MAIL_RDV') {
     showSpinner(`Outlook : Mail RDV pour ${client}`, 'Préparation du mail en cours...');
   }
 
   try {
     await apiCall('action', payload);
-    if (actionType === 'ETMS_CMD') toast(`✓ E.TMS : ${cmd} terminé pour ${file}`);
     if (actionType === 'MAIL_RDV') toast(`✓ Mail RDV envoyé pour ${client}`);
   } catch(e) {
     toast(`Erreur : ${e.message || 'Action échouée'}`);
@@ -3532,12 +3535,17 @@ async function sendActionHeader(actionType, cmd = '') {
     email: email
   };
 
-  if (actionType === 'ETMS_CMD') showSpinner(`E.TMS : ${cmd} → ${file}`);
+  // ETMS_CMD : fire-and-forget, pas de spinner, réponse instantanée
+  if (actionType === 'ETMS_CMD') {
+    toast(`→ ${cmd} ${file}`);
+    apiCall('action', payload).catch(e => toast(`Erreur : ${e.message || 'Action échouée'}`));
+    return;
+  }
+
   if (actionType === 'MAIL_RDV') showSpinner(`Mail RDV pour ${client || file}...`);
 
   try {
     await apiCall('action', payload);
-    if (actionType === 'ETMS_CMD') toast(`✓ E.TMS : ${cmd} → ${file}`);
   } catch(e) {
     toast(`Erreur : ${e.message || 'Action échouée'}`);
   } finally {

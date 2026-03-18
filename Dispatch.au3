@@ -335,6 +335,32 @@ Func _HandleClient($iSocket)
         Local $sNetJSON = _Net_LoadState($sNetPath2)
         _SendHttpResponse($iSocket, 200, "application/json", $sNetJSON)
 
+    ElseIf StringLeft($sURL, 13) = "/api/net-list" Then
+        ; /api/net-list?pattern=F:\...\dispatch_state_*.json — liste les fichiers correspondants
+        Local $sPattern = StringMid($sURL, 22) ; après "/api/net-list?pattern="
+        $sPattern = _URIDecode($sPattern)
+        Local $sDir = StringRegExpReplace($sPattern, "\\[^\\]*$", "")
+        Local $sGlob = StringRegExpReplace($sPattern, "^.*\\", "")
+        Local $sFileList = '["' ; on construit un array JSON
+        Local $hSearch2 = FileFindFirstFile($sDir & "\" & $sGlob)
+        Local $bFirst = True
+        If $hSearch2 <> -1 Then
+            While True
+                Local $sFound = FileFindNextFile($hSearch2)
+                If @error Then ExitLoop
+                If Not $bFirst Then $sFileList &= ',"'
+                $sFileList &= StringReplace($sDir & "\" & $sFound, "\", "\\") & '"'
+                $bFirst = False
+            WEnd
+            FileClose($hSearch2)
+        EndIf
+        If $bFirst Then
+            $sFileList = "[]"
+        Else
+            $sFileList &= "]"
+        EndIf
+        _SendHttpResponse($iSocket, 200, "application/json", $sFileList)
+
     ElseIf $sURL = "/api/action" Then
         Local $sAction = _GetJsonValue($sBody, "action")
 

@@ -3231,6 +3231,23 @@ async function netLoad(path) {
   } catch(e) { console.warn('netLoad:', e); return null; }
 }
 
+async function netListFiles(pattern) {
+  try {
+    const url = `${API_URL}/net-list?pattern=${encodeURIComponent(pattern)}`;
+    const resp = await fetch(url, { method:'POST' });
+    return await resp.json();
+  } catch(e) { console.warn('netListFiles:', e); return []; }
+}
+
+// Construire le chemin opérateur à partir du chemin de base
+// dispatch_state.json → dispatch_state_Jason.json
+function _opPath(basePath, operatorName) {
+  return basePath.replace(/\.json$/i, '_' + operatorName.replace(/[^a-zA-Z0-9àâäéèêëïîôùûüÿçæœÀÂÄÉÈÊËÏÎÔÙÛÜŸÇÆŒ_-]/g, '') + '.json');
+}
+function _opPattern(basePath) {
+  return basePath.replace(/\.json$/i, '_*.json');
+}
+
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  INDEXEDDB — Stockage local haute capacité (remplace JSON/localStorage) ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
@@ -4399,12 +4416,14 @@ function optsLoadReseau() {
 // ╚══════════════════════════════════════════════════════════════════════════╝
 async function reseauForceSave() {
   const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
+  const myName = localStorage.getItem('dispatch_operator') || '';
   if (!path) return toast('Chemin réseau non configuré. Aller dans Options → Réseau partagé.');
+  if (!myName) return toast('Nom opérateur non configuré. Aller dans Options → Réseau partagé.');
   try {
     await smartNetSave(path);
     const st = document.getElementById('opts-reseau-status');
-    if (st) st.textContent = '✓ Sauvegardé sur réseau — ' + new Date().toLocaleTimeString();
-    toast('État sauvegardé sur ' + path);
+    if (st) st.textContent = '✓ Sauvegardé → ' + _opPath(path, myName).split('\\').pop() + ' — ' + new Date().toLocaleTimeString();
+    toast('État sauvegardé : ' + _opPath(path, myName).split('\\').pop());
   } catch(e) { toast('Erreur sauvegarde réseau : ' + e.message); }
 }
 
@@ -4412,97 +4431,99 @@ async function reseauForceLoad() {
   const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
   if (!path) return toast('Chemin réseau non configuré.');
   try {
-    const data = await netLoad(path);
-    if (!data) return;
-    // Le fichier réseau est un array [{file,statut,operator}, ...]
-    applyLoadedState(data);
-    toast('Statuts synchronisés depuis le réseau.');
+    // 1. Lister tous les fichiers opérateur
+    const pattern = _opPattern(path);
+    const files = await netListFiles(pattern);
+
+    if (!files.length) {
+      // Migration : essayer l'ancien fichier monolithique
+      const oldData = await netLoad(path);
+      if (oldData) {
+        applyLoadedState(oldData);
+        toast('Migration : chargé depuis l\'ancien fichier unique.');
+        return;
+      }
+      return toast('Aucun fichier opérateur trouvé.');
+    }
+
+    // 2. Charger tous les fichiers et fusionner
+    const allDossiers = [];
+    const operatorFiles = [];
+    for (const f of files) {
+      const fNorm = f.replace(/\\\\/g, '\\');
+      const data = await netLoad(fNorm);
+      if (Array.isArray(data)) {
+        allDossiers.push(...data);
+        // Extraire le nom d'opérateur du fichier
+        const match = fNorm.match(/dispatch_state_(.+)\.json$/i);
+        if (match) operatorFiles.push(match[1]);
+      }
+    }
+
+    // 3. Dédupliquer par file (garder le plus récent _ts)
+    const merged = new Map();
+    allDossiers.forEach(r => {
+      const existing = merged.get(r.file);
+      if (!existing || (r._ts || 0) >= (existing._ts || 0)) {
+        merged.set(r.file, r);
+      }
+    });
+
+    applyLoadedState([...merged.values()]);
+    toast(`Réseau : ${merged.size} dossier(s) chargés depuis ${files.length} opérateur(s) (${operatorFiles.join(', ')}).`);
   } catch(e) { toast('Erreur chargement réseau : ' + e.message); }
 }
 
-// ── État réseau = tableau de bord : file + statut + operator + timestamp ──
-// Chaque entrée porte un _ts (timestamp) pour savoir quelle version est la plus récente
-function buildSaveState() {
-  const myName = localStorage.getItem('dispatch_operator') || '';
-  return g_master.map(r => ({
-    file: r.file,
-    statut: r.statut,
-    operator: r.operator || '',
-    _ts: r._ts || Date.now(),
-    _by: myName
-  }));
-}
-
-// Sauvegarde intelligente : merge avant écriture
-// Si le fichier réseau a été modifié par un autre utilisateur, on fusionne :
-// - Pour chaque dossier, on garde la version avec le timestamp le plus récent
-// - Les dossiers inconnus localement sont conservés tels quels (ajoutés par l'autre)
+// Sauvegarde par opérateur : chaque opérateur écrit SON fichier uniquement
+// dispatch_state_Jason.json, dispatch_state_Abderrahamn.json, etc.
 async function smartNetSave(path) {
   const myName = localStorage.getItem('dispatch_operator') || '';
+  if (!myName) return; // pas de nom = pas de sauvegarde réseau
+
   try {
-    // 1. Charger l'état réseau actuel
-    const remote = await netLoad(path);
-    const remoteBoard = Array.isArray(remote) ? remote : (remote?.board || remote?.master || []);
+    // 1. Construire l'état local (seulement MES dossiers)
+    const myBoard = g_master
+      .filter(r => (r.operator || '') === myName || !r.operator)
+      .map(r => ({
+        file: r.file, statut: r.statut, operator: r.operator || '',
+        _ts: r._ts || Date.now(), _by: myName
+      }));
 
-    // 2. Construire l'état local
-    const localBoard = buildSaveState();
+    // 2. Sauvegarder dans mon fichier opérateur
+    const myPath = _opPath(path, myName);
+    await netSave(myPath, myBoard);
 
-    // 3. Fusionner
-    const merged = new Map();
-
-    // D'abord, charger tout le réseau
-    remoteBoard.forEach(r => merged.set(r.file, r));
-
-    // Ensuite, écraser avec le local SEULEMENT si :
-    // - Le dossier n'existe pas en remote
-    // - OU l'opérateur du dossier local est le même que moi (c'est mon dossier)
-    // - OU le timestamp local est plus récent que le remote
-    localBoard.forEach(local => {
-      const existing = merged.get(local.file);
-      if (!existing) {
-        // Nouveau dossier, ajouter
-        merged.set(local.file, local);
-      } else if ((existing._by || '') === myName || !existing._by) {
-        // C'est mon propre dossier, je l'écrase
-        merged.set(local.file, local);
-      } else if ((local._ts || 0) >= (existing._ts || 0)) {
-        // Mon timestamp est plus récent ou égal
-        merged.set(local.file, local);
-      }
-      // Sinon : le remote est plus récent ET c'est un autre opérateur → on garde le remote
-    });
-
-    // 4. Sauvegarder le résultat fusionné
-    const finalState = [...merged.values()];
-    await netSave(path, finalState);
-
-    // 5. Appliquer les changements remote qu'on a gardés (syncer l'interface)
+    // 3. Charger les fichiers des AUTRES opérateurs pour syncer l'interface
+    const pattern = _opPattern(path);
+    const files = await netListFiles(pattern);
     let synced = 0;
-    remoteBoard.forEach(remote => {
-      const kept = merged.get(remote.file);
-      if (kept === remote) {
-        // On a gardé la version remote, syncer en local
-        const local = g_master.find(r => r.file === remote.file);
-        if (local && local.statut !== remote.statut) {
-          local.statut = remote.statut;
-          if (remote.operator) local.operator = remote.operator;
-          local._ts = remote._ts;
-          synced++;
+    for (const f of files) {
+      // Normaliser les backslashes pour comparer
+      const fNorm = f.replace(/\\\\/g, '\\');
+      const myNorm = myPath.replace(/\\\\/g, '\\');
+      if (fNorm === myNorm) continue; // c'est mon propre fichier
+      const remote = await netLoad(fNorm);
+      if (!Array.isArray(remote)) continue;
+      remote.forEach(rd => {
+        const local = g_master.find(r => r.file === rd.file);
+        if (local && rd.operator && rd.operator !== myName) {
+          // Dossier d'un autre opérateur — syncer le statut si plus récent
+          if ((rd._ts || 0) > (local._ts || 0)) {
+            local.statut = rd.statut;
+            local.operator = rd.operator;
+            local._ts = rd._ts;
+            synced++;
+          }
         }
-      }
-    });
+      });
+    }
 
     if (synced > 0) {
       renderMaster(); renderKanban(); updateStats();
-      console.log(`Réseau merge : ${synced} dossier(s) mis à jour depuis l'autre utilisateur.`);
-      toast(`Sync réseau : ${synced} dossier(s) fusionnés avec l'autre opérateur.`);
+      toast(`Sync réseau : ${synced} dossier(s) mis à jour depuis un autre opérateur.`);
     }
-
-    return finalState;
   } catch(e) {
     console.warn('smartNetSave error:', e);
-    // Fallback : sauvegarde classique
-    await smartNetSave(path);
   }
 }
 

@@ -1305,6 +1305,7 @@ Func _Batch_FC($sData)
     EndIf
     $bFC_Stop = False
     $bFC_Pause = False
+    $bFC_Skip = False
 EndFunc
 
 ; ==============================================================================
@@ -1624,11 +1625,14 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
                 EndIf
                 WinActivate($hWnd)
                 WinWaitActive($hWnd, "", 3)
-                Sleep(500)
+                _FC_SmartSleep(500)
+                If $bFC_Stop Or $bFC_Skip Then ExitLoop
                 ControlClick($hWnd, "", $sFC_TOOLBAR, "LEFT", 1, 54, 9)
             EndIf
             Local $iTimer = TimerInit()
             While Not WinExists($sFC_FILEOPEN)
+                _Tracker_PollButtons()
+                If $bFC_Stop Or $bFC_Skip Then ExitLoop
                 Sleep(100)
                 If _IsPressed("1B") Then
                     _FC_AuditLog("*** ECHAP pendant attente FileOpen ***")
@@ -1640,6 +1644,7 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
                     ExitLoop
                 EndIf
             WEnd
+            If $bFC_Stop Or $bFC_Skip Then ExitLoop
             _FC_AuditTiming("Attente FileOpen", TimerDiff($iTimer))
             If Not WinExists($sFC_FILEOPEN) Then
                 _FC_AuditLog("  FileOpen absent apres timeout")
@@ -1648,11 +1653,12 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
             WinActivate($sFC_FILEOPEN)
             WinWaitActive($sFC_FILEOPEN, "", 3)
             _FC_AuditWinState($sFC_FILEOPEN, "FileOpen")
-            Sleep(300)
+            _FC_SmartSleep(300)
+            If $bFC_Stop Or $bFC_Skip Then ExitLoop
             ControlSetText($sFC_FILEOPEN, "", "[CLASS:TRzEdit; INSTANCE:1]", "")
-            Sleep(150)
+            _FC_SmartSleep(150)
             ControlSetText($sFC_FILEOPEN, "", "[CLASS:TRzEdit; INSTANCE:1]", $sFC_EDS)
-            Sleep(500)
+            _FC_SmartSleep(500)
             Local $sReadBack = ControlGetText($sFC_FILEOPEN, "", "[CLASS:TRzEdit; INSTANCE:1]")
             _FC_AuditLog("  Champ apres ecriture = '" & $sReadBack & "'")
             If Not StringInStr($sReadBack, "EXPORT_HPE_FILECLOSING") Then
@@ -1864,8 +1870,8 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
             Local $tCol = TimerInit()
             While Not $bColValidee
                 _FC_WaitIfPaused()
-                If $bFC_Stop Then
-                    _FC_AuditLog("*** STOP Col " & $colNom & " ***")
+                If $bFC_Stop Or $bFC_Skip Then
+                    _FC_AuditLog("*** STOP/SKIP Col " & $colNom & " ***")
                     _FC_AuditShow($Num)
                     Return
                 EndIf
@@ -1877,26 +1883,27 @@ Func _Run_FileClosing_Single($Num, $CarrierID = "13", $DateGOverride = "", $Hora
                 EndIf
                 Local $hWin   = WinActivate($sFC_INPUT)
                 Local $sTitre = WinGetTitle($hWin)
-                Sleep(150)
+                _FC_SmartSleep(150)
+                If $bFC_Stop Or $bFC_Skip Then Return
                 If StringInStr($sTitre, "REASON") Then
                     _FC_AuditLog("  Col " & $colNom & " : REASON popup -> DE")
                     ControlSetText($hWin, "", "[CLASS:TEdit; INSTANCE:1]", "DE")
-                    Sleep(150)
+                    _FC_SmartSleep(150)
                     ControlClick($hWin, "", "[TEXT:OK]")
                     WinWaitClose($hWin)
-                    Sleep(300)
+                    _FC_SmartSleep(300)
                 Else
                     ControlSetText($hWin, "", "[CLASS:TEdit; INSTANCE:1]", $sVal)
-                    Sleep(150)
+                    _FC_SmartSleep(150)
                     ControlClick($hWin, "", "[TEXT:OK]")
                     WinWaitClose($hWin)
                     $bColValidee = True
-                    Sleep(300)
+                    _FC_SmartSleep(300)
                 EndIf
             WEnd
             _FC_AuditTiming("Col " & $colNom & " (val='" & StringLeft($sVal, 30) & "')", TimerDiff($tCol))
         Next
-        Sleep(500)
+        _FC_SmartSleep(500)
     EndIf
 
     _FC_AuditTiming("TOTAL FC-Single", TimerDiff($tTotal))

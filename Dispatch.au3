@@ -866,28 +866,30 @@ Func _ActionETMS($sBouton, $sNumDossier)
         Return
     EndIf
 
+    WinActivate($hWnd)
+    WinWaitActive($hWnd, "", 3)
+
     Local $sInst = _GetETMSInstance($hWnd)
     Local $sCtrl = "[CLASS:TEIEdit; INSTANCE:" & $sInst & "]"
 
     ; ══ F8 seul : envoyer F8 sans écrire de commande ══
     If $sBouton = "F8" Then
-        WinActivate($hWnd)
-        WinWaitActive($hWnd, "", 1)
-        Send("{F8}")
+        ControlFocus($hWnd, "", $sCtrl)
+        ControlSend($hWnd, "", $sCtrl, "{F8}")
         _AuditLog("ETMS", "BG: F8 (execute)")
         Return
     EndIf
 
     ; Préparer la commande
+    Send("{PGUP}")
+    Sleep(150)
     Local $sCommande = $sBouton & " " & $sNumDossier
     If $sBouton = "LOG X" Then $sCommande = "LOG X"
 
-    ; ══ ControlSetText en arrière-plan, puis WinActivate bref pour F8 ══
+    ControlFocus($hWnd, "", $sCtrl)
     ControlSetText($hWnd, "", $sCtrl, $sCommande)
-    Sleep(20)
-    WinActivate($hWnd)
-    WinWaitActive($hWnd, "", 1)
-    Send("{F8}")
+    Sleep(150)
+    ControlSend($hWnd, "", $sCtrl, "{F8}")
     _AuditLog("ETMS", "BG: " & $sCommande)
 EndFunc
 

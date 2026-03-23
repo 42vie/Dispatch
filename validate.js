@@ -3,7 +3,8 @@
 // ║  Vérifie la conformité des dossiers au schéma v2.1                      ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-const ID_REGEX = /^DSP-\d{4}-.+$/;
+// ID : accepte les vrais numéros de dossier (J1A0042031) et le format DSP-YYYY-XXXX
+const ID_REGEX = /^[A-Z0-9][A-Z0-9\-\.\+\s]{2,199}$/i;
 const ISO_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
 
 /**
@@ -24,7 +25,7 @@ function validateDossier(dossier) {
   if (!dossier.id || typeof dossier.id !== 'string') {
     errors.push('Champ "id" manquant ou invalide.');
   } else if (!ID_REGEX.test(dossier.id)) {
-    errors.push('Format ID invalide : "' + dossier.id + '" (attendu : DSP-YYYY-XXXX).');
+    errors.push('Format ID invalide : "' + dossier.id + '" (attendu : J1A... ou DSP-YYYY-XXXX).');
   }
 
   if (dossier.v === undefined || dossier.v === null) {
@@ -176,24 +177,32 @@ function validateFile(file) {
 function _test_validate() {
   console.log('=== Tests validate.js ===');
 
-  // Test 1 : dossier valide
+  // Test 1 : dossier valide (format réel J1A...)
   const r1 = validateDossier({
-    id: 'DSP-2024-0001',
+    id: 'J1A0042031',
     v: 3,
-    createdAt: '2024-03-15T08:30:00Z',
-    updatedAt: '2024-03-22T14:12:00Z',
+    createdAt: '2026-03-20T00:00:00Z',
+    updatedAt: '2026-03-22T14:12:00Z',
     updatedBy: 'Jason',
-    transport: { statut: 2, poids: 10, volume: 0.5 },
-    client: { nom: 'DUPONT' },
+    transport: { statut: 2, poids: 73.5, volume: 0.358 },
+    client: { nom: 'THALES LAS SAS' },
     historique: []
   });
   console.assert(r1.valid === true, 'Dossier valide reconnu');
   console.assert(r1.errors.length === 0, 'Aucune erreur');
-  console.log('  ✓ Test 1 : dossier valide');
+  console.log('  ✓ Test 1 : dossier valide (J1A...)');
 
-  // Test 2 : ID invalide
-  const r2 = validateDossier({ id: 'BLABLA', v: 1, updatedAt: '2024-03-22T14:12:00Z', transport: { statut: 0 } });
-  console.assert(r2.valid === false, 'ID invalide détecté');
+  // Test 1b : dossier valide (format DSP-)
+  const r1b = validateDossier({
+    id: 'DSP-2024-0001', v: 1, updatedAt: '2024-01-01T00:00:00Z',
+    updatedBy: 'test', transport: { statut: 0 }, historique: []
+  });
+  console.assert(r1b.valid === true, 'Format DSP- aussi accepté');
+  console.log('  ✓ Test 1b : dossier valide (DSP-)');
+
+  // Test 2 : ID invalide (trop court)
+  const r2 = validateDossier({ id: 'X', v: 1, updatedAt: '2024-03-22T14:12:00Z', transport: { statut: 0 } });
+  console.assert(r2.valid === false, 'ID trop court détecté');
   console.assert(r2.errors.some(e => e.includes('Format ID')), 'Erreur ID');
   console.log('  ✓ Test 2 : ID invalide');
 

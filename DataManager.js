@@ -153,18 +153,20 @@ class DataManager {
       this.rawData = data.rawData || {};
     } else {
       // Migration minimale sans migrate.js
+      // L'ID est le numéro de dossier (file: "J1A0042031")
       const master = data.master || [];
       this.dossiers = {};
       master.forEach(r => {
-        const key = r.file || r.id || ('auto_' + Math.random().toString(36).slice(2, 8));
+        const key = (r.file || '').trim();
+        if (!key) return;
         this.dossiers[key] = {
           id: key,
-          file: r.file || key,
+          file: key,
           v: 1,
           createdAt: r._dateCreated ? r._dateCreated + 'T00:00:00Z' : new Date().toISOString(),
           updatedAt: r._ts ? new Date(r._ts).toISOString() : new Date().toISOString(),
           updatedBy: r._by || r.operator || '',
-          client: { nom: r.client || '', contact: r.contact || '', tel: r.tel || '', email: r.email || '' },
+          client: { nom: r.client || '', contact: (r.contact || '').trim(), tel: (r.tel || '').trim(), email: (r.email || '').trim() },
           transport: {
             statut: parseInt(r.statut) || 0,
             svct: r.svct || '', transp: r.transp || '',

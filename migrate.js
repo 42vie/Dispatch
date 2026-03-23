@@ -1,12 +1,22 @@
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  migrate.js — Migration ancien format → nouveau format DispatchMaster   ║
-// ║  Convertit les arrays de dossiers plats en objets indexés par ID        ║
+// ║  Convertit les arrays de dossiers plats en objets indexés par file      ║
 // ║  avec versioning, timestamps ISO 8601 et historique                     ║
+// ║                                                                          ║
+// ║  Format réel des données existantes :                                     ║
+// ║    file: "J1A0042031"         (ID unique = numéro de dossier)            ║
+// ║    rdl: "24.03.26"            (date DD.MM.YY)                            ║
+// ║    svct: "BX I2 S5 ST ZX"    (codes service séparés par espaces)        ║
+// ║    transp: "Flex (7)"         (transporteur + numéro)                    ║
+// ║    _ts: 1774266500445         (timestamp ms)                             ║
+// ║    statut: "2"                (string "0"-"8")                           ║
+// ║    _dateCreated: "2026-03-20" (ISO date)                                 ║
+// ║    fcDate: "24.03.26"         (date DD.MM.YY)                            ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
 /**
  * Migre les données de l'ancien format (array plat, _ts en ms)
- * vers le nouveau format (objet indexé par ID, ISO 8601, versioning).
+ * vers le nouveau format (objet indexé par file, ISO 8601, versioning).
  *
  * @param {Object|Array} oldData - Ancien format : { master: [...], rawData: {}, cpData: [] }
  *                                  ou directement un array de dossiers [...]
@@ -28,7 +38,6 @@ function migrateToNewFormat(oldData) {
     oldRawData = oldData.rawData || {};
     oldCpData = oldData.cpData || [];
     if (!Array.isArray(oldMaster)) {
-      // Peut être déjà au nouveau format (objet indexé)
       if (typeof oldMaster === 'object' && !Array.isArray(oldMaster)) {
         errors.push('Les données semblent déjà au nouveau format (objet indexé).');
         return { data: oldData, logs, errors };
@@ -47,62 +56,64 @@ function migrateToNewFormat(oldData) {
 
   logs.push('Début migration — ' + oldMaster.length + ' dossier(s) détectés.');
 
-  // --- 2. Générer les IDs ---
-  const usedIds = new Set();
-  let autoCounter = 1;
-  const now = new Date().toISOString();
-  const yearStr = new Date().getFullYear().toString();
+  // --- 2. Fonctions de conversion ---
 
-  function generateId(file) {
-    // Tenter de normaliser à partir du champ file
-    if (file) {
-      const cleaned = String(file).trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
-      const candidate = 'DSP-' + yearStr + '-' + cleaned;
-      if (!usedIds.has(candidate)) {
-        usedIds.add(candidate);
-        return candidate;
-      }
-    }
-    // Fallback : compteur auto
-    while (usedIds.has('DSP-' + yearStr + '-' + String(autoCounter).padStart(4, '0'))) {
-      autoCounter++;
-    }
-    const id = 'DSP-' + yearStr + '-' + String(autoCounter).padStart(4, '0');
-    usedIds.add(id);
-    autoCounter++;
-    return id;
-  }
-
-  // --- 3. Convertir les timestamps ---
+  /** Convertit un timestamp ms en ISO 8601 */
   function msToISO(ms) {
-    if (!ms) return now;
+    if (!ms) return null;
     if (typeof ms === 'string' && ms.includes('T')) return ms; // déjà ISO
     const n = Number(ms);
-    if (isNaN(n) || n < 1e12) return now; // invalide
-    try { return new Date(n).toISOString(); } catch (e) { return now; }
+    if (isNaN(n) || n < 1e12) return null;
+    try { return new Date(n).toISOString(); } catch (e) { return null; }
   }
 
-  function dateToISO(d) {
-    if (!d) return null;
-    if (typeof d === 'string' && d.includes('T')) return d;
+  /** Convertit une date DD.MM.YY en ISO 8601 (ex: "24.03.26" → "2026-03-24T00:00:00Z") */
+  function ddmmyyToISO(d) {
+    if (!d || typeof d !== 'string') return null;
+    // Format DD.MM.YY (ex: "24.03.26")
+    const m1 = d.match(/^(\d{1,2})\.(\d{2})\.(\d{2})$/);
+    if (m1) {
+      const yy = parseInt(m1[3]);
+      const year = yy >= 50 ? 1900 + yy : 2000 + yy; // 26 → 2026, 99 → 1999
+      return year + '-' + m1[2] + '-' + m1[1].padStart(2, '0') + 'T00:00:00Z';
+    }
     // Format DD/MM/YYYY
-    const m = String(d).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (m) return m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0') + 'T00:00:00Z';
-    // Format YYYY-MM-DD
-    const m2 = String(d).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (m2) return d + 'T00:00:00Z';
+    const m2 = d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m2) return m2[3] + '-' + m2[2].padStart(2, '0') + '-' + m2[1].padStart(2, '0') + 'T00:00:00Z';
+    // Format YYYY-MM-DD (déjà quasi-ISO)
+    const m3 = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m3) return d + 'T00:00:00Z';
     return null;
   }
 
-  // --- 4. Convertir chaque dossier ---
+  /** Tente de corriger l'encodage UTF-8 cassé (mojibake) */
+  function fixEncoding(s) {
+    if (!s || typeof s !== 'string') return s || '';
+    // Patterns courants de mojibake UTF-8
+    return s
+      .replace(/Ã©/g, 'é').replace(/Ã¨/g, 'è').replace(/Ãª/g, 'ê').replace(/Ã«/g, 'ë')
+      .replace(/Ã /g, 'à').replace(/Ã¢/g, 'â').replace(/Ã¤/g, 'ä')
+      .replace(/Ã¯/g, 'ï').replace(/Ã®/g, 'î')
+      .replace(/Ã´/g, 'ô').replace(/Ã¶/g, 'ö')
+      .replace(/Ã¹/g, 'ù').replace(/Ã»/g, 'û').replace(/Ã¼/g, 'ü')
+      .replace(/Ã§/g, 'ç').replace(/Ã±/g, 'ñ')
+      .replace(/Ã‰/g, 'É').replace(/Ã€/g, 'À')
+      .replace(/ÃƒÂ«/g, 'ë').replace(/ÃƒÂ©/g, 'é')
+      .replace(/ÃƒÂ¨/g, 'è').replace(/ÃƒÂ /g, 'à')
+      .replace(/ÃƒÂ®/g, 'î').replace(/ÃƒÂ´/g, 'ô')
+      .trim();
+  }
+
+  // --- 3. Convertir chaque dossier ---
+  const now = new Date().toISOString();
   const dossiers = {};
-  const seen = new Map(); // file → id (pour détecter doublons)
+  const seen = new Map(); // file → entrée la plus récente
 
   for (let i = 0; i < oldMaster.length; i++) {
     const old = oldMaster[i];
 
     if (!old || typeof old !== 'object') {
-      errors.push('Entrée #' + i + ' ignorée : type invalide (' + typeof old + ').');
+      errors.push('Entrée #' + i + ' ignorée : type invalide.');
       continue;
     }
 
@@ -112,35 +123,31 @@ function migrateToNewFormat(oldData) {
       continue;
     }
 
-    // Doublon ?
+    // Doublon ? Garder le plus récent par _ts
     if (seen.has(fileKey)) {
-      const existingId = seen.get(fileKey);
-      const existing = dossiers[existingId];
-      // Garder le plus récent
+      const prev = seen.get(fileKey);
       const oldTs = old._ts || 0;
-      const existTs = existing._raw_ts || 0;
-      if (oldTs > existTs) {
-        logs.push('Doublon détecté pour "' + fileKey + '" — version plus récente gardée.');
-        // On va écraser l'existant
+      const prevTs = prev._ts || 0;
+      if (oldTs > prevTs) {
+        logs.push('Doublon "' + fileKey + '" — version plus récente gardée.');
+        // On continue et on écrasera
       } else {
-        logs.push('Doublon détecté pour "' + fileKey + '" — version plus ancienne ignorée.');
+        logs.push('Doublon "' + fileKey + '" — version plus ancienne ignorée.');
         continue;
       }
     }
-
-    const id = seen.has(fileKey) ? seen.get(fileKey) : generateId(fileKey);
-    seen.set(fileKey, id);
+    seen.set(fileKey, old);
 
     const statut = parseInt(old.statut) || 0;
-    const updatedAt = msToISO(old._ts);
-    const createdAt = dateToISO(old._dateCreated) || updatedAt;
+    const updatedAt = msToISO(old._ts) || now;
+    const createdAt = ddmmyyToISO(old._dateCreated) || (old._dateCreated ? old._dateCreated + 'T00:00:00Z' : updatedAt);
     const updatedBy = old._by || old.operator || '';
 
     // Récupérer les données brutes si disponibles
     const raw = oldRawData[fileKey] || {};
 
     const newDossier = {
-      id: id,
+      id: fileKey,   // L'ID c'est le numéro de dossier (J1A0042031)
       file: fileKey,
       v: 1,
       createdAt: createdAt,
@@ -150,23 +157,22 @@ function migrateToNewFormat(oldData) {
       client: {
         nom: old.client || '',
         ref: '',
-        contact: old.contact || '',
-        tel: old.tel || '',
-        email: old.email || ''
+        contact: fixEncoding(old.contact),
+        tel: (old.tel || '').trim(),
+        email: (old.email || '').trim()
       },
 
       transport: {
         statut: statut,
-        type: (old.svct || '').split(',')[0] || '',
         svct: old.svct || '',
+        transp: old.transp || '',
         poids: parseFloat(old.poids) || 0,
         volume: parseFloat(old.vol) || 0,
-        nbColis: (fileKey.includes('+') ? fileKey.split('+').length : 1),
         taxable: parseFloat(old.taxable) || 0,
-        origine: '',
+        nbColis: (fileKey.includes('+') ? fileKey.split('+').length : 1),
         destination: old.dept || '',
         rdl: old.rdl || '',
-        transp: old.transp || ''
+        rdlISO: ddmmyyToISO(old.rdl)
       },
 
       financier: {
@@ -183,6 +189,7 @@ function migrateToNewFormat(oldData) {
 
       fc: {
         date: old.fcDate || '',
+        dateISO: ddmmyyToISO(old.fcDate),
         horaire: old.fcHoraire || '',
         dly: old.fcDly || '',
         dlyNotes: old.fcDlyNotes || ''
@@ -201,13 +208,10 @@ function migrateToNewFormat(oldData) {
           action: 'création',
           detail: null
         }
-      ],
-
-      // Champ temporaire pour la déduplication (supprimé ensuite)
-      _raw_ts: old._ts || 0
+      ]
     };
 
-    // Ajouter une entrée d'historique si le statut a un sens
+    // Ajouter une entrée d'historique si le statut > 0
     if (statut > 0) {
       newDossier.historique.push({
         ts: updatedAt,
@@ -217,21 +221,17 @@ function migrateToNewFormat(oldData) {
       });
     }
 
-    dossiers[id] = newDossier;
-    logs.push('Migré : "' + fileKey + '" → ' + id + ' (statut=' + statut + ')');
+    dossiers[fileKey] = newDossier;
+    logs.push('Migré : ' + fileKey + ' → ' + (old.client || '?') + ' (statut=' + statut + ', op=' + (old.operator || '—') + ')');
   }
 
-  // Nettoyer les champs temporaires
-  Object.values(dossiers).forEach(d => { delete d._raw_ts; });
-
-  // --- 5. Migrer les cpData ---
+  // --- 4. Migrer les cpData ---
   const cpData = {};
   if (Array.isArray(oldCpData)) {
     oldCpData.forEach((cp, idx) => {
       if (cp && cp.file) {
-        const cpId = 'CP-' + yearStr + '-' + String(idx + 1).padStart(4, '0');
-        cpData[cpId] = {
-          id: cpId,
+        cpData[cp.file] = {
+          id: cp.file,
           file: cp.file,
           client: cp.client || '',
           poids: parseFloat(cp.poids) || 0,
@@ -247,7 +247,7 @@ function migrateToNewFormat(oldData) {
     }
   }
 
-  // --- 6. Construire le résultat final ---
+  // --- 5. Construire le résultat final ---
   const count = Object.keys(dossiers).length;
   const data = {
     _meta: {
@@ -258,7 +258,8 @@ function migrateToNewFormat(oldData) {
       appVersion: 'DispatchMaster-2.1'
     },
     dossiers: dossiers,
-    cpData: Object.keys(cpData).length > 0 ? cpData : undefined
+    cpData: Object.keys(cpData).length > 0 ? cpData : undefined,
+    rawData: Object.keys(oldRawData).length > 0 ? oldRawData : undefined
   };
 
   logs.push('Migration terminée — ' + count + ' dossier(s) migrés, ' + errors.length + ' erreur(s).');
@@ -268,67 +269,96 @@ function migrateToNewFormat(oldData) {
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║  TESTS                                                                   ║
+// ║  TESTS — basés sur les vraies données                                    ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
 function _test_migrate() {
   console.log('=== Tests migrate.js ===');
 
-  // Test 1 : migration basique
-  const ancien = [
-    { file: 'ABC123', client: 'DUPONT', statut: '2', operator: 'Jason',
-      poids: 10, vol: 0.5, taxable: 10, svct: 'S5', transp: 'DPD',
-      _ts: 1711100000000, _by: 'Jason', _dateCreated: '2025-03-22', cc: 'Cc',
-      comment: 'Test', dept: '75', rdl: '2025-03-28' }
-  ];
+  // Test 1 : migration avec données réelles
+  const ancien = {
+    master: [
+      { file: 'J1A0042031', client: 'THALES LAS SAS', rdl: '24.03.26',
+        svct: 'BX I2 S5 ST ZX', transp: 'Flex (7)', poids: 73.5, vol: 0.358,
+        taxable: 119.21, dept: '91', contact: '', tel: '06.12.92.87.13',
+        email: '', cc: 'Cc', comment: '', statut: '8', operator: 'Abderrahamn',
+        _dateCreated: '2026-03-20', _ts: 1774266500445, _by: 'Abderrahamn',
+        fcDate: '24.03.26', fcHoraire: '09h et 12h', fcDly: '', fcDlyNotes: '' },
+      { file: 'J1A0042096', client: 'ALSO FRANCE', rdl: '25.03.26',
+        svct: 'S5', transp: 'Flex (7)', poids: 38.5, vol: 0.211,
+        taxable: 70.26, dept: '95', cc: 'Cc', statut: '2', operator: 'Jason',
+        _dateCreated: '2026-03-23' }
+    ],
+    rawData: { 'J1A0042031': { poids: 73.5, supplement: 0.2 } }
+  };
+
   const r = migrateToNewFormat(ancien);
   console.assert(r.errors.length === 0, 'Migration sans erreur');
-  console.assert(typeof r.data.dossiers === 'object', 'Dossiers indexés par ID');
-  console.assert(r.data._meta.schemaVersion === '2.1', 'Version schema correcte');
-  console.assert(r.data._meta.count === 1, 'Count = 1');
-  const first = Object.values(r.data.dossiers)[0];
-  console.assert(first.id.startsWith('DSP-'), 'ID commence par DSP-');
-  console.assert(first.v === 1, 'Version = 1');
-  console.assert(first.transport.statut === 2, 'Statut = 2 (entier)');
-  console.assert(first.client.nom === 'DUPONT', 'Client correct');
-  console.assert(first.updatedAt.includes('T'), 'updatedAt en ISO 8601');
-  console.assert(first.historique.length >= 1, 'Historique non vide');
-  console.log('  ✓ Test 1 : migration basique OK');
+  console.assert(r.data._meta.schemaVersion === '2.1', 'Schema 2.1');
+  console.assert(r.data._meta.count === 2, 'Count = 2');
 
-  // Test 2 : doublons (garde le plus récent)
+  // Vérifier que file = ID (pas de DSP-YYYY-XXXX)
+  const d1 = r.data.dossiers['J1A0042031'];
+  console.assert(d1 !== undefined, 'Dossier trouvé par file key');
+  console.assert(d1.id === 'J1A0042031', 'ID = file (J1A...)');
+  console.assert(d1.transport.statut === 8, 'Statut converti en entier');
+  console.assert(d1.transport.svct === 'BX I2 S5 ST ZX', 'SVCT préservé');
+  console.assert(d1.transport.transp === 'Flex (7)', 'Transp préservé');
+  console.assert(d1.client.tel === '06.12.92.87.13', 'Tel trimé');
+  console.assert(d1.fc.date === '24.03.26', 'fcDate préservée');
+  console.assert(d1.fc.dateISO === '2026-03-24T00:00:00Z', 'fcDate → ISO');
+  console.assert(d1.transport.rdlISO === '2026-03-24T00:00:00Z', 'rdl → ISO');
+  console.assert(d1.raw !== undefined, 'rawData préservé');
+  console.assert(d1.operator === 'Abderrahamn', 'Opérateur correct');
+  console.assert(d1.updatedAt.includes('T'), 'updatedAt en ISO');
+  console.log('  ✓ Test 1 : données réelles migrées correctement');
+
+  // Test 2 : dossier sans _ts (Jason, pas de modif réseau)
+  const d2 = r.data.dossiers['J1A0042096'];
+  console.assert(d2 !== undefined, 'Dossier J1A0042096 trouvé');
+  console.assert(d2.transport.statut === 2, 'Statut 2');
+  console.assert(d2.operator === 'Jason', 'Opérateur Jason');
+  console.assert(d2.createdAt === '2026-03-23T00:00:00Z', '_dateCreated → ISO');
+  console.log('  ✓ Test 2 : dossier sans _ts OK');
+
+  // Test 3 : doublons
   const avecDoublons = [
-    { file: 'XYZ', client: 'A', statut: '1', _ts: 1000000000000 },
-    { file: 'XYZ', client: 'B', statut: '3', _ts: 2000000000000 }
+    { file: 'J1A0042031', client: 'A', statut: '1', _ts: 1000000000000 },
+    { file: 'J1A0042031', client: 'B', statut: '3', _ts: 2000000000000 }
   ];
-  const r2 = migrateToNewFormat(avecDoublons);
-  console.assert(r2.data._meta.count === 1, 'Doublon dédupliqué');
-  const d2 = Object.values(r2.data.dossiers)[0];
-  console.assert(d2.transport.statut === 3, 'Version plus récente gardée');
-  console.log('  ✓ Test 2 : doublons OK');
+  const r3 = migrateToNewFormat(avecDoublons);
+  console.assert(r3.data._meta.count === 1, 'Doublon dédupliqué');
+  console.assert(r3.data.dossiers['J1A0042031'].transport.statut === 3, 'Version récente gardée');
+  console.log('  ✓ Test 3 : doublons OK');
 
-  // Test 3 : format objet avec master/rawData
-  const r3 = migrateToNewFormat({
-    master: [{ file: 'F1', client: 'C1', statut: '0' }],
-    rawData: { F1: { poids: 5, supplement: 0.3 } },
-    cpData: [{ file: 'CP1', client: 'C1', poids: 2, vol: 0.1 }]
-  });
-  console.assert(r3.errors.length === 0, 'Format objet OK');
-  console.assert(r3.data.cpData !== undefined, 'cpData migrés');
-  const d3 = Object.values(r3.data.dossiers)[0];
-  console.assert(d3.raw !== undefined, 'rawData préservé');
-  console.log('  ✓ Test 3 : format objet + rawData + cpData OK');
+  // Test 4 : fix encodage mojibake
+  const r4 = migrateToNewFormat([
+    { file: 'TEST', client: 'X', statut: '1', contact: 'RaphaÃƒÂ«l MAURICE' }
+  ]);
+  console.assert(r4.data.dossiers['TEST'].client.contact === 'Raphaël MAURICE', 'Mojibake corrigé');
+  console.log('  ✓ Test 4 : fix encodage mojibake');
 
-  // Test 4 : entrées invalides
-  const r4 = migrateToNewFormat([null, { file: '' }, { file: 'OK', statut: '1' }]);
-  console.assert(r4.errors.length === 2, '2 erreurs pour entrées invalides');
-  console.assert(r4.data._meta.count === 1, '1 dossier valide');
-  console.log('  ✓ Test 4 : entrées invalides gérées');
+  // Test 5 : conversion dates DD.MM.YY
+  const r5 = migrateToNewFormat([
+    { file: 'D1', client: 'X', statut: '1', rdl: '25.03.26', fcDate: '24.03.26' }
+  ]);
+  const d5 = r5.data.dossiers['D1'];
+  console.assert(d5.transport.rdlISO === '2026-03-25T00:00:00Z', 'rdl DD.MM.YY → ISO');
+  console.assert(d5.fc.dateISO === '2026-03-24T00:00:00Z', 'fcDate DD.MM.YY → ISO');
+  console.log('  ✓ Test 5 : dates DD.MM.YY → ISO');
 
-  // Test 5 : array vide
-  const r5 = migrateToNewFormat([]);
-  console.assert(r5.data._meta.count === 0, 'Array vide → 0 dossiers');
-  console.assert(r5.errors.length === 0, 'Pas d\'erreur');
-  console.log('  ✓ Test 5 : array vide OK');
+  // Test 6 : tel avec espaces trailing
+  const r6 = migrateToNewFormat([
+    { file: 'T1', client: 'X', statut: '1', tel: '0612345678   ' }
+  ]);
+  console.assert(r6.data.dossiers['T1'].client.tel === '0612345678', 'Tel trimé');
+  console.log('  ✓ Test 6 : trim tel/email');
+
+  // Test 7 : entrées invalides
+  const r7 = migrateToNewFormat([null, { file: '' }, { file: 'OK', statut: '1' }]);
+  console.assert(r7.errors.length === 2, '2 erreurs');
+  console.assert(r7.data._meta.count === 1, '1 valide');
+  console.log('  ✓ Test 7 : entrées invalides gérées');
 
   console.log('=== Tous les tests migrate.js passent ===');
 }

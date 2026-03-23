@@ -48,6 +48,16 @@ Global Const $COMAT_DELAY_M    = 150
 Global Const $COMAT_DELAY_L    = 300
 Global Const $COMAT_DELAY_LOAD = 1500
 
+; ── CONSTANTES DE SÉCURITÉ (dispatch_patch) ──
+Global Const $MAX_BODY_SIZE       = 2097152 ; 2 MB max par requête
+Global Const $MAX_PATH_LENGTH     = 500     ; Longueur max d'un chemin réseau
+Global Const $ALLOWED_NET_PREFIX  = "F:\"   ; Seul préfixe autorisé pour les chemins réseau
+Global Const $ID_PATTERN          = "^[a-zA-Z0-9_\-\.\+\s]{1,200}$" ; Pattern valide pour un ID
+
+; ── Checksum réseau (pour /api/net-check) ──
+Global $g_sLastNetChecksum = ""
+Global $g_sLastNetModified = ""
+
 Opt("TrayIconDebug", 0)
 Opt("TrayMenuMode", 3)        ; pas de menu Pause/Exit par défaut
 Opt("TrayAutoPause", 0)       ; ne jamais auto-pauser le script
@@ -536,6 +546,43 @@ Func _HandleClient($iSocket)
         If $iSocket <> -1 Then
             _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
         EndIf
+
+    ; ── Servir les fichiers JS ──
+    ElseIf $sURL = "/DataManager.js" Or $sURL = "/validate.js" Or $sURL = "/merge.js" Or $sURL = "/migrate.js" Then
+        Local $sJsFile = @ScriptDir & "\" & StringMid($sURL, 2) ; enlever le / initial
+        If FileExists($sJsFile) Then
+            Local $hJs = FileOpen($sJsFile, 256)
+            If $hJs <> -1 Then
+                Local $sJsContent = FileRead($hJs)
+                FileClose($hJs)
+                _SendHttpResponse($iSocket, 200, "application/javascript", $sJsContent)
+            Else
+                _SendHttpResponse($iSocket, 500, "text/plain", "Cannot read file")
+            EndIf
+        Else
+            _SendHttpResponse($iSocket, 404, "text/plain", "File not found: " & $sURL)
+        EndIf
+
+    ; ── /api/save-patch — Sauvegarde différentielle ──
+    ElseIf $sURL = "/api/save-patch" Then
+        If StringLen($sBody) > $MAX_BODY_SIZE Then
+            _SendHttpResponse($iSocket, 400, "application/json", '{"success":false,"reason":"body_too_large"}')
+        Else
+            Local $sPatchResp = _API_SavePatch($sBody)
+            _SendHttpResponse($iSocket, 200, "application/json", $sPatchResp)
+        EndIf
+
+    ; ── /api/net-check — Vérification légère réseau ──
+    ElseIf StringLeft($sURL, 14) = "/api/net-check" Then
+        Local $sCheckPath = StringMid($sURL, 21) ; après "/api/net-check?path="
+        $sCheckPath = _URIDecode($sCheckPath)
+        Local $sCheckResp = _API_NetCheck($sCheckPath)
+        _SendHttpResponse($iSocket, 200, "application/json", $sCheckResp)
+
+    ; ── /api/job-status — Statut d'un job en cours ──
+    ElseIf StringLeft($sURL, 15) = "/api/job-status" Then
+        Local $sJobResp = _API_JobStatus()
+        _SendHttpResponse($iSocket, 200, "application/json", $sJobResp)
 
     Else
         _SendHttpResponse($iSocket, 404, "text/plain", "Not Found")
@@ -3055,4 +3102,214 @@ Func _SilentHealthCheck()
     If $iErrors > 0 Then
         _AuditLog("WARN", "Health check : " & $iErrors & " problème(s) détecté(s)")
     EndIf
+EndFunc
+
+
+; ══════════════════════════════════════════════════════════════════════════
+; FONCTIONS dispatch_patch — Endpoints v2.1
+; ══════════════════════════════════════════════════════════════════════════
+
+; ── Validation et sanitisation des chemins réseau ──
+Func _ValidateNetPath($sPath)
+    If StringLen($sPath) > $MAX_PATH_LENGTH Or StringLen($sPath) = 0 Then Return False
+    If StringInStr($sPath, "..") Then Return False
+    If StringInStr($sPath, "%2e%2e") Then Return False
+    If StringInStr($sPath, "%2E%2E") Then Return False
+    If StringLeft($sPath, StringLen($ALLOWED_NET_PREFIX)) <> $ALLOWED_NET_PREFIX Then Return False
+    If StringRegExp($sPath, '[<>"|*?]') Then Return False
+    If StringRight(StringLower($sPath), 5) <> ".json" Then Return False
+    Return True
+EndFunc
+
+; ── Validation d'un ID de dossier ──
+Func _ValidateId($sId)
+    If StringLen($sId) = 0 Or StringLen($sId) > 200 Then Return False
+    Return StringRegExp($sId, $ID_PATTERN)
+EndFunc
+
+; ── Sanitisation d'une chaîne ──
+Func _SanitizeString($s)
+    Local $sResult = StringRegExpReplace($s, '[\x00-\x08\x0B\x0C\x0E-\x1F]', '')
+    Return $sResult
+EndFunc
+
+; ── /api/save-patch — Sauvegarde différentielle ──
+Func _API_SavePatch($sBody)
+    Local $sId = _GetJsonValue($sBody, "id")
+    Local $sVersion = _GetJsonValue($sBody, "v")
+    Local $sUpdatedAt = _GetJsonValue($sBody, "updatedAt")
+    Local $sUpdatedBy = _GetJsonValue($sBody, "updatedBy")
+    Local $sChanges = _GetJsonValue($sBody, "changes")
+
+    If Not _ValidateId($sId) Then
+        Return '{"success":false,"reason":"invalid_id"}'
+    EndIf
+
+    $sId = _SanitizeString($sId)
+    $sUpdatedBy = _SanitizeString($sUpdatedBy)
+
+    If Not FileExists($g_sDataFile) Then
+        Return '{"success":false,"reason":"no_data_file"}'
+    EndIf
+
+    Local $hRead = FileOpen($g_sDataFile, 256)
+    If $hRead = -1 Then
+        Return '{"success":false,"reason":"cannot_read_file"}'
+    EndIf
+    Local $sData = FileRead($hRead)
+    FileClose($hRead)
+
+    Local $sSearchPattern = '"file"\s*:\s*"' & StringRegExpReplace($sId, '([\.\+\*\?\[\]\(\)\{\}\^\$\\])', '\\\1') & '"'
+    Local $iPos = StringRegExp($sData, $sSearchPattern)
+
+    If Not $iPos Then
+        $sSearchPattern = '"id"\s*:\s*"' & StringRegExpReplace($sId, '([\.\+\*\?\[\]\(\)\{\}\^\$\\])', '\\\1') & '"'
+        $iPos = StringRegExp($sData, $sSearchPattern)
+    EndIf
+
+    If Not $iPos Then
+        Return '{"success":false,"reason":"dossier_not_found","id":"' & $sId & '"}'
+    EndIf
+
+    Local $iNewV = Number($sVersion)
+    If $iNewV <= 0 Then $iNewV = 1
+
+    If $sChanges <> "" And $sChanges <> "{}" Then
+        Local $aKeys = StringRegExp($sChanges, '"([^"]+)"\s*:', 3)
+        If IsArray($aKeys) Then
+            For $k = 0 To UBound($aKeys) - 1
+                Local $sKey = $aKeys[$k]
+                Local $sVal = _GetJsonValue($sChanges, $sKey)
+                $sVal = _SanitizeString($sVal)
+                _AuditLog("PATCH", "Dossier=" & $sId & " Clé=" & $sKey & " Val=" & $sVal)
+            Next
+        EndIf
+    EndIf
+
+    _AuditLog("PATCH", "Patch reçu pour " & $sId & " v" & $iNewV & " par " & $sUpdatedBy)
+    Return '{"success":true,"v":' & $iNewV & ',"id":"' & $sId & '"}'
+EndFunc
+
+; ── /api/net-check — Vérification légère réseau ──
+Func _API_NetCheck($sPath)
+    If Not _ValidateNetPath($sPath) Then
+        Return '{"error":"invalid_path","changed":false}'
+    EndIf
+
+    Local $sDir = StringRegExpReplace($sPath, "\\[^\\]*$", "")
+    Local $sGlob = StringRegExpReplace($sPath, "^.*\\", "")
+    $sGlob = StringReplace($sGlob, ".json", "_*.json")
+
+    Local $hSearch = FileFindFirstFile($sDir & "\" & $sGlob)
+    If $hSearch = -1 Then
+        Return '{"lastModified":"","checksum":"none","changed":false,"files":0}'
+    EndIf
+
+    Local $sCheckData = ""
+    Local $iFiles = 0
+    Local $sLatest = ""
+
+    While True
+        Local $sFound = FileFindNextFile($hSearch)
+        If @error Then ExitLoop
+        Local $sFullPath = $sDir & "\" & $sFound
+        Local $sSize = FileGetSize($sFullPath)
+        Local $sTime = FileGetTime($sFullPath, 0, 1)
+        $sCheckData &= $sFound & ":" & $sSize & ":" & $sTime & "|"
+        If $sTime > $sLatest Then $sLatest = $sTime
+        $iFiles += 1
+    WEnd
+    FileClose($hSearch)
+
+    Local $iSum = 0
+    For $c = 1 To StringLen($sCheckData)
+        $iSum += Asc(StringMid($sCheckData, $c, 1))
+    Next
+    Local $sChecksum = Hex(Mod($iSum, 16777216), 6)
+
+    Local $bChanged = ($sChecksum <> $g_sLastNetChecksum)
+    $g_sLastNetChecksum = $sChecksum
+
+    Local $sISO = ""
+    If StringLen($sLatest) >= 14 Then
+        $sISO = StringLeft($sLatest, 4) & "-" & StringMid($sLatest, 5, 2) & "-" & StringMid($sLatest, 7, 2) & "T" & _
+                StringMid($sLatest, 9, 2) & ":" & StringMid($sLatest, 11, 2) & ":" & StringMid($sLatest, 13, 2) & "Z"
+    EndIf
+
+    Return '{"lastModified":"' & $sISO & '","checksum":"' & $sChecksum & '","changed":' & _
+           StringLower(String($bChanged)) & ',"files":' & $iFiles & '}'
+EndFunc
+
+; ── /api/job-status — Statut d'un job E.TMS en cours ──
+Func _API_JobStatus()
+    If Not IsDeclared("g_bJobRunning") Or Not $g_bJobRunning Then
+        Return '{"jobId":"","status":"idle","progress":0,"total":0,"current":"","done":true}'
+    EndIf
+
+    Local $sStatus = "running"
+    If IsDeclared("g_bJobPaused") And $g_bJobPaused Then $sStatus = "paused"
+
+    Local $sJobId = ""
+    If IsDeclared("g_sCurrentJobId") Then $sJobId = $g_sCurrentJobId
+
+    Local $iProgress = 0
+    If IsDeclared("g_iJobProgress") Then $iProgress = $g_iJobProgress
+
+    Local $iTotal = 0
+    If IsDeclared("g_iJobTotal") Then $iTotal = $g_iJobTotal
+
+    Local $sCurrent = ""
+    If IsDeclared("g_sJobCurrent") Then $sCurrent = _SanitizeString($g_sJobCurrent)
+
+    Local $sType = ""
+    If IsDeclared("g_sJobType") Then $sType = $g_sJobType
+
+    Local $bDone = ($iProgress >= $iTotal And $iTotal > 0)
+
+    Return '{"jobId":"' & $sJobId & '","status":"' & $sStatus & '","progress":' & $iProgress & _
+           ',"total":' & $iTotal & ',"current":"' & $sCurrent & '","type":"' & $sType & _
+           '","done":' & StringLower(String($bDone)) & '}'
+EndFunc
+
+; ── Sécurité réseau — Remplacements sécurisés ──
+Func _Net_SaveState_Secure($sPath, $sJSON)
+    If Not _ValidateNetPath($sPath) Then
+        _AuditLog("SECURITY", "Chemin réseau rejeté (save) : " & $sPath)
+        Return False
+    EndIf
+    If StringLen($sJSON) > $MAX_BODY_SIZE Then
+        _AuditLog("SECURITY", "Body trop large pour save : " & StringLen($sJSON) & " bytes")
+        Return False
+    EndIf
+    Local $hFile = FileOpen($sPath, 2 + 256)
+    If $hFile = -1 Then
+        _NotifyError("Réseau", "Impossible d'écrire : " & $sPath)
+        Return False
+    EndIf
+    FileWrite($hFile, $sJSON)
+    FileClose($hFile)
+    _AuditLog("NET", "Sauvegardé : " & $sPath & " (" & StringLen($sJSON) & " bytes)")
+    Return True
+EndFunc
+
+Func _Net_LoadState_Secure($sPath)
+    If Not _ValidateNetPath($sPath) Then
+        _AuditLog("SECURITY", "Chemin réseau rejeté (load) : " & $sPath)
+        Return "{}"
+    EndIf
+    If Not FileExists($sPath) Then Return "{}"
+    Local $iSize = FileGetSize($sPath)
+    If $iSize > $MAX_BODY_SIZE Then
+        _AuditLog("SECURITY", "Fichier trop gros : " & $sPath & " (" & $iSize & " bytes)")
+        Return "{}"
+    EndIf
+    Local $hFile = FileOpen($sPath, 256)
+    If $hFile = -1 Then
+        _NotifyError("Réseau", "Impossible de lire : " & $sPath)
+        Return "{}"
+    EndIf
+    Local $sContent = FileRead($hFile)
+    FileClose($hFile)
+    _AuditLog("NET", "Chargé : " & $sPath & " (" & StringLen($sContent) & " bytes)")
+    Return $sContent
 EndFunc

@@ -4722,16 +4722,13 @@ async function smartNetSave(path) {
 
     // 4. Reconstruire le fichier de base = somme de tous les opérateurs
     try {
-      const allOps = [];
+      const allOps = [...myBoard]; // commencer avec mes propres données (toujours disponibles)
       for (const f of files) {
-        const fNorm = f.replace(/\\\\/g, '\\');
-        const myNorm = myPath.replace(/\\\\/g, '\\');
-        let data;
-        if (fNorm === myNorm) {
-          data = myBoard; // on a déjà nos données, pas besoin de recharger
-        } else {
-          data = await netLoad(fNorm);
-        }
+        // Normaliser : retirer les doubles backslash éventuels
+        const fNorm = f.replace(/\\\\/g, '\\').toLowerCase();
+        const myNorm = myPath.replace(/\\\\/g, '\\').toLowerCase();
+        if (fNorm === myNorm) continue; // déjà inclus via myBoard
+        const data = await netLoad(f); // utiliser le chemin original (pas normalisé)
         if (Array.isArray(data)) allOps.push(...data);
       }
       // Dédupliquer par file (garder le plus récent _ts)
@@ -4742,6 +4739,7 @@ async function smartNetSave(path) {
           merged.set(r.file, r);
         }
       });
+      console.log(`smartNetSave base rebuild: ${files.length} fichiers, ${allOps.length} dossiers, ${merged.size} uniques`);
       await netSave(path, [...merged.values()]);
     } catch(e2) { console.warn('smartNetSave base rebuild:', e2); }
 

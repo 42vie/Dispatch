@@ -3591,6 +3591,10 @@ window.onload = async () => {
   }
 
   if (loaded) {
+    // Assigner l'opérateur courant aux dossiers orphelins (sans opérateur)
+    const myName = localStorage.getItem('dispatch_operator') || '';
+    if (myName) g_master.forEach(r => { if (!r.operator) r.operator = myName; });
+
     // Sync : s'assurer que tous les dossiers CP en statut 2 (CC) sont dans g_cpData
     g_master.forEach(r => {
       if (isCP(r.client) && r.cc === 'Cc' && ['2'].includes(String(r.statut))) {
@@ -4657,7 +4661,10 @@ async function smartNetSave(path) {
   if (!myName) return; // pas de nom = pas de sauvegarde réseau
 
   try {
-    // 1. Construire l'état local (seulement MES dossiers — ceux explicitement assignés)
+    // 1. Assigner l'opérateur aux dossiers sans propriétaire (en mémoire, pas juste la copie)
+    g_master.forEach(r => { if (!r.operator && myName) r.operator = myName; });
+
+    // 2. Construire l'état local (seulement MES dossiers)
     const myBoard = g_master
       .filter(r => (r.operator || '') === myName)
       .map(r => ({

@@ -617,6 +617,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     <button class="btn btn-blue-out btn-sm" id="btn-add-group" onclick="openGroupManual()">🔗 Groupe manuel</button>
     <button class="btn btn-ghost btn-sm" style="color:var(--orange)" onclick="checkMissingPDF()">📋 PDF manquants</button>
     <button class="btn btn-ghost btn-sm" id="btn-clear-done" style="color:var(--red)">🗑 Vider terminés</button>
+    <button class="btn btn-ghost btn-sm" style="color:var(--teal)" onclick="refreshData(false)" title="Rafraîchir les données depuis le serveur">🔄 Sync</button>
   </div>
 </div>
 
@@ -2074,6 +2075,7 @@ function onKDrop(event, status) {
   g_master[idx].statut = String(status);
   stampRecord(g_master[idx]);
   if (status>=2 && g_master[idx].cc!=='Cc') g_master[idx].cc='Cc';
+  cleanupCpData();
   renderMaster(); renderKanban(); updateStats(); g_dragFile=null;
 }
 
@@ -2179,6 +2181,7 @@ async function kanbanAction(from) {
     }
   }
 
+  cleanupCpData();
   renderMaster(); renderKanban(); updateStats();
   markDirty();
 }
@@ -2468,6 +2471,22 @@ function renderCP() {
     </tr>`).join('');
 }
 const _debouncedRenderCP = debounce(renderCP, 300);
+
+// Nettoyer g_cpData : retirer les entrées dont tous les dossiers ont quitté le statut 2
+function cleanupCpData() {
+  const before = g_cpData.length;
+  g_cpData = g_cpData.filter(cp => {
+    // Garder le CP seulement si au moins un de ses fichiers est encore en statut 2
+    return cp.files.some(f => {
+      const r = g_master.find(m => m.file === f || (m.file||'').split(' + ').includes(f));
+      return r && String(r.statut) === '2';
+    });
+  });
+  if (g_cpData.length < before) {
+    console.log(`cleanupCpData: ${before - g_cpData.length} entrée(s) CP obsolète(s) retirée(s)`);
+    renderCP();
+  }
+}
 
 function cpAddManual() {
   const client = prompt('Nom du client CP :');
@@ -3377,6 +3396,99 @@ document.addEventListener('input', markDirty);
 // Les fonctions appellent markDirty() après modification — le save est debounced automatiquement
 
 
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  REFRESH / SYNC DEPUIS SERVEUR (sans recharger la page)                  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+let _refreshing = false;
+async function refreshData(silent) {
+  if (_refreshing) return;
+  _refreshing = true;
+  if (!silent) toast('Rafraîchissement en cours...');
+  try {
+    // Sauvegarder les modifications locales non sauvées d'abord
+    await autoSave();
+
+    // Charger depuis l'API
+    let freshData = null;
+    try {
+      const resp = await fetch(`${API_URL}/load-data`);
+      freshData = await resp.json();
+    } catch(e) {
+      try {
+        const resp = await fetch(`${API_URL}/load`);
+        freshData = await resp.json();
+      } catch(e2) { /* ignore */ }
+    }
+
+    if (!freshData || !freshData.master || !freshData.master.length) {
+      if (!silent) toast('Aucune donnée reçue du serveur.');
+      _refreshing = false;
+      return;
+    }
+
+    const myName = localStorage.getItem('dispatch_operator') || '';
+
+    // Fusionner : pour chaque dossier distant, garder le plus récent (local ou distant)
+    const remoteMap = new Map();
+    freshData.master.forEach(r => remoteMap.set(r.file, r));
+
+    // Mettre à jour les dossiers existants avec les données distantes plus récentes
+    let updated = 0;
+    g_master.forEach(r => {
+      const remote = remoteMap.get(r.file);
+      if (!remote) return;
+      remoteMap.delete(r.file); // traité
+      // Si le remote est plus récent et c'est pas notre propre modif
+      if ((remote._ts || 0) > (r._ts || 0)) {
+        Object.keys(remote).forEach(k => { r[k] = remote[k]; });
+        updated++;
+      }
+    });
+
+    // Ajouter les nouveaux dossiers (présents sur le serveur mais pas en local)
+    let added = 0;
+    remoteMap.forEach((r, file) => {
+      g_master.push(r);
+      added++;
+    });
+
+    // Mettre à jour rawData et cpData
+    if (freshData.rawData) {
+      Object.assign(g_rawData, freshData.rawData);
+    }
+    if (freshData.cpData && Array.isArray(freshData.cpData)) {
+      freshData.cpData.forEach(cp => {
+        if (!g_cpData.find(x => x.client === cp.client && JSON.stringify(x.files) === JSON.stringify(cp.files))) {
+          g_cpData.push(cp);
+        }
+      });
+    }
+
+    // Nettoyer les CP obsolètes
+    cleanupCpData();
+
+    // Sauvegarder en local
+    idbSave({ master: g_master, rawData: g_rawData, cpData: g_cpData });
+
+    // Rafraîchir l'interface
+    renderMaster(); renderKanban(); renderCP(); updateStats();
+    populateOperatorFilter();
+
+    if (!silent) {
+      toast(`Sync : ${updated} mis à jour, ${added} nouveau(x).`);
+    } else if (updated > 0 || added > 0) {
+      toast(`Sync auto : ${updated} mis à jour, ${added} nouveau(x).`);
+    }
+  } catch(e) {
+    console.warn('refreshData error:', e);
+    if (!silent) toast('Erreur lors du rafraîchissement.');
+  }
+  _refreshing = false;
+}
+
+// Auto-sync toutes les 2 minutes
+setInterval(() => refreshData(true), 120000);
+
 // Chargement automatique au démarrage — IndexedDB prioritaire, API fallback
 window.onload = async () => {
   // 1. Ouvrir IndexedDB
@@ -3460,6 +3572,8 @@ window.onload = async () => {
         });
       }
     });
+    // Nettoyer les CP dont les dossiers ne sont plus en statut 2
+    cleanupCpData();
     renderMaster(); renderKanban(); renderCP(); renderContacts(); updateStats();
     populateOperatorFilter();
     toast(loaded ? '✓ Données restaurées.' : 'Premier démarrage.');

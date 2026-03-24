@@ -4657,9 +4657,9 @@ async function smartNetSave(path) {
   if (!myName) return; // pas de nom = pas de sauvegarde réseau
 
   try {
-    // 1. Construire l'état local (seulement MES dossiers)
+    // 1. Construire l'état local (seulement MES dossiers — ceux explicitement assignés)
     const myBoard = g_master
-      .filter(r => (r.operator || '') === myName || !r.operator)
+      .filter(r => (r.operator || '') === myName)
       .map(r => ({
         file: r.file, client: r.client || '', rdl: r.rdl || '',
         svct: r.svct || '', transp: r.transp || '',
@@ -4750,14 +4750,13 @@ function applyLoadedState(state) {
   board.forEach(remote => {
     const local = g_master.find(r => r.file === remote.file);
     if (!local) return;
-    // Syncer si statut OU opérateur différent (et remote plus récent ou même timestamp)
-    const dominated = (remote._ts || 0) >= (local._ts || 0);
+    // Syncer UNIQUEMENT si le remote est STRICTEMENT plus récent (pas >=, sinon on régresse)
+    const remoteNewer = (remote._ts || 0) > (local._ts || 0);
     const changed = local.statut !== remote.statut || (remote.operator && local.operator !== remote.operator);
-    if (changed && dominated) {
+    if (changed && remoteNewer) {
       local.statut = remote.statut;
       if (remote.operator) local.operator = remote.operator;
-      if (remote._ts) local._ts = remote._ts;
-      // Syncer les champs complets si présents dans le remote
+      local._ts = remote._ts;
       ['client','rdl','svct','transp','poids','vol','taxable','dept',
        'contact','tel','email','cc','comment','_dateCreated',
        'fcDate','fcHoraire','fcDly','fcDlyNotes'].forEach(k => {

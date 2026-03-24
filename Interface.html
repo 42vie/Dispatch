@@ -3312,7 +3312,10 @@ function markDirty() { _dirty = true; scheduleSave(); }
 // Marquer un dossier comme modifié par cet opérateur (pour la fusion réseau)
 function stampRecord(r) {
   r._ts = Date.now();
-  r._by = localStorage.getItem('dispatch_operator') || '';
+  const myName = localStorage.getItem('dispatch_operator') || '';
+  r._by = myName;
+  // Assigner l'opérateur si le dossier n'en a pas encore
+  if (!r.operator && myName) r.operator = myName;
 }
 
 function scheduleSave() {
@@ -4517,8 +4520,16 @@ async function smartNetSave(path) {
     const myBoard = g_master
       .filter(r => (r.operator || '') === myName || !r.operator)
       .map(r => ({
-        file: r.file, statut: r.statut, operator: r.operator || '',
-        _ts: r._ts || Date.now(), _by: myName
+        file: r.file, client: r.client || '', rdl: r.rdl || '',
+        svct: r.svct || '', transp: r.transp || '',
+        poids: r.poids || 0, vol: r.vol || 0, taxable: r.taxable || 0,
+        dept: r.dept || '', contact: r.contact || '', tel: r.tel || '', email: r.email || '',
+        cc: r.cc || '', comment: r.comment || '',
+        statut: r.statut, operator: r.operator || myName,
+        _dateCreated: r._dateCreated || '',
+        _ts: r._ts || Date.now(), _by: myName,
+        fcDate: r.fcDate || '', fcHoraire: r.fcHoraire || '',
+        fcDly: r.fcDly || '', fcDlyNotes: r.fcDlyNotes || ''
       }));
 
     // 2. Sauvegarder dans mon fichier opérateur
@@ -4539,11 +4550,16 @@ async function smartNetSave(path) {
       remote.forEach(rd => {
         const local = g_master.find(r => r.file === rd.file);
         if (local && rd.operator && rd.operator !== myName) {
-          // Dossier d'un autre opérateur — syncer le statut si plus récent
+          // Dossier d'un autre opérateur — syncer si plus récent
           if ((rd._ts || 0) > (local._ts || 0)) {
             local.statut = rd.statut;
             local.operator = rd.operator;
             local._ts = rd._ts;
+            ['client','rdl','svct','transp','poids','vol','taxable','dept',
+             'contact','tel','email','cc','comment','_dateCreated',
+             'fcDate','fcHoraire','fcDly','fcDlyNotes'].forEach(k => {
+              if (rd[k] !== undefined && rd[k] !== '') local[k] = rd[k];
+            });
             synced++;
           }
         }
@@ -4600,6 +4616,12 @@ function applyLoadedState(state) {
       local.statut = remote.statut;
       if (remote.operator) local.operator = remote.operator;
       if (remote._ts) local._ts = remote._ts;
+      // Syncer les champs complets si présents dans le remote
+      ['client','rdl','svct','transp','poids','vol','taxable','dept',
+       'contact','tel','email','cc','comment','_dateCreated',
+       'fcDate','fcHoraire','fcDly','fcDlyNotes'].forEach(k => {
+        if (remote[k] !== undefined && remote[k] !== '') local[k] = remote[k];
+      });
       synced++;
     }
   });

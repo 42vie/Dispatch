@@ -4551,6 +4551,7 @@ async function smartNetSave(path) {
     }
 
     if (synced > 0) {
+      markDirty();  // → déclenche autoSave → écrit dispatch_status + dispatch_data
       renderMaster(); renderKanban(); updateStats();
       toast(`Sync réseau : ${synced} dossier(s) mis à jour depuis un autre opérateur.`);
     }
@@ -4603,6 +4604,7 @@ function applyLoadedState(state) {
     }
   });
   if (synced > 0) {
+    markDirty();  // → déclenche autoSave → écrit dispatch_status + dispatch_data
     renderMaster(); renderKanban(); updateStats();
     console.log(`Réseau : ${synced} dossier(s) synchronisés.`);
   }

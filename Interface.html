@@ -366,6 +366,8 @@ table.t-master tbody td {
 }
 .k-item:hover { box-shadow: var(--shadow); border-color: var(--border2); }
 .k-item.k-selected { border-color: var(--purple) !important; background: var(--purple-bg); }
+.k-item.k-bulk-drag { outline:2px solid var(--purple); box-shadow:0 0 0 3px rgba(107,63,160,.18); }
+.storage-health-good{color:var(--green);font-weight:700}.storage-health-warn{color:var(--orange);font-weight:700}.storage-health-bad{color:var(--red);font-weight:700}
 .k-item.k-group { border-left-width: 4px; }
 .k-fc-row { display:flex; gap:5px; margin-top:5px; align-items:center; }
 .k-fc-inp {
@@ -538,6 +540,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
   border-radius: 6px; padding: 10px 14px; font-size: 11px; color: var(--blue);
   display: flex; align-items: center; gap: 8px;
 }
+.bkd-quick.active{outline:2px solid currentColor;box-shadow:0 0 0 2px rgba(107,63,160,.18);transform:translateY(-1px)}
 </style>
 </head>
 <body>
@@ -601,7 +604,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     <button class="etms-btn" onclick="sendActionHeader('ETMS_CMD','NOTES')">NOTES</button>
     <button class="etms-btn" onclick="sendActionHeader('ETMS_CMD','HIST')">HIST</button>
     <button class="etms-btn" onclick="sendActionHeader('ETMS_CMD','REFS')">REFS</button>
-    <button class="etms-btn" style="color:var(--orange);font-weight:700" onclick="sendActionHeader('ETMS_CMD','F8')">F8</button>
+    <!-- F8 volontairement retiré des actions rapides : réservé à l’usage ETMS après LOG + J -->
     <button class="etms-btn warn" onclick="sendActionHeader('ETMS_CMD','LOG X')">LOG X</button>
     <div class="etms-sep"></div>
     <button class="etms-btn" style="color:var(--teal)" onclick="sendActionHeader('MAIL_RDV','')">Mails HPE</button>
@@ -726,7 +729,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
       <span style="font-size:11px;color:var(--text3)">Fichier indépendant — partageable entre collègues</span>
       <button class="btn btn-ghost btn-sm" id="btn-export-contacts" title="Exporter les contacts dans un fichier séparé">📤 Exporter</button>
       <button class="btn btn-ghost btn-sm" id="btn-import-contacts" title="Importer des contacts depuis un fichier">📥 Importer</button>
-      <input type="file" id="contacts-input" accept=".json" style="display:none">
+      <input type="file" id="contacts-input" accept=".json,.tsv,.txt" style="display:none">
     </div>
     <div class="contacts-wrap">
       <table class="t-contacts" id="contacts-table">
@@ -1878,8 +1881,7 @@ function renderKanban() {
         : `<span style="font-family:var(--mono)">${trunc(r.file,14)}</span>`;
       // Colonne 5 : afficher date livraison + transporteur éditables
       const fcRow = (k.n === 5) ? (() => {
-        if (!r.fcDate) r.fcDate = fcCalcDateG(r.transp);
-        if (!r.fcHoraire) r.fcHoraire = '09h et 12h';
+        fcEnsureAutoDate(r, false);
         const safeFile = (r.file||'').replace(/[^a-zA-Z0-9]/g,'_');
         return `<div class="k-fc-row" onclick="event.stopPropagation()">
           <span class="k-fc-lbl">📅</span>
@@ -1895,8 +1897,9 @@ function renderKanban() {
         </div>`;
       })() : '';
       return `<div class="k-item${sel?' k-selected':''}${isGrp?' k-group':''}" style="border-left-color:var(${k.c})"
+        data-file="${(r.file||'').replace(/"/g,'&quot;')}" data-client="${(r.client||'').replace(/"/g,'&quot;')}" data-transp="${(r.transp||'').replace(/"/g,'&quot;')}" data-email="${(r.email||'').replace(/"/g,'&quot;')}" data-rdl="${(r.rdl||'').replace(/"/g,'&quot;')}" data-cp="${(r.cp||r.cc||'').replace(/"/g,'&quot;')}"
         draggable="true"
-        ondragstart="g_dragFile='${fileE}'"
+        ondragstart="kanbanDragStartBulk(event,'${fileE}')"
         ondragover="event.preventDefault();event.stopPropagation();this.classList.add('k-drop-target')"
         ondragleave="this.classList.remove('k-drop-target')"
         ondrop="event.stopPropagation();this.classList.remove('k-drop-target');onCardDrop(event,'${fileE}')"
@@ -2068,15 +2071,22 @@ async function kabLaunchCOMAT() {
 function onKDrop(event, status) {
   event.preventDefault();
   document.getElementById(`k-col-${status}`).classList.remove('drag-over');
-  if (!g_dragFile) return;
-  const idx = g_master.findIndex(r => r.file===g_dragFile);
-  if (idx<0) return;
-  pushUndo('Déplacement ' + g_dragFile + ' → statut ' + status);
-  g_master[idx].statut = String(status);
-  stampRecord(g_master[idx]);
-  if (status>=2 && g_master[idx].cc!=='Cc') g_master[idx].cc='Cc';
+  const files = (window._kanbanBulkDragFiles && window._kanbanBulkDragFiles.length) ? window._kanbanBulkDragFiles : (g_dragFile ? [g_dragFile] : []);
+  if (!files.length) return;
+  pushUndo('Déplacement groupé → statut ' + status);
+  files.forEach(f => {
+    const idx = g_master.findIndex(r => r.file===f);
+    if (idx < 0) return;
+    g_master[idx].statut = String(status);
+    stampRecord(g_master[idx]);
+    if (status>=2 && g_master[idx].cc!=='Cc') g_master[idx].cc='Cc';
+  });
   cleanupCpData();
-  renderMaster(); renderKanban(); updateStats(); g_dragFile=null;
+  window._kanbanBulkDragFiles = [];
+  g_dragFile = null;
+  g_kabSelected.clear();
+  renderMaster(); renderKanban(); updateStats(); markDirty();
+  toast(files.length + ' dossier(s) déplacé(s).');
 }
 
 function onCardDrop(event, targetFile) {
@@ -2755,17 +2765,12 @@ function openGroup(idx) {
       ${fmt(totV,3)} m³ &nbsp;·&nbsp;
       <span style="color:var(--orange);font-weight:600">${fmt(calcTaxable(totP,totV))} kg taxable</span>
     </div>
-    <div style="margin-top:12px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px">
-      <div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:8px">MODIFIER LE GROUPE</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <label style="font-size:11px;color:var(--text2)">Transporteur</label>
-        <input id="grp-transp" type="text" value="${r.transp||''}" style="width:140px;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:4px 6px">
-        <label style="font-size:11px;color:var(--text2)">Poids (kg)</label>
-        <input id="grp-poids" type="number" step="0.01" value="${r.poids||0}" style="width:90px;font-size:12px;font-family:var(--mono);border:1px solid var(--border);border-radius:4px;padding:4px 6px;text-align:right">
-        <label style="font-size:11px;color:var(--text2)">Vol (m³)</label>
-        <input id="grp-vol" type="number" step="0.001" value="${r.vol||0}" style="width:90px;font-size:12px;font-family:var(--mono);border:1px solid var(--border);border-radius:4px;padding:4px 6px;text-align:right">
-        <button class="btn btn-sm btn-purple-out" onclick="grpSaveFields()">💾 Appliquer</button>
-      </div>
+    <div style="margin-top:12px;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><div style="font-size:11px;font-weight:700;color:var(--purple);text-transform:uppercase;letter-spacing:.5px">Modifier le groupe</div><button class="btn btn-ghost btn-sm" onclick="grpAutoFillContact()" title="Chercher un contact enregistré pour ce client">👤 Auto contact</button></div>
+      <div style="display:grid;grid-template-columns:1fr 90px 90px;gap:8px;margin-bottom:10px"><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Transporteur</label><input id="grp-transp" type="text" value="${r.transp||''}" style="width:100%;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Poids kg</label><input id="grp-poids" type="number" step="0.01" value="${r.poids||0}" style="width:100%;font-size:12px;font-family:var(--mono);border:1px solid var(--border);border-radius:4px;padding:5px 6px;text-align:right;background:var(--surface);color:var(--text)"></div><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Vol m³</label><input id="grp-vol" type="number" step="0.001" value="${r.vol||0}" style="width:100%;font-size:12px;font-family:var(--mono);border:1px solid var(--border);border-radius:4px;padding:5px 6px;text-align:right;background:var(--surface);color:var(--text)"></div></div>
+      <div style="display:grid;grid-template-columns:1.1fr .85fr 1.35fr;gap:8px;margin-bottom:10px"><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Contact groupe</label><input id="grp-contact" type="text" value="${r.contact||''}" placeholder="Nom contact" style="width:100%;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Téléphone</label><input id="grp-tel" type="text" value="${r.tel||''}" placeholder="Téléphone" style="width:100%;font-size:12px;font-family:var(--mono);border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Email</label><input id="grp-email" type="email" value="${r.email||''}" placeholder="email@client.com" style="width:100%;font-size:12px;font-family:var(--mono);border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div></div>
+      <div style="display:grid;grid-template-columns:1fr 120px 120px;gap:8px;align-items:end"><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Commentaire groupe</label><input id="grp-comment" type="text" value="${r.comment||''}" placeholder="Commentaire visible sur le groupe" style="width:100%;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Opérateur</label><input id="grp-operator" type="text" value="${r.operator||''}" placeholder="Prénom" style="width:100%;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div><button class="btn btn-purple-out btn-sm" onclick="grpSaveFields()" style="height:30px">💾 Appliquer</button></div>
+      <div style="font-size:10px;color:var(--text3);margin-top:8px">Ces infos restent sur le groupe et seront reprises quand tu éclates / retires des dossiers du groupe.</div>
     </div>
     <p style="margin-top:8px;font-size:11px;color:var(--text3)">
       Cochez les fichiers avant d'utiliser les boutons.
@@ -2802,8 +2807,35 @@ function grpSaveFields() {
   r.poids = parseFloat(document.getElementById('grp-poids').value) || 0;
   r.vol = parseFloat(document.getElementById('grp-vol').value) || 0;
   r.taxable = calcTaxable(r.poids, r.vol);
+  r.contact = document.getElementById('grp-contact')?.value.trim() || '';
+  r.tel = document.getElementById('grp-tel')?.value.trim() || '';
+  r.email = document.getElementById('grp-email')?.value.trim() || '';
+  r.comment = document.getElementById('grp-comment')?.value.trim() || '';
+  r.operator = document.getElementById('grp-operator')?.value.trim() || r.operator || '';
+  stampRecord(r);
+  if (r.contact && r.email && Array.isArray(g_contacts)) {
+    const exists = g_contacts.find(c => (c.email||'').toLowerCase() === r.email.toLowerCase());
+    if (!exists) {
+      g_contacts.push({societe:r.client||'', nom:r.contact, tel:r.tel||'', email:r.email, cp:'', notes:'Ajouté depuis groupe'});
+      if (typeof renderContacts === 'function') renderContacts();
+      if (typeof saveContacts === 'function') saveContacts();
+    }
+  }
   renderMaster(); renderKanban(); updateStats(); markDirty();
-  toast('Groupe mis à jour — ' + r.transp + ' / ' + fmt(r.poids) + ' kg');
+  toast('Groupe mis à jour — contact, transporteur et infos logistiques sauvegardés.');
+}
+
+function grpAutoFillContact() {
+  if (g_groupIdx < 0) return;
+  const r = g_master[g_groupIdx];
+  const c = (g_contacts||[]).find(x => (x.societe||'').toLowerCase() === (r.client||'').toLowerCase())
+        || (g_contacts||[]).find(x => (r.client||'').toLowerCase().includes((x.societe||'').toLowerCase()) && (x.societe||'').length > 2);
+  if (!c) return toast('Aucun contact trouvé pour ce client.');
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+  set('grp-contact', c.nom || '');
+  set('grp-tel', c.tel || '');
+  set('grp-email', c.email || '');
+  toast('Contact groupe rempli depuis le carnet contacts.');
 }
 
 function retirerCochesGroupe() {
@@ -3032,6 +3064,7 @@ document.getElementById('json-input').addEventListener('change', e => {
       g_cpData  = d.cpData   || [];
       g_contacts= d.contacts || [];
       renderMaster(); renderKanban(); renderCP(); renderContacts(); updateStats();
+      if (d.contacts && typeof saveContacts === 'function') saveContacts();
       toast('Sauvegarde chargée — tous vos dossiers et contacts sont restaurés.');
     } catch(err){ alert('Erreur lecture JSON : '+err.message); }
   };
@@ -3139,6 +3172,7 @@ document.getElementById('wf-input').addEventListener('change', e => {
 
       renderMaster(); renderKanban(); renderCP(); renderContacts(); updateStats();
       populateOperatorFilter(); // Rafraîchir le filtre avec les nouveaux opérateurs
+      if (d.contacts && typeof saveContacts === 'function') saveContacts();
       markDirty();
       const from = d._exportedBy ? ` (de ${d._exportedBy})` : '';
       toast(`Workflow importé${from} : +${added} nouveau(x), ${updated} mis à jour.`);
@@ -3346,7 +3380,7 @@ async function autoSave() {
   if (!_dirty) return;
   _dirty = false;
   // Fichier ÉTAT : statut + opérateur de chaque dossier (léger)
-  const statusData = g_master.map(r => ({ file: r.file, statut: r.statut, operator: r.operator || '', cc: r.cc || '' }));
+  const statusData = g_master.map(r => ({ file: r.file, statut: r.statut, operator: r.operator || '', cc: r.cc || '', email: r.email || '', contact: r.contact || '', tel: r.tel || '', comment: r.comment || '', transp: r.transp || '', fcDate: r.fcDate || '', fcHoraire: r.fcHoraire || '' }));
   // Fichier DATA : toutes les infos dossiers + rawData + cpData (sans contacts)
   const infoData = { master: g_master, rawData: g_rawData, cpData: g_cpData };
   // Fichier CONTACTS : g_contacts (séparé, persistant)
@@ -3387,7 +3421,11 @@ async function saveContactsChunked() {
 
 // Sauvegarde contacts uniquement (après ajout/modif/suppression)
 async function saveContacts() {
-  try { await Promise.all([idbSaveContacts(), saveContactsChunked()]); }
+  try {
+    if (typeof saveContactsTSV === 'function') await saveContactsTSV();
+    else if (typeof saveContactsInline === 'function') await saveContactsInline();
+    else await Promise.all([idbSaveContacts(), saveContactsChunked()]);
+  }
   catch(e) { console.warn('contacts save:', e); }
 }
 
@@ -3938,7 +3976,7 @@ const NTO_FUEL = {
 "2024-07":0.065,"2024-08":0.065,"2024-09":0.06,"2024-10":0.055,"2024-11":0.055,"2024-12":0.06,
 "2025-01":0.06,"2025-02":0.065,"2025-03":0.07,"2025-04":0.065,"2025-05":0.06,"2025-06":0.055,
 "2025-07":0.055,"2025-08":0.06,"2025-09":0.06,"2025-10":0.06,"2025-11":0.055,"2025-12":0.065,
-"2026-01":0.06,"2026-02":0.065
+"2026-01":0.06,"2026-02":0.165
 };
 
 // ── Utilitaires
@@ -3960,7 +3998,7 @@ function ntoGetFuel(transpType) {
   // Tableau automatique mensuel
   const now = new Date();
   const key = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
-  return NTO_FUEL[key] !== undefined ? NTO_FUEL[key] : 0.065;
+  return NTO_FUEL[key] !== undefined ? NTO_FUEL[key] : 0.165;
 }
 
 function ntoDetectTransp(dept) {
@@ -5075,14 +5113,26 @@ function grpmSave() {
 
 let _fcAffected = []; // dossiers en attente FC
 
-// Calcul de la date de garantie en JS (jours ouvrés, sans weekend)
+// Calcul de la date de garantie FC en JS
+// Règle métier :
+// - Flex : J+1 jour ouvré avant 14h30, sinon J+2 jours ouvrés
+// - Autres transporteurs : J+2 jours ouvrés avant 14h30, sinon J+3 jours ouvrés
+function fcIsFlex(transp) {
+  const t = String(transp || '').toLowerCase();
+  return t.includes('flex') || t.includes('(7)') || /^\s*7\s*$/.test(t);
+}
+
+function fcIsWorkingDay(date) {
+  const day = date.getDay(); // 0=dimanche, 6=samedi
+  return day !== 0 && day !== 6;
+}
+
 function fcAddWorkingDays(date, n) {
   const d = new Date(date);
   let count = 0;
   while (count < n) {
     d.setDate(d.getDate() + 1);
-    const day = d.getDay(); // 0=dim, 6=sam
-    if (day !== 0 && day !== 6) count++;
+    if (fcIsWorkingDay(d)) count++;
   }
   return d;
 }
@@ -5094,18 +5144,33 @@ function fcFormatDate(d) {
   return `${dd}.${mm}.${yy}`;
 }
 
-function fcCalcDateG(transp) {
-  const now = new Date();
+function fcCalcWorkingDaysToAdd(transp, refDate) {
+  const now = refDate ? new Date(refDate) : new Date();
   const mins = now.getHours() * 60 + now.getMinutes();
-  const apresMidi = mins >= 14 * 60 + 30;
-  const isFlex = (transp||'').includes('7') || (transp||'').toLowerCase().includes('flex');
-  let jours;
-  if (isFlex) {
-    jours = apresMidi ? 2 : 1; // Flex : J+1 avant 14h30, J+2 après
-  } else {
-    jours = apresMidi ? 3 : 2; // Autres : J+2 avant 14h30, J+3 après
+  const before1430 = mins < (14 * 60 + 30);
+  if (fcIsFlex(transp)) return before1430 ? 1 : 2;
+  return before1430 ? 2 : 3;
+}
+
+function fcCalcDateG(transp, refDate) {
+  const now = refDate ? new Date(refDate) : new Date();
+  return fcFormatDate(fcAddWorkingDays(now, fcCalcWorkingDaysToAdd(transp, now)));
+}
+
+function fcRuleLabel(transp) {
+  return fcIsFlex(transp)
+    ? 'Flex : J+1 ouvré avant 14h30, sinon J+2'
+    : 'Autres : J+2 ouvrés avant 14h30, sinon J+3';
+}
+
+function fcEnsureAutoDate(r, force) {
+  if (!r) return '';
+  if (force || !r.fcDate || !r._fcDateManual) {
+    r.fcDate = fcCalcDateG(r.transp);
+    r._fcDateManual = false;
   }
-  return fcFormatDate(fcAddWorkingDays(new Date(), jours));
+  if (!r.fcHoraire) r.fcHoraire = '09h et 12h';
+  return r.fcDate;
 }
 
 // ── Comparaison date livraison vs RDL ─────────────────────────────────────
@@ -5147,16 +5212,31 @@ function fcToggleDly(i, checked) {
 function kabFcUpdate(file, field, val) {
   const r = g_master.find(x => x.file === file);
   if (!r) return;
-  if (field === 'date')   r.fcDate    = val.trim();
-  if (field === 'transp') r.transp    = val.trim();
+
+  if (field === 'date') {
+    r.fcDate = val.trim();
+    r._fcDateManual = true;
+  }
+
+  if (field === 'transp') {
+    r.transp = val.trim();
+    // Recalcule selon le transporteur uniquement si la date n'a pas été forcée à la main.
+    if (!r._fcDateManual) r.fcDate = fcCalcDateG(r.transp);
+  }
+
   markDirty();
+  renderKanban();
 }
 
+
 function fcOpenModal(affected) {
-  _fcAffected = affected;
+  _fcAffected = affected || [];
+  _fcAffected.forEach(r => fcEnsureAutoDate(r, true));
+  affected = _fcAffected;
   const list = document.getElementById('fc-dossier-list');
   list.innerHTML = affected.map((r, i) => {
-    const dateG = r.fcDate || fcCalcDateG(r.transp);
+    const dateG = r.fcDate || fcEnsureAutoDate(r, true);
+    const autoDateG = fcCalcDateG(r.transp);
     const isUPS = (r.transp||'').toLowerCase().includes('ups');
     // DLY auto : comparer date livraison avec RDL
     const hasDLY = r.fcDly === 'Y' || (!isUPS && fcDateAfterRdl(dateG, r.rdl));
@@ -5169,21 +5249,45 @@ function fcOpenModal(affected) {
         <span style="font-size:10px;color:var(--purple)${r.rdl?'':';margin-left:auto'}">${r.transp||'?'}</span>
       </div>
       ${isUPS ? '<div style="font-size:11px;color:var(--teal);font-style:italic">UPS — FC simplifié (N° dossier + DEF uniquement)</div>' : `
+      <div style="font-size:10px;color:var(--text3);margin-bottom:6px">${fcRuleLabel(r.transp)}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div>
-          <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Date garantie</label>
-          <input id="fc-date-${i}" type="text" value="${dateG}" maxlength="8"
-            style="width:100%;height:24px;font-family:var(--mono);font-size:11px;
-                   border:1px solid var(--border2);border-radius:3px;
-                   background:var(--surface);color:var(--text);padding:0 6px"
-            oninput="fcCheckDly(${i})">
+          <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Date estimée livraison / Date garantie FC</label>
+          <div style="display:flex;gap:5px;align-items:center">
+            <input id="fc-date-${i}" type="text" value="${dateG}" maxlength="8"
+              style="flex:1;height:24px;font-family:var(--mono);font-size:11px;
+                     border:1px solid var(--border2);border-radius:3px;
+                     background:var(--surface);color:var(--text);padding:0 6px"
+              oninput="_fcAffected[${i}]._fcDateManual=true;fcCheckDly(${i});fcUpdateDeliveryPillInline(${i})">
+            <button class="btn btn-green-out btn-sm" type="button" onclick="fcRecalcDeliveryDateInline(${i})" style="height:24px;font-size:10px;padding:0 6px;font-weight:800">↺ Auto transporteur</button>
+          </div>
+          <div id="fc-delivery-pill-${i}" style="margin-top:4px;font-family:var(--mono);font-size:10px;font-weight:800;background:var(--green-bg);color:var(--green);border:1px solid currentColor;border-radius:999px;padding:3px 7px;display:inline-block">Date livraison AUTO transporteur : ${dateG}</div>
         </div>
         <div>
           <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Horaire</label>
-          <input id="fc-horaire-${i}" type="text" value="09h et 12h" placeholder="09h et 12h"
+          <input id="fc-horaire-${i}" type="text" value="${r.fcHoraire || '09h et 12h'}" placeholder="09h et 12h"
             style="width:100%;height:24px;font-size:11px;
                    border:1px solid var(--border2);border-radius:3px;
                    background:var(--surface);color:var(--text);padding:0 6px">
+        </div>
+      </div>
+      <div style="margin-top:8px;padding:9px;background:var(--purple-bg);border:2px solid var(--purple);border-radius:6px;display:flex;flex-direction:column;gap:7px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div style="font-size:10px;font-weight:800;color:var(--purple);text-transform:uppercase;letter-spacing:.4px">BKD de ce dossier — séparé de la livraison</div>
+          <span id="fc-bkd-pill-${i}" style="font-family:var(--mono);font-size:10px;font-weight:800;background:var(--surface);color:var(--purple);border:1px solid var(--purple);border-radius:999px;padding:3px 8px">BKD sélectionné : ${typeof getBKDValueInline==='function'?getBKDValueInline():dateG}</span>
+        </div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">
+          <button class="btn btn-green-out btn-sm" type="button" onclick="fcSetLineBKDInline(${i},'today')" style="height:24px;font-size:10px;font-weight:800">✅ Aujourd'hui</button>
+          <button class="btn btn-orange-out btn-sm" type="button" onclick="fcSetLineBKDInline(${i},'tomorrow')" style="height:24px;font-size:10px;font-weight:800">➡ J+1</button>
+          <button class="btn btn-purple-out btn-sm" type="button" onclick="fcSetLineBKDInline(${i},'custom')" style="height:24px;font-size:10px;font-weight:800">📅 Date</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="fcSetLineBKDInline(${i},'global')" style="height:24px;font-size:10px">🌐 Global</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="fcSetLineBKDInline(${i},'auto')" style="height:24px;font-size:10px">🕒 Auto</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr .8fr 1fr auto;gap:6px;align-items:end">
+          <div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Mode</label><select id="fc-bkd-mode-${i}" onchange="fcApplyLineBKDInline(${i},true)" style="width:100%;height:24px;font-size:10px;border:1px solid var(--border2);border-radius:3px;background:var(--surface);color:var(--text);padding:0 4px;font-weight:700"><option value="global">🌐 Global</option><option value="auto">🕒 Auto</option><option value="today">✅ Aujourd'hui</option><option value="tomorrow">➡ J+1</option><option value="custom">📅 Date</option></select></div>
+          <div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Cutoff</label><input id="fc-bkd-cutoff-${i}" type="time" value="${(typeof getBKDConfigInline==='function'?getBKDConfigInline().cutoff:'14:30')}" onchange="fcApplyLineBKDInline(${i},true)" style="width:100%;height:24px;font-size:10px;border:1px solid var(--border2);border-radius:3px;background:var(--surface);color:var(--text);padding:0 4px;font-family:var(--mono)"></div>
+          <div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Date si manuel</label><input id="fc-bkd-custom-${i}" type="date" onchange="fcApplyLineBKDInline(${i},true)" style="width:100%;height:24px;font-size:10px;border:1px solid var(--border2);border-radius:3px;background:var(--surface);color:var(--text);padding:0 4px;font-family:var(--mono)"></div>
+          <button class="btn btn-purple-out btn-sm" type="button" onclick="fcApplyLineBKDInline(${i},true)" style="height:24px;font-size:10px;padding:0 6px;font-weight:800">OK</button>
         </div>
       </div>
       <div id="fc-dly-row-${i}" style="margin-top:7px;padding:7px;background:var(--red-bg,#2a1a1a);border:1px solid var(--red,#e74c3c);border-radius:4px;${hasDLY?'':'display:none'}">
@@ -5204,9 +5308,10 @@ function fcOpenModal(affected) {
     </div>`;
   }).join('');
   // Vider les globaux
-  document.getElementById('fc-global-date').value = '';
+  document.getElementById('fc-global-date').value = ''; // ne pas injecter BKD/aujourd'hui dans date garantie
   document.getElementById('fc-global-horaire').value = '09h et 12h';
   openModal('modal-fc-params');
+  if (typeof bkdFcOnModalOpenInline === 'function') bkdFcOnModalOpenInline();
 }
 
 function fcApplyGlobal() {
@@ -5215,21 +5320,34 @@ function fcApplyGlobal() {
   _fcAffected.forEach((r, i) => {
     const isUPS = (r.transp||'').toLowerCase().includes('ups');
     if (!isUPS) {
-      if (gDate) document.getElementById(`fc-date-${i}`).value = gDate;
+      if (gDate) {
+        document.getElementById(`fc-date-${i}`).value = gDate;
+        r.fcDate = gDate;
+        r._fcDateManual = true;
+      }
       document.getElementById(`fc-horaire-${i}`).value = gHor;
+      r.fcHoraire = gHor;
     }
   });
 }
+
 
 function fcRecalcDates() {
   _fcAffected.forEach((r, i) => {
     const isUPS = (r.transp||'').toLowerCase().includes('ups');
     if (!isUPS) {
-      document.getElementById(`fc-date-${i}`).value = fcCalcDateG(r.transp);
+      r.fcDate = fcCalcDateG(r.transp);
+      r._fcDateManual = false;
+      const inp = document.getElementById(`fc-date-${i}`);
+      if (inp) inp.value = r.fcDate;
+      fcCheckDly(i);
     }
   });
-  toast('Dates recalculées.');
+  renderKanban();
+  markDirty();
+  toast('Dates FC recalculées selon transporteur + cutoff 14h30.');
 }
+
 
 // ── FC : envoi séquentiel un par un (pause/stop via hotkeys F9/Echap dans au3) ──
 let _fcRunning = false;
@@ -5245,7 +5363,7 @@ async function fcLancer() {
     const dlyChk  = document.getElementById(`fc-dly-chk-${i}`);
     const dly     = (!isUPS && dlyChk && dlyChk.checked) ? 'Y' : '';
     const dlyNotes = dly ? (document.getElementById(`fc-dly-notes-${i}`)?.value || '') : '';
-    if (!isUPS) { r.fcDate = dateG; r.fcHoraire = horaire; r.fcDly = dly; r.fcDlyNotes = dlyNotes; }
+    if (!isUPS) { r.fcDate = dateG; r.fcHoraire = horaire; r.fcDly = dly; r.fcDlyNotes = dlyNotes; r._fcDateManual = true; }
     const subFiles = (r.file||'').split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean);
     subFiles.forEach(sf => {
       const row = `${sf};${r.email||''};${r.client||''};${r.transp||''};${contactStr};${dateG};${horaire};${dly};${dlyNotes}`;
@@ -5457,13 +5575,37 @@ if (localStorage.getItem('dispatch_dark') === '1') document.documentElement.clas
     </div>
     <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
 
+
+      <!-- BKD — Booking Date : règle utilisée pour la date de garantie FC -->
+      <div id="bkd-fc-block" style="padding:12px;background:var(--purple-bg);border-radius:8px;border:2px solid var(--purple);display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <div>
+            <div style="font-size:12px;font-weight:800;color:var(--purple);text-transform:uppercase;letter-spacing:.5px">BKD — choix visible</div>
+            <div style="font-size:10px;color:var(--text2);margin-top:3px">Attention : <b>BKD ≠ date estimée livraison</b>. Le BKD ne modifie plus la date livraison. La livraison est recalculée selon le transporteur : Flex / autres.</div>
+          </div>
+          <span id="bkd-fc-preview" style="font-family:var(--mono);font-size:13px;font-weight:800;color:var(--purple);background:var(--surface);border:2px solid var(--purple);border-radius:999px;padding:5px 11px">BKD : —</span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-green-out btn-sm bkd-quick" data-mode="today" type="button" onclick="bkdSetGlobalInline('today')" style="font-weight:800">✅ Aujourd'hui</button>
+          <button class="btn btn-orange-out btn-sm bkd-quick" data-mode="tomorrow" type="button" onclick="bkdSetGlobalInline('tomorrow')" style="font-weight:800">➡ J+1 / Demain</button>
+          <button class="btn btn-purple-out btn-sm bkd-quick" data-mode="custom" type="button" onclick="bkdSetGlobalInline('custom')" style="font-weight:800">📅 Date précise</button>
+          <button class="btn btn-ghost btn-sm bkd-quick" data-mode="auto" type="button" onclick="bkdSetGlobalInline('auto')">🕒 Auto cutoff</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1.25fr .75fr 1fr;gap:8px;align-items:end">
+          <div><label style="font-size:10px;color:var(--text2);display:block;margin-bottom:4px">Mode BKD global</label><select id="bkd-fc-mode" style="width:100%;height:30px;border:1px solid var(--border2);border-radius:5px;background:var(--surface);color:var(--text);padding:0 8px;font-size:11px;font-weight:700"><option value="auto">🕒 Auto selon heure limite</option><option value="today">✅ Forcer aujourd'hui</option><option value="tomorrow">➡ Forcer J+1</option><option value="custom">📅 Date manuelle</option></select></div>
+          <div><label style="font-size:10px;color:var(--text2);display:block;margin-bottom:4px">Heure limite Auto</label><input id="bkd-fc-cutoff" type="time" value="14:30" style="width:100%;height:30px;border:1px solid var(--border2);border-radius:5px;background:var(--surface);color:var(--text);padding:0 8px;font-family:var(--mono);font-size:11px"></div>
+          <div><label style="font-size:10px;color:var(--text2);display:block;margin-bottom:4px">Si Date précise</label><input id="bkd-fc-custom" type="date" style="width:100%;height:30px;border:1px solid var(--border2);border-radius:5px;background:var(--surface);color:var(--text);padding:0 8px;font-family:var(--mono);font-size:11px"></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn btn-purple-out btn-sm" id="bkd-fc-save" type="button">💾 Enregistrer BKD global</button><button class="btn btn-green-out btn-sm" id="bkd-fc-apply" type="button">⬇ Appliquer BKD aux badges visibles</button><button class="btn btn-ghost btn-sm" id="bkd-fc-reset" type="button">↺ Revenir Auto 14:30</button><span id="bkd-fc-status" style="font-size:10px;color:var(--green);font-weight:700"></span></div>
+      </div>
+
       <!-- Paramètres globaux -->
       <div style="padding:10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">
-        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Paramètres par défaut — appliqués à tous</div>
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Paramètres manuels — appliqués à tous</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div>
-            <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Date de garantie (dd.mm.aa)</label>
-            <input id="fc-global-date" type="text" placeholder="calculée auto" maxlength="8"
+            <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Date de garantie forcée (dd.mm.aa)</label>
+            <input id="fc-global-date" type="text" placeholder="laisser vide = auto par ligne" maxlength="8"
               style="width:100%;height:28px;font-family:var(--mono);font-size:12px;
                      border:1px solid var(--border2);border-radius:4px;
                      background:var(--surface);color:var(--text);padding:0 8px"
@@ -5478,7 +5620,7 @@ if (localStorage.getItem('dispatch_dark') === '1') document.documentElement.clas
               oninput="fcApplyGlobal()">
           </div>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="fcRecalcDates()" style="margin-top:8px;font-size:11px">↺ Recalculer dates auto</button>
+        <button class="btn btn-ghost btn-sm" onclick="fcRecalcDates()" style="margin-top:8px;font-size:11px">↺ Recalculer dates auto par transporteur</button>
       </div>
 
       <!-- Liste dossiers -->
@@ -5494,5 +5636,339 @@ if (localStorage.getItem('dispatch_dark') === '1') document.documentElement.clas
     </div>
   </div>
 </div>
+
+<!-- UX_FILTERS: EFDS Groussard --><!-- DispatchMaster FINAL UX V2 - save indicator + filtres + CP persistence + actions audit -->
+<!-- Filtres rapides ajoutés : EFDS + Groussard --><style id="dispatch-final-ux-v2-style">
+html.dark{--bg:#171A20;--surface:#20242C;--surface2:#272C35;--border:#343A46;--border2:#454C5A;--text:#E7EAF0;--text2:#B3BAC8;--text3:#7D8596;--blue:#7DB1E8;--blue-bg:#203247;--green:#72C89A;--green-bg:#203A2D;--orange:#D99A63;--orange-bg:#3B2A1D;--red:#DF7777;--red-bg:#3B2222;--purple:#B69BDD;--purple-bg:#302640;--teal:#74CBD2;--teal-bg:#203A3D;--gold:#D7BE73;--gold-bg:#342E1D;--k1-c:#A2A9B8;--k1-bg:#2A2F38;--k9-c:#D7BE73;--k9-bg:#342E1D;--k2-c:#DF7777;--k2-bg:#3B2222;--k3-c:#D99A63;--k3-bg:#3B2A1D;--k4-c:#D7BE73;--k4-bg:#342E1D;--k5-c:#72C89A;--k5-bg:#203A2D;--k6-c:#7DB1E8;--k6-bg:#203247;--k7-c:#B69BDD;--k7-bg:#302640}html.dark table.t-master tbody tr:nth-child(even){background:#1D2128}html.dark table.t-master tbody tr:hover{background:#24354A!important}html.dark .k-item{background:#272C35}html.dark .k-item:hover{background:#2D3440}html.dark .k-item.k-selected{background:#342945!important}html.dark input,html.dark textarea,html.dark select{background:#252B34;color:var(--text);border-color:#485060}html.dark input:focus,html.dark textarea:focus,html.dark select:focus{border-color:var(--blue);background:#202631}html.compact body{font-size:12px}html.compact #header-top{height:42px;gap:10px}html.compact #header-actions{height:32px;gap:4px}html.compact .logo{font-size:14px}html.compact .stat-pill{padding:2px 8px;font-size:11px}html.compact .btn{height:26px;padding:0 9px;font-size:11px}html.compact .btn-sm{height:22px;padding:0 7px;font-size:10px}html.compact table.t-master thead th{padding:5px 6px;font-size:10px}html.compact table.t-master tbody td{padding:3px 6px;font-size:11px}html.compact #kanban-wrap{padding:7px;gap:6px}html.compact .k-col{min-width:155px;max-width:190px}html.compact .k-item{padding:5px 7px;margin-bottom:4px}.ux-chip{height:24px;padding:0 9px;border:1px solid var(--border2);border-radius:999px;background:var(--surface);color:var(--text2);font-size:11px;cursor:pointer}.ux-chip.active{border-color:var(--purple);background:var(--purple-bg);color:var(--purple);font-weight:700}.save-pill{height:24px;border:1px solid var(--border2);border-radius:999px;display:flex;align-items:center;gap:6px;padding:0 9px;background:var(--surface2);font-size:11px;color:var(--text2)}.save-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block}.save-dot.dirty{background:var(--orange)}.save-dot.saving{background:var(--blue);animation:pulse 1s infinite}.save-dot.error{background:var(--red)}@keyframes pulse{0%,100%{opacity:.45}50%{opacity:1}}#kab-shortcuts-help{font-size:10px;color:var(--text3);width:100%;margin-top:2px}.storage-health-good{color:var(--green);font-weight:700}.storage-health-warn{color:var(--orange);font-weight:700}.storage-health-bad{color:var(--red);font-weight:700}
+</style>
+<script>
+(function(){'use strict';
+function applyDensityMode(mode){const compact=mode==='compact';document.documentElement.classList.toggle('compact',compact);localStorage.setItem('dispatch_view_density',compact?'compact':'comfort');const btn=document.getElementById('btn-view-density');if(btn){btn.classList.toggle('active',compact);btn.textContent=compact?'↔ Compact':'↔ Confort';}}function toggleDensityMode(){const isCompact=document.documentElement.classList.contains('compact');applyDensityMode(isCompact?'comfort':'compact');toast?.(isCompact?'Vue confort activée.':'Vue compacte activée.');}function injectDensityButton(){if(document.getElementById('btn-view-density'))return;const darkBtn=[...document.querySelectorAll('button')].find(b=>(b.getAttribute('onclick')||'').includes('toggleDarkMode'));const btn=document.createElement('button');btn.id='btn-view-density';btn.className='btn btn-ghost btn-sm';btn.type='button';btn.onclick=toggleDensityMode;btn.textContent='↔ Confort';if(darkBtn&&darkBtn.parentElement)darkBtn.parentElement.insertBefore(btn,darkBtn);else document.getElementById('header-top')?.appendChild(btn);}window.toggleDensityMode=toggleDensityMode;
+function injectSaveIndicator(){if(document.getElementById('save-pill-inline'))return;const top=document.getElementById('header-top')||document.getElementById('header-actions');if(!top)return;const pill=document.createElement('div');pill.id='save-pill-inline';pill.className='save-pill';pill.innerHTML='<i id="save-dot" class="save-dot"></i><span id="save-state">OK</span>';const sep=top.querySelector('.header-sep');if(sep)top.insertBefore(pill,sep);else top.appendChild(pill);}function setSaveState(st){const dot=document.getElementById('save-dot'),txt=document.getElementById('save-state');if(!dot||!txt)return;dot.className='save-dot '+(st||'');txt.textContent=st==='dirty'?'Modifié':st==='saving'?'Sauvegarde...':st==='error'?'Erreur':'OK';}
+function getActiveFiles(){const s=new Set();(g_master||[]).forEach(r=>String(r.file||'').split(/\s*\+\s*/).filter(Boolean).forEach(f=>s.add(f)));return s;}function calcAnomalies(){const rows=g_master||[];return{missingEmail:rows.filter(r=>!r.email&&!String(r.file||'').includes(' + ')).length,missingTransp:rows.filter(r=>!r.transp).length,rawOrphans:Math.max(0,Object.keys(g_rawData||{}).length-getActiveFiles().size)}}
+window._quickKanbanFilter='all';function injectKanbanTools(){if(document.getElementById('ux-kanban-tools'))return;const wrap=document.getElementById('kanban-wrap');if(!wrap)return;const bar=document.createElement('div');bar.id='ux-kanban-tools';bar.style.cssText='display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 10px;border-bottom:1px solid var(--border);background:var(--surface)';const filters=[['all','Tous'],['dgs','DGS'],['flex','Flex'],['ups','UPS'],['efds','EFDS'],['groussard','Groussard'],['cp','CP'],['rdl','RDL dépassée'],['noemail','Sans email'],['groups','Groupes']];bar.innerHTML=filters.map(([k,l])=>`<button class="ux-chip" data-qf="${k}">${l}</button>`).join('')+`<span id="ux-anomaly-panel" style="margin-left:auto;font-size:11px;color:var(--text3)"></span>`;wrap.parentElement.insertBefore(bar,wrap);bar.querySelectorAll('[data-qf]').forEach(b=>b.onclick=()=>{window._quickKanbanFilter=b.dataset.qf;bar.querySelectorAll('.ux-chip').forEach(x=>x.classList.toggle('active',x===b));applyQuickKanbanFilter();});bar.querySelector('[data-qf="all"]').classList.add('active');}function applyQuickKanbanFilter(){const f=window._quickKanbanFilter||'all';document.querySelectorAll('.k-item').forEach(el=>{const d=el.dataset;let show=true;const tr=(d.transp||'').toLowerCase(),client=(d.client||'').toLowerCase();if(f==='dgs')show=tr.includes('dgs');else if(f==='flex')show=tr.includes('flex');else if(f==='ups')show=tr.includes('ups');else if(f==='efds')show=tr.includes('efds')||client.includes('efds');else if(f==='groussard')show=tr.includes('groussard')||client.includes('groussard');else if(f==='cp')show=(d.cp||'').toLowerCase().includes('cp')||(d.cp||'').toLowerCase().includes('cc');else if(f==='noemail')show=!(d.email||'');else if(f==='groups')show=(d.file||'').includes(' + ');else if(f==='rdl'){try{show=!!d.rdl&&fcDateAfterRdl(new Date().toLocaleDateString('fr-FR').replace(/\//g,'.'),d.rdl);}catch{show=false;}}el.style.display=show?'':'none';});const a=calcAnomalies();const p=document.getElementById('ux-anomaly-panel');if(p)p.innerHTML=`⚠ sans email ${a.missingEmail} · sans transp ${a.missingTransp} · raw orphelins ${a.rawOrphans}`;}
+/* Contacts TSV */const CF=["societe","nom","tel","email","cp","notes"];function ce(v){return encodeURIComponent(String(v??"").replace(/\r?\n/g," ").replace(/\s+/g," ").trim());}function cd(v){try{return decodeURIComponent(v||"");}catch{return v||"";}}function cn(c){c=c||{};return{societe:String(c.societe||c.client||c.company||""),nom:String(c.nom||c.name||c.contact||""),tel:String(c.tel||c.phone||c.telephone||""),email:String(c.email||c.mail||""),cp:String(c.cp||c.channelPartner||""),notes:String(c.notes||c.note||"")};}function contactsToTSVInline(list){const rows=["#DISPATCH_CONTACTS_FINAL"];for(const r of(list||[])){const c=cn(r);rows.push(CF.map(k=>ce(c[k])).join("\t"));}return rows.join("\n")+"\n";}function contactsFromTSVInline(t){const raw=String(t||"").trim();if(!raw)return[];if(raw[0]==="["||raw[0]==="{"){const p=JSON.parse(raw);return(Array.isArray(p)?p:(p.contacts||[])).map(cn);}return raw.split(/\r?\n/).filter(l=>l&&!l.startsWith("#")).map(l=>{const p=l.split("\t");return cn({societe:cd(p[0]),nom:cd(p[1]),tel:cd(p[2]),email:cd(p[3]),cp:cd(p[4]),notes:cd(p[5])});});}async function saveContactsInline(){if(typeof g_contacts==="undefined")return false;try{if(typeof idbSaveContacts==="function")await idbSaveContacts();}catch{}const res=await fetch("/api/save-contacts",{method:"POST",headers:{"Content-Type":"text/plain; charset=UTF-8"},body:contactsToTSVInline(g_contacts)});if(!res.ok)throw new Error("Sauvegarde contacts impossible");return true;}async function loadContactsInline(){const res=await fetch("/api/load-contacts",{cache:"no-store"});const list=contactsFromTSVInline(await res.text());if(typeof g_contacts!=="undefined")g_contacts=list;try{if(typeof idbSaveContacts==="function")await idbSaveContacts();}catch{}renderContacts?.();return list;}Object.assign(window,{saveContactsInline,loadContactsInline});try{saveContacts=saveContactsInline;}catch{}try{saveContactsChunked=saveContactsInline;}catch{}
+/* Fuel/BKD */const FK="dispatch.nto.fuel.final";function fel(ids){for(const id of ids){const x=document.getElementById(id);if(x)return x;}return null;}function fn(v){return String(v??"").replace(",",".").replace(/[^0-9.]/g,"").trim();}function readFuelInline(){return{flex:fn(fel(["opts-fuel-flex"])?.value),dgs:fn(fel(["opts-fuel-dgs"])?.value),global:fn(fel(["opts-fuel-val","nto-fuel-rate"])?.value)};}function applyFuelInline(c){c=c||{};const f=fel(["opts-fuel-flex"]),d=fel(["opts-fuel-dgs"]),g=fel(["opts-fuel-val","nto-fuel-rate"]);if(f&&c.flex!==undefined)f.value=c.flex||"";if(d&&c.dgs!==undefined)d.value=c.dgs||"";if(g&&c.global!==undefined)g.value=c.global||"";localStorage.setItem(FK,JSON.stringify(c));}async function saveFuelInline(){const c=readFuelInline();applyFuelInline(c);const res=await fetch("/api/save-fuel-config",{method:"POST",headers:{"Content-Type":"application/json; charset=UTF-8"},body:JSON.stringify(c)});if(!res.ok)throw new Error("Sauvegarde Fuel impossible");return c;}async function loadFuelInline(){let c={};try{c=JSON.parse(localStorage.getItem(FK)||"{}");}catch{}if(c.flex||c.dgs||c.global)applyFuelInline(c);try{const res=await fetch("/api/load-fuel-config",{cache:"no-store"});if(res.ok){c=await res.json();applyFuelInline(c);}}catch{}return c;}try{optsSaveFuel=()=>saveFuelInline().catch(e=>alert(e.message));}catch{}
+const BK="dispatch.bkd.config.final",BD={mode:"auto",cutoff:"14:30",customDate:""};
+function bp(n){return String(n).padStart(2,"0");}
+function bfr(d){return`${bp(d.getDate())}.${bp(d.getMonth()+1)}.${String(d.getFullYear()).slice(-2)}`;}
+function badd(d,n){const x=new Date(d.getFullYear(),d.getMonth(),d.getDate());x.setDate(x.getDate()+n);return x;}
+function bcfg(c){c=c||{};return{mode:["auto","today","tomorrow","custom"].includes(c.mode)?c.mode:"auto",cutoff:/^\d{2}:\d{2}$/.test(c.cutoff||"")?c.cutoff:"14:30",customDate:String(c.customDate||"")};}
+function fcFormatDateDot(d){if(!(d instanceof Date)||isNaN(d.getTime()))return'';return bfr(d);}
+function readBKDInline(){return bcfg({mode:document.getElementById('bkd-fc-mode')?.value,cutoff:document.getElementById('bkd-fc-cutoff')?.value,customDate:document.getElementById('bkd-fc-custom')?.value});}
+function computeBKDInline(base=new Date(),c=readBKDInline()){c=bcfg(c);const today=new Date(base.getFullYear(),base.getMonth(),base.getDate());if(c.mode==='today')return today;if(c.mode==='tomorrow')return badd(today,1);if(c.mode==='custom'&&c.customDate){const[y,m,d]=c.customDate.split('-').map(Number);if(y&&m&&d)return new Date(y,m-1,d);}const[h,min]=c.cutoff.split(':').map(Number);const cut=new Date(base.getFullYear(),base.getMonth(),base.getDate(),h,min,0);return base<=cut?today:badd(today,1);}
+function getBKDConfigInline(){let c=BD;try{c=bcfg(JSON.parse(localStorage.getItem(BK)||'{}'));}catch{}return c;}
+function getBKDValueInline(fmt='dd.mm.yy',c){return bfr(computeBKDInline(new Date(),c||readBKDInline()));}
+function bkdModeLabel(c){c=bcfg(c);if(c.mode==='today')return"FORCÉ AUJOURD'HUI";if(c.mode==='tomorrow')return'FORCÉ J+1';if(c.mode==='custom')return'DATE MANUELLE';return'AUTO '+(c.cutoff||'14:30');}
+function previewBKDInline(){const c=readBKDInline();const p=document.getElementById('bkd-fc-preview');if(p)p.textContent='BKD : '+getBKDValueInline('dd.mm.yy',c)+' · '+bkdModeLabel(c);document.querySelectorAll('.bkd-quick').forEach(b=>b.classList.toggle('active',b.dataset.mode===c.mode));}
+function applyBKDToFCInline(){previewBKDInline();return getBKDValueInline();}
+function bkdSetGlobalInline(mode){const m=document.getElementById('bkd-fc-mode');if(m)m.value=mode;if(mode==='custom'){document.getElementById('bkd-fc-custom')?.focus();}previewBKDInline();}
+function fcLineCfgInline(i){const g=getBKDConfigInline();const m=document.getElementById(`fc-bkd-mode-${i}`)?.value||'global';if(m==='global')return g;return bcfg({mode:m,cutoff:document.getElementById(`fc-bkd-cutoff-${i}`)?.value||g.cutoff||'14:30',customDate:document.getElementById(`fc-bkd-custom-${i}`)?.value||''});}
+function fcSetLineBKDInline(i,mode){const sel=document.getElementById(`fc-bkd-mode-${i}`);if(sel)sel.value=mode;if(mode==='custom'){document.getElementById(`fc-bkd-custom-${i}`)?.focus();}return fcApplyLineBKDInline(i,true);}
+function fcApplyLineBKDInline(i,force=false){
+  const r=(typeof _fcAffected!=='undefined'&&_fcAffected)?_fcAffected[i]:null;
+  if(!r)return'';
+
+  // IMPORTANT METIER : BKD et date estimée livraison sont deux choses différentes.
+  // Cette fonction ne touche JAMAIS à fc-date / r.fcDate.
+  // La date livraison reste calculée par fcCalcDateG(transp), donc Flex garde sa règle propre.
+  const cfg=fcLineCfgInline(i);
+  let val='';
+  if(cfg.mode==='today'){
+    val=fcFormatDateDot(new Date());
+  }else if(cfg.mode==='tomorrow'){
+    const d=new Date();d.setDate(d.getDate()+1);val=fcFormatDateDot(d);
+  }else if(cfg.mode==='custom'&&cfg.customDate){
+    val=fcFormatDateDot(new Date(cfg.customDate+'T00:00:00'));
+  }else{
+    val=getBKDValueInline('dd.mm.yy',cfg);
+  }
+
+  r.fcBkdMode = document.getElementById(`fc-bkd-mode-${i}`)?.value || 'global';
+  r.fcBkdValue = val;
+
+  const pill=document.getElementById(`fc-bkd-pill-${i}`);
+  if(pill){
+    pill.textContent='BKD sélectionné : '+val+' · '+bkdModeLabel(cfg);
+    pill.style.background=cfg.mode==='today'?'var(--green-bg)':cfg.mode==='tomorrow'?'var(--orange-bg)':cfg.mode==='custom'?'var(--purple-bg)':'var(--surface2)';
+    pill.style.color=cfg.mode==='today'?'var(--green)':cfg.mode==='tomorrow'?'var(--orange)':cfg.mode==='custom'?'var(--purple)':'var(--text2)';
+  }
+  return val;
+}
+
+function fcUpdateDeliveryPillInline(i){
+  const r=(typeof _fcAffected!=='undefined'&&_fcAffected)?_fcAffected[i]:null;
+  if(!r)return'';
+  const val=document.getElementById(`fc-date-${i}`)?.value || r.fcDate || '';
+  const autoVal=fcCalcDateG(r.transp);
+  const pill=document.getElementById(`fc-delivery-pill-${i}`);
+  if(pill){
+    const manual = !!r._fcDateManual && val !== autoVal;
+    pill.textContent = manual ? ('Date livraison MANUELLE : '+val+' · auto '+autoVal) : ('Date livraison AUTO transporteur : '+val);
+    pill.style.background = manual ? 'var(--orange-bg)' : 'var(--green-bg)';
+    pill.style.color = manual ? 'var(--orange)' : 'var(--green)';
+  }
+  return val;
+}
+
+function fcRecalcDeliveryDateInline(i){
+  const r=(typeof _fcAffected!=='undefined'&&_fcAffected)?_fcAffected[i]:null;
+  if(!r)return'';
+  const val=fcCalcDateG(r.transp);
+  const inp=document.getElementById(`fc-date-${i}`);
+  if(inp)inp.value=val;
+  r.fcDate=val;
+  r._fcDateManual=false;
+  if(typeof fcCheckDly==='function')fcCheckDly(i);
+  fcUpdateDeliveryPillInline(i);
+  return val;
+}
+async function saveBKDInline(c){c=bcfg(c||readBKDInline());localStorage.setItem(BK,JSON.stringify(c));const res=await fetch('/api/save-bkd-config',{method:'POST',headers:{'Content-Type':'application/json; charset=UTF-8'},body:JSON.stringify(c)});if(!res.ok){let t='';try{t=await res.text();}catch{}throw new Error('Sauvegarde BKD impossible'+(t?' — '+t:''));}applyBKDToFCInline();return c;}
+async function loadBKDInline(){let c=BD;try{c=bcfg(JSON.parse(localStorage.getItem(BK)||'{}'));}catch{}try{const res=await fetch('/api/load-bkd-config',{cache:'no-store'});if(res.ok)c=bcfg(await res.json());}catch{}const m=document.getElementById('bkd-fc-mode'),co=document.getElementById('bkd-fc-cutoff'),cu=document.getElementById('bkd-fc-custom');if(m)m.value=c.mode;if(co)co.value=c.cutoff;if(cu)cu.value=c.customDate;localStorage.setItem(BK,JSON.stringify(c));previewBKDInline();return c;}
+function bindBKDInline(){['bkd-fc-mode','bkd-fc-cutoff','bkd-fc-custom'].forEach(id=>document.getElementById(id)?.addEventListener('change',()=>previewBKDInline()));document.getElementById('bkd-fc-save')?.addEventListener('click',()=>saveBKDInline().then(()=>{const s=document.getElementById('bkd-fc-status');if(s)s.textContent='BKD enregistré';}).catch(e=>alert(e.message)));document.getElementById('bkd-fc-apply')?.addEventListener('click',()=>{previewBKDInline();document.querySelectorAll('[id^="fc-date-"]').forEach((_,i)=>fcApplyLineBKDInline(i,true));});document.getElementById('bkd-fc-reset')?.addEventListener('click',()=>saveBKDInline(BD).then(()=>loadBKDInline()).catch(e=>alert(e.message)));}
+function bkdFcOnModalOpenInline(){bindBKDInline();loadBKDInline().then(()=>{previewBKDInline();document.querySelectorAll('[id^="fc-date-"]').forEach((_,i)=>{fcApplyLineBKDInline(i);fcUpdateDeliveryPillInline(i);});});}
+Object.assign(window,{readBKDInline,computeBKDInline,getBKDConfigInline,getBKDValueInline,fcApplyLineBKDInline,fcSetLineBKDInline,fcRecalcDeliveryDateInline,fcUpdateDeliveryPillInline,bkdSetGlobalInline,bkdFcOnModalOpenInline,getBKDDate:(c)=>getBKDValueInline('dd.mm.yy',c),getBKD:()=>getBKDValueInline(),calcBKD:()=>getBKDValueInline()});/* FC FIX: ne jamais remplacer fcCalcDateG par BKD/aujourd'hui */
+/* CP/mail/cc persistence */function normalizePersistence(){(g_master||[]).forEach(r=>{['email','cc','contact','tel','comment','fcDate','fcHoraire','fcDly','fcDlyNotes'].forEach(k=>{if(r[k]===undefined||r[k]===null)r[k]='';});});(g_cpData||[]).forEach(cp=>{cp.files=(cp.files||[]).filter(Boolean);['client','palettes','colis','doc','operator','email','contact','tel','notes','cc'].forEach(k=>{if(cp[k]===undefined||cp[k]===null)cp[k]='';});});}function hookCPInputs(){const tb=document.getElementById('cp-tbody');if(!tb||tb.dataset.persistHook==='1')return;tb.dataset.persistHook='1';tb.addEventListener('input',()=>{normalizePersistence();markDirty?.();});tb.addEventListener('change',()=>{normalizePersistence();markDirty?.();});}
+/* Storage */function compactDispatchData(o={}){normalizePersistence();const silent=!!o.silent,beforeRaw=Object.keys(g_rawData||{}).length,beforeCp=(g_cpData||[]).length,active=getActiveFiles(),newRaw={};Object.keys(g_rawData||{}).forEach(f=>{if(active.has(f))newRaw[f]=g_rawData[f];});g_rawData=newRaw;g_cpData=(g_cpData||[]).map(cp=>({...cp,files:(cp.files||[]).filter(f=>active.has(f))})).filter(cp=>(cp.files||[]).length);cleanupCpData?.();if(!silent)toast?.(`dispatch_data compacté : rawData ${beforeRaw}→${Object.keys(g_rawData||{}).length}, cpData ${beforeCp}→${(g_cpData||[]).length}`);updateStorageHealthInline();}async function compactDispatchDataAndSave(){compactDispatchData();try{markDirty();await autoSave();loadStorageInfo?.();}catch{}}function updateStorageHealthInline(){const el=document.getElementById('storage-health-inline');if(!el)return;const active=getActiveFiles(),raw=Object.keys(g_rawData||{}).length,orphan=Math.max(0,raw-active.size);let cls=orphan?'storage-health-warn':'storage-health-good',label=orphan?'À compacter':'OK';if(orphan>active.size&&orphan>10){cls='storage-health-bad';label='Trop lourd';}el.innerHTML=`<b>État dispatch_data :</b> actifs ${active.size} · rawData ${raw} · orphelins <span class="${cls}">${orphan}</span> · <span class="${cls}">${label}</span>`;}function resetDispatchActiveInline(){if(!confirm('Réinitialiser le Dispatch actif ?\n\nContacts, Fuel, BKD et paramètres sont conservés.'))return;g_master=[];g_rawData={};g_cpData=[];g_kabSelected?.clear();renderMaster();renderKanban();renderCP();updateStats();markDirty();autoSave();toast?.('Dispatch actif réinitialisé.');}function injectStorageToolsInline(){const st=document.getElementById('storage-status');if(!st||document.getElementById('btn-compact-dispatch-data'))return;const b=document.createElement('button');b.id='btn-compact-dispatch-data';b.className='btn btn-orange-out btn-sm';b.style.height='32px';b.textContent='🧽 Compacter dispatch_data';b.onclick=compactDispatchDataAndSave;st.parentElement.insertBefore(b,st);const r=document.createElement('button');r.id='btn-reset-dispatch-active';r.className='btn btn-danger btn-sm';r.style.height='32px';r.textContent='🧹 Reset Dispatch actif';r.onclick=resetDispatchActiveInline;st.parentElement.insertBefore(r,st);const h=document.createElement('div');h.id='storage-health-inline';h.style.cssText='margin-top:10px;font-size:12px;color:var(--text2);line-height:1.6';st.closest('div[style*="flex-direction:column"]')?.appendChild(h);updateStorageHealthInline();}function hookAutoSave(){if(window.__autoSaveUxV2Hook||typeof autoSave!=='function')return;window.__autoSaveUxV2Hook=true;const o=autoSave;autoSave=async function(){try{normalizePersistence();compactDispatchData({silent:true});setSaveState('saving');const r=await o.apply(this,arguments);setSaveState('');return r;}catch(e){setSaveState('error');throw e;}};if(typeof markDirty==='function'){const m=markDirty;markDirty=function(){setSaveState('dirty');return m.apply(this,arguments);};}}
+/* Kanban + actions audit */window._kanbanBulkDragFiles=[];window.kanbanDragStartBulk=function(event,file){window._kanbanBulkDragFiles=(g_kabSelected&&g_kabSelected.has(file))?[...g_kabSelected]:[file];g_dragFile=file;document.querySelectorAll('.k-selected').forEach(el=>el.classList.add('k-bulk-drag'));try{event.dataTransfer.setData('text/plain',window._kanbanBulkDragFiles.join('|'));}catch{}};document.addEventListener('dragend',()=>document.querySelectorAll('.k-bulk-drag').forEach(el=>el.classList.remove('k-bulk-drag')));function moveSelectedToStatusInline(status){const sel=[...(g_kabSelected||new Set())];if(!sel.length)return false;pushUndo('Raccourci statut '+status+' sur '+sel.length+' dossier(s)');sel.forEach(f=>{const r=g_master.find(x=>x.file===f);if(!r)return;r.statut=String(status);stampRecord(r);if(status>=2&&r.cc!=='Cc')r.cc='Cc';});cleanupCpData();g_kabSelected.clear();renderMaster();renderKanban();updateStats();markDirty();toast?.(sel.length+' dossier(s) déplacé(s) vers '+statutLabel(status));return true;}document.addEventListener('keydown',e=>{if(!g_kabSelected||!g_kabSelected.size)return;const tag=(e.target?.tagName||'').toLowerCase();if(['input','textarea','select'].includes(tag))return;let status=null;if(e.key==='8')status=7;else if(e.key==='0')status=8;else if(/^[1-7]$/.test(e.key))status=parseInt(e.key,10);else if(e.key==='9')status=9;if(status!==null){e.preventDefault();moveSelectedToStatusInline(status);}});function modernizeBulkBar(){const bar=document.getElementById('kanban-action-bar');if(bar&&!document.getElementById('kab-shortcuts-help')){const h=document.createElement('div');h.id='kab-shortcuts-help';h.textContent='Raccourcis : 1-7 statut · 8 NTO · 0 terminé · 9 attente · drag sélection groupée';bar.appendChild(h);}}function auditQuickActions(){document.querySelectorAll('#header-actions .etms-btn').forEach(btn=>{const oc=btn.getAttribute('onclick')||'';if(!oc.trim()){btn.disabled=true;btn.title='Action rapide non connectée';btn.style.opacity='.45';}});}function wrapRenders(){if(window.__uxV2RenderWrapped)return;window.__uxV2RenderWrapped=true;if(typeof renderKanban==='function'){const rk=renderKanban;renderKanban=function(){const r=rk.apply(this,arguments);setTimeout(()=>{applyQuickKanbanFilter();updateStorageHealthInline();},0);return r;};}if(typeof renderCP==='function'){const rcp=renderCP;renderCP=function(){const r=rcp.apply(this,arguments);setTimeout(hookCPInputs,0);return r;};}}
+Object.assign(window,{compactDispatchData,compactDispatchDataAndSave,resetDispatchActiveInline,moveSelectedToStatusInline});window.addEventListener('load',()=>setTimeout(()=>{injectDensityButton();applyDensityMode(localStorage.getItem('dispatch_view_density')||'comfort');injectSaveIndicator();injectKanbanTools();modernizeBulkBar();wrapRenders();loadContactsInline().catch(console.warn);loadFuelInline();bindBKDInline();loadBKDInline();injectStorageToolsInline();hookCPInputs();hookAutoSave();auditQuickActions();applyQuickKanbanFilter();updateStorageHealthInline();},300));
+})();
+</script>
+
+<!-- DispatchMaster CONTACTS TSV + WORKFLOW SYNC - intégré sur Interface_FINAL_UX_V2B (1).html -->
+<script id="dispatch-contact-sync-tsv-full">
+(function(){
+'use strict';
+
+const CONTACT_FIELDS = ["societe","nom","tel","email","cp","notes"];
+function clean(v){ return String(v ?? '').trim(); }
+function lc(v){ return clean(v).toLowerCase(); }
+function enc(v){ return encodeURIComponent(clean(v).replace(/\r?\n/g,' ').replace(/\s+/g,' ')); }
+function dec(v){ try { return decodeURIComponent(v || ''); } catch { return v || ''; } }
+function normContact(c){
+  c = c || {};
+  return {
+    societe: clean(c.societe || c.client || c.company || ''),
+    nom: clean(c.nom || c.name || c.contact || ''),
+    tel: clean(c.tel || c.phone || c.telephone || ''),
+    email: clean(c.email || c.mail || ''),
+    cp: clean(c.cp || c.channelPartner || ''),
+    notes: clean(c.notes || c.note || '')
+  };
+}
+function contactsToTSV(list){
+  const rows = ['#DISPATCH_CONTACTS_TSV'];
+  (list || []).map(normContact).forEach(c => rows.push(CONTACT_FIELDS.map(k => enc(c[k])).join('\t')));
+  return rows.join('\n') + '\n';
+}
+function contactsFromText(text){
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+  if (raw[0] === '[' || raw[0] === '{') {
+    const parsed = JSON.parse(raw);
+    return (Array.isArray(parsed) ? parsed : (parsed.contacts || [])).map(normContact);
+  }
+  return raw.split(/\r?\n/)
+    .filter(l => l && !l.startsWith('#'))
+    .map(l => {
+      const p = l.split('\t');
+      return normContact({societe:dec(p[0]), nom:dec(p[1]), tel:dec(p[2]), email:dec(p[3]), cp:dec(p[4]), notes:dec(p[5])});
+    });
+}
+
+async function saveContactsTSV(){
+  if (!Array.isArray(g_contacts)) g_contacts = [];
+  g_contacts = g_contacts.map(normContact);
+  try { if (typeof idbSaveContacts === 'function') await idbSaveContacts(); } catch(e) { console.warn('idbSaveContacts:', e); }
+  const res = await fetch('/api/save-contacts', {
+    method:'POST',
+    headers:{'Content-Type':'text/plain; charset=UTF-8'},
+    body:contactsToTSV(g_contacts)
+  });
+  if (!res.ok) throw new Error('Sauvegarde contacts TSV impossible');
+  return true;
+}
+async function loadContactsTSV(){
+  try {
+    const res = await fetch('/api/load-contacts', {cache:'no-store'});
+    if (!res.ok) return [];
+    const list = contactsFromText(await res.text());
+    if (Array.isArray(list)) g_contacts = list.map(normContact);
+    try { if (typeof idbSaveContacts === 'function') await idbSaveContacts(); } catch(e) {}
+    if (typeof renderContacts === 'function') renderContacts();
+    return list;
+  } catch(e) {
+    console.warn('loadContactsTSV:', e);
+    return [];
+  }
+}
+
+function hasContactInfo(r){ return !!(clean(r?.client) && (clean(r?.contact) || clean(r?.tel) || clean(r?.email))); }
+function upsertClientContactFromRecord(r, source='workflow'){
+  if (!r || !hasContactInfo(r)) return {ok:false, reason:'empty'};
+  if (!Array.isArray(g_contacts)) g_contacts = [];
+  const societe = clean(r.client), nom = clean(r.contact), tel = clean(r.tel), email = clean(r.email), cp = clean(r.cp || r.cc || '');
+  let c = null;
+  if (email) c = g_contacts.find(x => lc(x.email) === lc(email));
+  if (!c && societe && nom) c = g_contacts.find(x => lc(x.societe) === lc(societe) && lc(x.nom) === lc(nom));
+  if (!c && societe && tel) c = g_contacts.find(x => lc(x.societe) === lc(societe) && lc(x.tel) === lc(tel));
+  const tag = source === 'clear' ? 'Workflow avant vidage' : source === 'group' ? 'Groupe' : source === 'kanban' ? 'Kanban' : 'Workflow';
+  if (!c) {
+    c = {societe, nom, tel, email, cp, notes:`Ajouté depuis ${tag}`};
+    g_contacts.push(c);
+  } else {
+    if (societe) c.societe = societe;
+    if (nom) c.nom = nom;
+    if (tel) c.tel = tel;
+    if (email) c.email = email;
+    if (cp) c.cp = cp;
+    const oldNotes = clean(c.notes);
+    if (!oldNotes.includes(tag)) c.notes = oldNotes ? `${oldNotes} | ${tag}` : `Mis à jour depuis ${tag}`;
+  }
+  return {ok:true, contact:c};
+}
+async function persistContactsAfterSync(count){
+  if (!count) return;
+  if (typeof renderContacts === 'function') renderContacts();
+  await saveContactsTSV();
+  if (typeof markDirty === 'function') markDirty();
+}
+async function syncWorkflowContacts(options={}){
+  const includeTerminated = options.includeTerminated !== false;
+  let count = 0;
+  (g_master || []).forEach(r => {
+    if (!includeTerminated && String(r.statut) === '8') return;
+    const res = upsertClientContactFromRecord(r, options.source || 'workflow');
+    if (res.ok) count++;
+  });
+  await persistContactsAfterSync(count);
+  return count;
+}
+
+function injectWorkflowContactsButton(){
+  if (document.getElementById('btn-sync-workflow-contacts')) return;
+  const toolbar = document.querySelector('#tab-contacts .tab-toolbar');
+  if (!toolbar) return;
+  const btn = document.createElement('button');
+  btn.id = 'btn-sync-workflow-contacts';
+  btn.className = 'btn btn-ghost btn-sm';
+  btn.type = 'button';
+  btn.style.cssText = 'opacity:.68;color:var(--teal);font-size:10px;padding:0 7px;';
+  btn.textContent = '👥 Workflow';
+  btn.title = 'Importer / mettre à jour discrètement les contacts du workflow vers Contacts clients';
+  btn.onclick = async () => {
+    const n = await syncWorkflowContacts({source:'workflow', includeTerminated:true});
+    if (typeof toast === 'function') toast(n ? `${n} contact(s) workflow synchronisé(s) dans Contacts clients.` : 'Aucun contact workflow à synchroniser.');
+  };
+  const addBtn = document.getElementById('btn-add-contact');
+  if (addBtn && addBtn.parentElement === toolbar) addBtn.insertAdjacentElement('afterend', btn);
+  else toolbar.prepend(btn);
+}
+
+function hookSaveEditContactSync(){
+  if (window.__contactSyncSaveEditHooked || typeof saveEdit !== 'function') return;
+  window.__contactSyncSaveEditHooked = true;
+  const original = saveEdit;
+  saveEdit = function(){
+    const idxBefore = window.g_editIdx;
+    const result = original.apply(this, arguments);
+    try {
+      const r = (g_master || [])[idxBefore];
+      const res = upsertClientContactFromRecord(r, 'workflow');
+      if (res.ok) persistContactsAfterSync(1).catch(console.warn);
+    } catch(e) { console.warn('contact sync saveEdit:', e); }
+    return result;
+  };
+}
+function hookGroupContactSync(){
+  if (window.__contactSyncGroupHooked || typeof grpSaveFields !== 'function') return;
+  window.__contactSyncGroupHooked = true;
+  const original = grpSaveFields;
+  grpSaveFields = function(){
+    const result = original.apply(this, arguments);
+    try {
+      const r = (g_master || [])[window.g_groupIdx];
+      const res = upsertClientContactFromRecord(r, 'group');
+      if (res.ok) persistContactsAfterSync(1).catch(console.warn);
+    } catch(e) { console.warn('contact sync group:', e); }
+    return result;
+  };
+}
+function hookKanbanContactSync(){
+  if (window.__contactSyncKanbanHooked || typeof kabSaveEdit !== 'function') return;
+  window.__contactSyncKanbanHooked = true;
+  const original = kabSaveEdit;
+  kabSaveEdit = function(){
+    const selectedBefore = typeof kabGetSelected === 'function' ? kabGetSelected().slice() : [];
+    const result = original.apply(this, arguments);
+    let count = 0;
+    try {
+      selectedBefore.forEach(r => { const res = upsertClientContactFromRecord(r, 'kanban'); if (res.ok) count++; });
+      if (count) persistContactsAfterSync(count).catch(console.warn);
+    } catch(e) { console.warn('contact sync kanban:', e); }
+    return result;
+  };
+}
+function hookClearDoneContactSync(){
+  const btn = document.getElementById('btn-clear-done');
+  if (!btn || btn.dataset.contactSyncHooked === '1') return;
+  btn.dataset.contactSyncHooked = '1';
+  btn.addEventListener('click', () => {
+    syncWorkflowContacts({source:'clear', includeTerminated:true})
+      .then(n => { if (n && typeof toast === 'function') toast(`${n} contact(s) sauvegardé(s) avant vidage.`); })
+      .catch(console.warn);
+  }, true);
+}
+function hookContactImport(){
+  const input = document.getElementById('contacts-input');
+  if (input && input.dataset.tsvHooked !== '1') {
+    input.dataset.tsvHooked = '1';
+    input.setAttribute('accept','.json,.tsv,.txt');
+    input.addEventListener('change', ev => {
+      ev.stopImmediatePropagation();
+      const f = ev.target.files && ev.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = async e => {
+        try {
+          const incoming = contactsFromText(e.target.result).map(normContact);
+          let added = 0, updated = 0;
+          incoming.forEach(c => {
+            const res = upsertClientContactFromRecord({client:c.societe, contact:c.nom, tel:c.tel, email:c.email, cp:c.cp, cc:c.cp}, 'import');
+            if (res.ok) {
+              Object.assign(res.contact, c);
+              if ((res.contact.notes || '').includes('Ajouté depuis import')) added++; else updated++;
+            }
+          });
+          if (typeof renderContacts === 'function') renderContacts();
+          await saveContactsTSV();
+          if (typeof toast === 'function') toast(`Contacts importés : ${incoming.length} ligne(s) TSV/JSON.`);
+        } catch(err) { alert('Import contacts impossible : ' + err.message); }
+        ev.target.value = '';
+      };
+      reader.readAsText(f, 'utf-8');
+    }, true);
+  }
+}
+
+function initContactSyncFull(){
+  window.saveContactsTSV = saveContactsTSV;
+  window.loadContactsTSV = loadContactsTSV;
+  window.saveContacts = saveContactsTSV;
+  window.saveContactsChunked = saveContactsTSV;
+  hookSaveEditContactSync();
+  hookGroupContactSync();
+  hookKanbanContactSync();
+  hookClearDoneContactSync();
+  hookContactImport();
+  injectWorkflowContactsButton();
+}
+window.upsertClientContactFromRecord = upsertClientContactFromRecord;
+window.syncWorkflowContacts = syncWorkflowContacts;
+document.addEventListener('DOMContentLoaded', initContactSyncFull);
+window.addEventListener('load', () => setTimeout(() => { initContactSyncFull(); loadContactsTSV(); }, 450));
+})();
+</script>
+
 </body>
 </html>

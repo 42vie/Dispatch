@@ -102,7 +102,8 @@ Global $g_iAuditCheckTimer = 0
 Global Const $AUDIT_CHECK_INTERVAL = 60000 ; 60 secondes entre chaque vérification silencieuse
 Global $g_sStatusFile   = @ScriptDir & "\dispatch_status.json"
 Global $g_sDataFile     = @ScriptDir & "\dispatch_data.json"
-Global $g_sContactsFile = @ScriptDir & "\dispatch_contacts.json"
+Global $g_sContactsFile       = @ScriptDir & "\dispatch_contacts.tsv"
+Global $g_sContactsLegacyFile = @ScriptDir & "\dispatch_contacts.json"
 Global $g_sHtmlFile = @ScriptDir & "\interface.html"
 If Not FileExists($g_sHtmlFile) Then $g_sHtmlFile = @ScriptDir & "\Interface.html"
 If Not FileExists($g_sHtmlFile) Then $g_sHtmlFile = @ScriptDir & "\Interface_v2.html"
@@ -266,66 +267,35 @@ Func _HandleClient($iSocket)
         EndIf
         _SendHttpResponse($iSocket, 200, "application/json", $sJsonD)
 
-    ; ── Fichiers séparés : CONTACTS (multi-chunks) ──
+    ; ── CONTACTS TSV : sauvegarde stable depuis Interface.html ──
     ElseIf $sURL = "/api/save-contacts" Then
-        _AuditLog("SAVE", "contacts — " & StringLen($sBody) & " bytes")
-        ; Body = {chunk:0, total:1, data:[...]}
-        ; Si chunk=0 et total=1 → un seul fichier dispatch_contacts.json
-        ; Si multi-chunks → dispatch_contacts_0.json, dispatch_contacts_1.json, etc.
-        Local $sChunk = _GetJsonValue($sBody, "chunk")
-        Local $sTotal = _GetJsonValue($sBody, "total")
-        Local $sData  = _GetJsonArrayValue($sBody, "data")
-        If $sTotal = "1" Or $sTotal = "" Then
-            Local $hFileC = FileOpen($g_sContactsFile, 2 + 256)
-            FileWrite($hFileC, $sData)
-            FileClose($hFileC)
+        _BackupRotate($g_sContactsFile, 10)
+        Local $hFileC = FileOpen($g_sContactsFile, 2 + 256)
+        If $hFileC = -1 Then
+            _SendHttpResponse($iSocket, 500, "application/json", '{"status":"error","reason":"cannot_write_contacts_tsv"}')
         Else
-            Local $sChunkFile = @ScriptDir & "\dispatch_contacts_" & $sChunk & ".json"
-            Local $hFileC2 = FileOpen($sChunkFile, 2 + 256)
-            FileWrite($hFileC2, $sData)
-            FileClose($hFileC2)
-            ; Sauvegarder le nombre total de chunks
-            Local $hMeta = FileOpen(@ScriptDir & "\dispatch_contacts_meta.json", 2 + 256)
-            FileWrite($hMeta, '{"total":' & $sTotal & '}')
-            FileClose($hMeta)
+            FileWrite($hFileC, $sBody)
+            FileClose($hFileC)
+            _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok","format":"tsv"}')
         EndIf
-        _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
 
     ElseIf $sURL = "/api/load-contacts" Then
-        Local $sJsonC = "[]"
-        ; Vérifier si multi-chunks
-        Local $sMetaFile = @ScriptDir & "\dispatch_contacts_meta.json"
-        If FileExists($sMetaFile) Then
-            Local $hMeta2 = FileOpen($sMetaFile, 256)
-            Local $sMeta = FileRead($hMeta2)
-            FileClose($hMeta2)
-            Local $iTotalC = Number(_GetJsonValue($sMeta, "total"))
-            If $iTotalC > 1 Then
-                ; Charger et fusionner tous les chunks
-                Local $sAll = ""
-                For $i = 0 To $iTotalC - 1
-                    Local $sChkFile = @ScriptDir & "\dispatch_contacts_" & $i & ".json"
-                    If FileExists($sChkFile) Then
-                        Local $hChk = FileOpen($sChkFile, 256)
-                        Local $sPart = FileRead($hChk)
-                        FileClose($hChk)
-                        ; Enlever les crochets pour fusionner
-                        $sPart = StringRegExpReplace($sPart, "^\s*\[", "")
-                        $sPart = StringRegExpReplace($sPart, "\]\s*$", "")
-                        If $sAll <> "" And $sPart <> "" Then $sAll &= ","
-                        $sAll &= $sPart
-                    EndIf
-                Next
-                $sJsonC = "[" & $sAll & "]"
-            EndIf
-        ElseIf FileExists($g_sContactsFile) Then
+        Local $sContacts = ""
+        If FileExists($g_sContactsFile) Then
             Local $hReadC = FileOpen($g_sContactsFile, 256)
             If $hReadC <> -1 Then
-                $sJsonC = FileRead($hReadC)
+                $sContacts = FileRead($hReadC)
                 FileClose($hReadC)
             EndIf
+        ElseIf FileExists($g_sContactsLegacyFile) Then
+            Local $hOldC = FileOpen($g_sContactsLegacyFile, 256)
+            If $hOldC <> -1 Then
+                $sContacts = FileRead($hOldC)
+                FileClose($hOldC)
+            EndIf
         EndIf
-        _SendHttpResponse($iSocket, 200, "application/json", $sJsonC)
+        If $sContacts = "" Then $sContacts = "#DISPATCH_CONTACTS_TSV" & @LF
+        _SendHttpResponse($iSocket, 200, "text/plain", $sContacts)
 
     ElseIf StringLeft($sURL, 13) = "/api/net-save" Then
         ; /api/net-save?path=F:\...\state.json — le body EST le JSON à écrire
@@ -370,6 +340,42 @@ Func _HandleClient($iSocket)
             $sFileList &= "]"
         EndIf
         _SendHttpResponse($iSocket, 200, "application/json", $sFileList)
+
+    ; ── BKD CONFIG : sauvegarde globale BKD depuis Interface.html ──
+    ElseIf $sURL = "/api/save-bkd-config" Then
+        Local $sIniBKD = @ScriptDir & "\dispatch_config.ini"
+        Local $sModeBKD = _GetJsonValue($sBody, "mode")
+        Local $sCutoffBKD = _GetJsonValue($sBody, "cutoff")
+        Local $sCustomBKD = _GetJsonValue($sBody, "customDate")
+
+        If $sModeBKD = "" Then $sModeBKD = "auto"
+        If $sCutoffBKD = "" Then $sCutoffBKD = "14:30"
+
+        Local $bOkBKD = True
+        If IniWrite($sIniBKD, "BKD", "Mode", $sModeBKD) = 0 Then $bOkBKD = False
+        If IniWrite($sIniBKD, "BKD", "Cutoff", $sCutoffBKD) = 0 Then $bOkBKD = False
+        If IniWrite($sIniBKD, "BKD", "CustomDate", $sCustomBKD) = 0 Then $bOkBKD = False
+
+        If $bOkBKD Then
+            _AuditLog("SAVE", "BKD config - mode=" & $sModeBKD & " cutoff=" & $sCutoffBKD & " custom=" & $sCustomBKD)
+            _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
+        Else
+            _AuditLog("ERROR", "BKD config - impossible d'ecrire dispatch_config.ini")
+            _SendHttpResponse($iSocket, 500, "application/json", '{"status":"error","reason":"cannot_write_bkd_config"}')
+        EndIf
+
+    ; ── BKD CONFIG : chargement global BKD vers Interface.html ──
+    ElseIf $sURL = "/api/load-bkd-config" Then
+        Local $sIniBKD2 = @ScriptDir & "\dispatch_config.ini"
+        Local $sModeBKD2 = IniRead($sIniBKD2, "BKD", "Mode", "auto")
+        Local $sCutoffBKD2 = IniRead($sIniBKD2, "BKD", "Cutoff", "14:30")
+        Local $sCustomBKD2 = IniRead($sIniBKD2, "BKD", "CustomDate", "")
+
+        Local $sRespBKD = '{"mode":"' & _JsonEscape($sModeBKD2) & _
+                          '","cutoff":"' & _JsonEscape($sCutoffBKD2) & _
+                          '","customDate":"' & _JsonEscape($sCustomBKD2) & '"}'
+
+        _SendHttpResponse($iSocket, 200, "application/json", $sRespBKD)
 
     ElseIf $sURL = "/api/action" Then
         Local $sAction = _GetJsonValue($sBody, "action")
@@ -623,6 +629,15 @@ EndFunc
 ; ==============================================================================
 ; UTILITAIRES
 ; ==============================================================================
+Func _JsonEscape($s)
+    $s = StringReplace($s, "\", "\\")
+    $s = StringReplace($s, '"', '\"')
+    $s = StringReplace($s, @CRLF, "\n")
+    $s = StringReplace($s, @CR, "\n")
+    $s = StringReplace($s, @LF, "\n")
+    Return $s
+EndFunc
+
 Func _GetJsonValue($sJson, $sKey)
     ; 1. Essayer valeur string : "key":"value"
     Local $aMatch = StringRegExp($sJson, '(?i)"' & $sKey & '"\s*:\s*"([^"]*)"', 3)
@@ -2965,6 +2980,33 @@ Func _CleanContactsFiles()
     Else
         TrayTip("Dispatch — Contacts", "Aucun nettoyage nécessaire.", 3, 1)
     EndIf
+EndFunc
+
+
+; ==============================================================================
+; CONTACTS TSV - Archivage des anciens JSON/chunks contacts
+; ==============================================================================
+Func _ArchiveOldContactJsonFiles()
+    Local $sBackDir = @ScriptDir & "\backups\contacts_json_old"
+    If Not FileExists(@ScriptDir & "\backups") Then DirCreate(@ScriptDir & "\backups")
+    If Not FileExists($sBackDir) Then DirCreate($sBackDir)
+    Local $iMoved = 0
+    Local $aOld[3] = [@ScriptDir & "\dispatch_contacts.json", @ScriptDir & "\dispatch_contacts_meta.json", @ScriptDir & "\historique_contacts.json"]
+    For $i = 0 To UBound($aOld) - 1
+        If FileExists($aOld[$i]) Then
+            Local $sName = StringRegExpReplace($aOld[$i], ".*\\", "")
+            FileMove($aOld[$i], $sBackDir & "\" & @YEAR & @MON & @MDAY & "_" & @HOUR & @MIN & @SEC & "_" & $sName, 9)
+            $iMoved += 1
+        EndIf
+    Next
+    For $c = 0 To 999
+        Local $sChk = @ScriptDir & "\dispatch_contacts_" & $c & ".json"
+        If FileExists($sChk) Then
+            FileMove($sChk, $sBackDir & "\" & @YEAR & @MON & @MDAY & "_" & @HOUR & @MIN & @SEC & "_dispatch_contacts_" & $c & ".json", 9)
+            $iMoved += 1
+        EndIf
+    Next
+    TrayTip("Dispatch - Contacts", $iMoved & " ancien(s) fichier(s) JSON contact archive(s).", 5, 1)
 EndFunc
 
 ; ==============================================================================

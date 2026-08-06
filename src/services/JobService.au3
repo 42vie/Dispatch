@@ -48,6 +48,7 @@ EndFunc
 ; ==============================================================================
 
 Func _Tracker_Start($sTitle, $aList)
+    Global $g_aTrackIDs
     $g_iTrackCount = UBound($aList)
     If $g_iTrackCount = 0 Then Return False
     ReDim $g_aTrackIDs[$g_iTrackCount]

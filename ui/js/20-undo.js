@@ -1,1 +1,0 @@
-// TODO: extraire l’annulation.

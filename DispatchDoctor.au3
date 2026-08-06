@@ -1733,6 +1733,19 @@ Func _DD_IsPortOpen($sHost, $iPort)
     Return True
 EndFunc   ;==>_DD_IsPortOpen
 
+; Cherche un port TCP local libre en partant de $iStart, sur $iCount
+; ports consecutifs. Retourne 0 si aucun n'est libre. Utilise pour donner
+; a l'instance de test dediee un port different de celui deja pris par
+; une instance de Dispatch en cours d'utilisation normale.
+Func _DD_FindFreePort($iStart, $iCount)
+    Local $i = 0
+    For $i = 0 To $iCount - 1
+        Local $iCandidate = $iStart + $i
+        If Not _DD_IsPortOpen("127.0.0.1", $iCandidate) Then Return $iCandidate
+    Next
+    Return 0
+EndFunc   ;==>_DD_FindFreePort
+
 ; Envoie une requete HTTP POST minimale et retourne le corps de la
 ; reponse (ou "" en cas d'echec, avec le detail dans $g_sLastHttpError).
 ; Implementation volontairement simple (TCP brut, pas de gestion du
@@ -1853,12 +1866,25 @@ Func _DD_RunActionTest($sActionLabel, $sParam1, $sParam2)
     _DD_GuiLog("Attention : " & $sWarning)
 
     _DD_GuiSetStatus("Test '" & $sActionName & "' : verification du port " & $DD_DISPATCH_PORT & "...")
+    Local $iPort = $DD_DISPATCH_PORT
+    EnvSet("DISPATCH_TEST_PORT", "")
     If _DD_IsPortOpen("127.0.0.1", $DD_DISPATCH_PORT) Then
-        _DD_GuiLog("[ERROR] Le port " & $DD_DISPATCH_PORT & " est deja utilise (une instance de Dispatch tourne peut-etre deja). " & _
-            "Ferme-la avant de lancer un test : je ne peux capturer les erreurs que d'une instance que je lance moi-meme avec /ErrorStdOut.")
-        _DD_GuiSetStatus("Test annule : port deja occupe.")
-        $g_bActionTestRunning = False
-        Return
+        ; Le port par defaut est deja pris (l'instance normale de
+        ; l'utilisateur tourne probablement) : on cherche un port libre
+        ; pour l'instance dediee au test au lieu de refuser. MainDispatch.au3
+        ; lit DISPATCH_TEST_PORT au demarrage (voir DispatchInitialize) --
+        ; sans effet sur un lancement normal ou cette variable n'est pas
+        ; definie.
+        _DD_GuiLog("[*] Le port " & $DD_DISPATCH_PORT & " est deja utilise (instance de Dispatch deja ouverte). Recherche d'un port libre pour l'instance de test...")
+        $iPort = _DD_FindFreePort($DD_DISPATCH_PORT + 1, 20)
+        If $iPort = 0 Then
+            _DD_GuiLog("[ERROR] Aucun port libre trouve entre " & ($DD_DISPATCH_PORT + 1) & " et " & ($DD_DISPATCH_PORT + 20) & ". Test annule.")
+            _DD_GuiSetStatus("Test annule : aucun port libre trouve.")
+            $g_bActionTestRunning = False
+            Return
+        EndIf
+        EnvSet("DISPATCH_TEST_PORT", $iPort)
+        _DD_GuiLog("[*] Port " & $iPort & " retenu pour l'instance de test dediee.")
     EndIf
 
     If $g_sAutoItPath = "" Then _DD_DetectAutoIt()
@@ -1892,7 +1918,7 @@ Func _DD_RunActionTest($sActionLabel, $sParam1, $sParam2)
         $sOutput &= StdoutRead($iPid)
         $sOutput &= StderrRead($iPid)
         If Not ProcessExists($iPid) Then ExitLoop
-        If _DD_IsPortOpen("127.0.0.1", $DD_DISPATCH_PORT) Then
+        If _DD_IsPortOpen("127.0.0.1", $iPort) Then
             $bPortReady = True
             ExitLoop
         EndIf
@@ -1904,7 +1930,7 @@ Func _DD_RunActionTest($sActionLabel, $sParam1, $sParam2)
         $sOutput &= StdoutRead($iPid)
         $sOutput &= StderrRead($iPid)
         $g_iActionTestPid = 0
-        _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, "CRASH_DEMARRAGE", $sOutput, "")
+        _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, "CRASH_DEMARRAGE", $sOutput, "", $iPort)
         $g_bActionTestRunning = False
         Return
     EndIf
@@ -1912,7 +1938,7 @@ Func _DD_RunActionTest($sActionLabel, $sParam1, $sParam2)
     If Not $bPortReady Then
         ProcessClose($iPid)
         $g_iActionTestPid = 0
-        _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, "TIMEOUT_DEMARRAGE", $sOutput, "")
+        _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, "TIMEOUT_DEMARRAGE", $sOutput, "", $iPort)
         $g_bActionTestRunning = False
         Return
     EndIf
@@ -1925,11 +1951,11 @@ Func _DD_RunActionTest($sActionLabel, $sParam1, $sParam2)
     If $sField2 <> "" Then $sPayload &= ',"' & $sField2 & '":"' & _DD_JsonEscape($sParam2) & '"'
     $sPayload &= '}'
 
-    _DD_HttpPost("127.0.0.1", $DD_DISPATCH_PORT, "/api/action", $sPayload)
+    _DD_HttpPost("127.0.0.1", $iPort, "/api/action", $sPayload)
     If $g_sLastHttpError <> "" Then
         ProcessClose($iPid)
         $g_iActionTestPid = 0
-        _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, "ECHEC_HTTP", $sOutput, "")
+        _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, "ECHEC_HTTP", $sOutput, "", $iPort)
         $g_bActionTestRunning = False
         Return
     EndIf
@@ -1952,7 +1978,7 @@ Func _DD_RunActionTest($sActionLabel, $sParam1, $sParam2)
         ; aujourd'hui ; pour les autres, on se contente de surveiller un
         ; eventuel crash pendant la duree de surveillance.
         If $sActionName = "CMR_GENERATE" Then
-            Local $sStatusResp = _DD_HttpPost("127.0.0.1", $DD_DISPATCH_PORT, "/api/action", '{"action":"CMR_STATUS"}')
+            Local $sStatusResp = _DD_HttpPost("127.0.0.1", $iPort, "/api/action", '{"action":"CMR_STATUS"}')
             If $g_sLastHttpError = "" And $sStatusResp <> "" Then
                 If _DD_JsonGetValue($sStatusResp, "running") = "false" Then
                     $sOutcome = "OK"
@@ -1974,7 +2000,8 @@ Func _DD_RunActionTest($sActionLabel, $sParam1, $sParam2)
     If ProcessExists($iPid) Then ProcessClose($iPid)
     $g_iActionTestPid = 0
 
-    _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, $sOutcome, $sOutput, $sFinalStatusJson)
+    _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, $sOutcome, $sOutput, $sFinalStatusJson, $iPort)
+    EnvSet("DISPATCH_TEST_PORT", "")
     $g_bActionTestRunning = False
 EndFunc   ;==>_DD_RunActionTest
 
@@ -1983,7 +2010,7 @@ EndFunc   ;==>_DD_RunActionTest
 ; puis recoupe avec les diagnostics DEJA connus (analyse statique faite
 ; plus tot) pour la meme fonction -- exactement ce qui permet de dire
 ; "cette erreur est probablement liee a X, deja repere avant meme le test".
-Func _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, $sOutcome, $sOutput, $sFinalStatusJson)
+Func _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, $sOutcome, $sOutput, $sFinalStatusJson, $iPort)
     Local $iDiagBefore = $g_iDiagCount
     Local $sCrashDetail = ""
     Local $sRelated = ""
@@ -2042,7 +2069,7 @@ Func _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, 
             _DD_GuiLog("[OK] " & $sSummary)
 
         Case "TIMEOUT_DEMARRAGE"
-            $sSummary = "Le serveur Dispatch n'a jamais ouvert le port " & $DD_DISPATCH_PORT & " (demarrage anormalement long ou bloque)."
+            $sSummary = "Le serveur Dispatch n'a jamais ouvert le port " & $iPort & " (demarrage anormalement long ou bloque)."
             _DD_GuiSetStatus("Test '" & $sActionName & "' : demarrage bloque.")
             _DD_GuiLog("[ERROR] " & $sSummary)
 
@@ -2055,10 +2082,10 @@ Func _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, 
             $sSummary = "Resultat : " & $sOutcome
     EndSwitch
 
-    _DD_WriteActionTestReport($sActionName, $sField1, $sParam1, $sField2, $sParam2, $sOutcome, $sSummary, $sOutput)
+    _DD_WriteActionTestReport($sActionName, $sField1, $sParam1, $sField2, $sParam2, $sOutcome, $sSummary, $sOutput, $iPort)
 EndFunc   ;==>_DD_FinishActionTest
 
-Func _DD_WriteActionTestReport($sActionName, $sField1, $sParam1, $sField2, $sParam2, $sOutcome, $sSummary, $sRawOutput)
+Func _DD_WriteActionTestReport($sActionName, $sField1, $sParam1, $sField2, $sParam2, $sOutcome, $sSummary, $sRawOutput, $iPort)
     Local $sReportsDir = @ScriptDir & "\reports"
     If Not FileExists($sReportsDir) Then DirCreate($sReportsDir)
 
@@ -2075,6 +2102,7 @@ Func _DD_WriteActionTestReport($sActionName, $sField1, $sParam1, $sField2, $sPar
     FileWriteLine($hFile, "Action     : " & $sActionName)
     FileWriteLine($hFile, $sField1 & " : " & $sParam1)
     If $sField2 <> "" Then FileWriteLine($hFile, $sField2 & " : " & $sParam2)
+    FileWriteLine($hFile, "Port utilise : " & $iPort)
     FileWriteLine($hFile, "Resultat   : " & $sOutcome)
     FileWriteLine($hFile, "")
     FileWriteLine($hFile, "--- Resume ---")

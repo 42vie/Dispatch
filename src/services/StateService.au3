@@ -899,6 +899,7 @@ Func _RefreshResultsList()
 EndFunc
 
 Func _SelectedResultIndex()
+    If $idResults = 0 Then Return -1
     Local $aSel = _GUICtrlListView_GetSelectedIndices($idResults, True)
     If IsArray($aSel) And $aSel[0] > 0 Then
         Local $idx = Number($aSel[1])
@@ -910,6 +911,7 @@ EndFunc
 
 Func _CheckedResultIndexes()
     Local $aIdx[0]
+    If $idResults = 0 Then Return $aIdx
     For $i = 0 To UBound($g_aBL) - 1
         If _GUICtrlListView_GetItemChecked($idResults, $i) Then
             ReDim $aIdx[UBound($aIdx) + 1]

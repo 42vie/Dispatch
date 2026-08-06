@@ -105,6 +105,11 @@ EndFunc
 
 Func DispatchInitialize()
     $giPort = 9500
+    ; Permet a un outil de test (ex. DispatchDoctor) de lancer une
+    ; instance dediee sur un port different quand 9500 est deja pris par
+    ; l'instance normale. Sans effet en usage courant (variable absente).
+    Local $sTestPort = EnvGet("DISPATCH_TEST_PORT")
+    If $sTestPort <> "" And StringIsDigit($sTestPort) Then $giPort = Number($sTestPort)
     $gsSaveFile = @ScriptDir & "\dispatch.json"
     $gsDataFile = @ScriptDir & "\data.json"
     $gsStatusFile = @ScriptDir & "\status.json"

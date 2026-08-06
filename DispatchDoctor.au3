@@ -1068,7 +1068,8 @@ Func _DD_CheckReDimSafety($iFuncRow)
                     "ReDim sur '$" & $sVar & "' est la toute premiere reference a cette variable dans '" & $sName & _
                     "'. Sous AutoIt, ReDim ne se lie pas automatiquement a une variable existante dans ce cas et peut lever 'Variable used without being declared' au runtime des que cette fonction est appelee -- meme si '$" & _
                     $sVar & "' est bien declaree ailleurs.", _
-                    "Ajouter 'Global $" & $sVar & "' (ou 'Local $" & $sVar & "' si elle doit rester locale) au tout debut de '" & $sName & "', avant ce ReDim.", "high")
+                    "Ajouter une lecture de la variable avant ce ReDim, ex. 'Local $n = UBound($" & $sVar & _
+                    ")' (redeclarer juste 'Global $" & $sVar & "' sans lecture ne suffit PAS a la relier au tableau existant -- confirme par un cas reel sur _QueueClearRows).", "high")
                 $oFlagged.Add($sKey, True)
             EndIf
         EndIf

@@ -143,6 +143,19 @@ Global $oDD_Ancestors = ObjCreate("Scripting.Dictionary")
 Global $oDD_GlobalVars = ObjCreate("Scripting.Dictionary")
 Global $oDD_AllProjectFiles = ObjCreate("Scripting.Dictionary")
 
+; Etat de l'interface graphique (fenetre de progression). $g_bGuiActive
+; conditionne tous les appels _DD_Gui*, qui sont sans effet tant qu'elle
+; est a False (permet de garder le mode "selftest" 100% console).
+Global $g_bGuiActive = False
+Global $g_hGui = 0
+Global $g_idLblStatus = 0
+Global $g_idLblStats = 0
+Global $g_idEditLog = 0
+Global $g_idBtnClose = 0
+Global $g_idBtnOpenHtml = 0
+Global $g_sGuiLogBuffer = ""
+Global $g_sHtmlReportPath = ""
+
 ; Table de classification par domaine : {sous-chaine (chemin ou nom, en
 ; minuscules), domaine}. Premiere ligne qui correspond gagne. Ajouter un
 ; nouveau domaine plus tard = ajouter une ligne ici, rien d'autre.
@@ -185,44 +198,93 @@ Func _DD_Main()
         Exit 0
     EndIf
 
+    ; Fenetre de progression visible pour tous les modes sauf "selftest"
+    ; (qui doit rester rapide, automatisable et 100% console).
+    _DD_GuiInit()
+    _DD_GuiLog("Racine projet : " & $g_sProjectRoot)
+    _DD_GuiLog("Mode          : " & $g_sMode)
+    If $g_sDomainFilter <> "" Then _DD_GuiLog("Domaine       : " & $g_sDomainFilter)
+
     If Not _DD_ResolveTargetScript() Then
         ConsoleWrite("[ERROR] Script principal introuvable : " & $g_sTargetScript & @CRLF)
+        _DD_GuiSetStatus("ERREUR : script principal introuvable.")
+        _DD_GuiLog("[ERROR] Script principal introuvable : " & $g_sTargetScript)
+        _DD_GuiWaitClose()
         Exit 2
     EndIf
     ConsoleWrite("Script cible  : " & $g_sTargetScript & @CRLF & @CRLF)
+    _DD_GuiLog("Script cible  : " & $g_sTargetScript)
 
     Switch $g_sMode
         Case "list"
+            _DD_GuiSetStatus("Analyse des includes...")
             _DD_BuildIncludeGraph($g_sTargetScript)
+            _DD_GuiRefreshStats()
+            _DD_GuiSetStatus("Indexation des fonctions...")
             _DD_IndexFunctions()
+            _DD_GuiRefreshStats()
             _DD_ModeList()
 
         Case "compile"
+            _DD_GuiSetStatus("Detection d'AutoIt3.exe...")
             _DD_DetectAutoIt()
+            _DD_GuiSetStatus("Compilation (AutoIt3.exe /ErrorStdOut)...")
             _DD_RunCompilerAndAnalyze()
+            _DD_GuiRefreshStats()
+            _DD_GuiSetStatus("Generation des rapports...")
             _DD_GenerateReports()
 
         Case "analyze"
+            _DD_GuiSetStatus("Analyse des includes...")
             _DD_BuildIncludeGraph($g_sTargetScript)
+            _DD_GuiRefreshStats()
+            _DD_GuiSetStatus("Recherche des fichiers orphelins...")
             _DD_ScanOrphanFiles()
+            _DD_GuiRefreshStats()
+            _DD_GuiSetStatus("Indexation des fonctions...")
             _DD_IndexFunctions()
+            _DD_GuiRefreshStats()
+            _DD_GuiSetStatus("Indexation des variables...")
             _DD_IndexGlobalVariables()
+            _DD_GuiSetStatus("Analyse heuristique des variables...")
             _DD_AnalyzeAllVariables()
+            _DD_GuiRefreshStats()
+            _DD_GuiSetStatus("Generation des rapports...")
             _DD_GenerateReports()
 
         Case Else ; "full"
+            _DD_GuiSetStatus("Analyse des includes...")
             _DD_BuildIncludeGraph($g_sTargetScript)
+            _DD_GuiRefreshStats()
+            _DD_GuiSetStatus("Recherche des fichiers orphelins...")
             _DD_ScanOrphanFiles()
+            _DD_GuiRefreshStats()
+            _DD_GuiSetStatus("Indexation des fonctions...")
             _DD_IndexFunctions()
+            _DD_GuiRefreshStats()
+            _DD_GuiSetStatus("Indexation des variables...")
             _DD_IndexGlobalVariables()
+            _DD_GuiSetStatus("Analyse heuristique des variables...")
             _DD_AnalyzeAllVariables()
+            _DD_GuiRefreshStats()
+            _DD_GuiSetStatus("Detection d'AutoIt3.exe...")
             _DD_DetectAutoIt()
+            _DD_GuiSetStatus("Compilation (AutoIt3.exe /ErrorStdOut)...")
             _DD_RunCompilerAndAnalyze()
+            _DD_GuiRefreshStats()
+            _DD_GuiSetStatus("Generation des rapports...")
             _DD_GenerateReports()
     EndSwitch
 
     ConsoleWrite(@CRLF & "Termine. Erreurs=" & $g_iCountError & " Avertissements=" & $g_iCountWarning & _
         " Infos=" & $g_iCountInfo & @CRLF)
+    _DD_GuiLog(@CRLF & "Termine. Erreurs=" & $g_iCountError & " Avertissements=" & $g_iCountWarning & " Infos=" & $g_iCountInfo)
+    _DD_GuiRefreshStats()
+
+    ; Bloque ici tant que la fenetre est ouverte (l'utilisateur peut lire
+    ; le journal, ouvrir le rapport HTML, puis fermer). Sans effet si la
+    ; GUI n'a pas pu s'initialiser.
+    _DD_GuiWaitClose()
 
     If $g_iCountError > 0 Then
         Exit 1
@@ -528,8 +590,11 @@ Func _DD_ScanOrphanFiles()
     Local $aKeys = $oDD_AllProjectFiles.Keys()
     Local $iOrphanCount = 0
     Local $i = 0
+    Local $sSelfKey = StringLower(@ScriptFullPath)
+
     For $i = 0 To UBound($aKeys) - 1
         Local $sKey = $aKeys[$i]
+        If $sKey = $sSelfKey Then ContinueLoop ; DispatchDoctor.au3 lui-meme n'est jamais cense etre inclus
         If Not $oDD_VisitedFiles.Exists($sKey) Then
             Local $sPath = $oDD_AllProjectFiles.Item($sKey)
             Local $sDomain = _DD_GuessDomainFromPath($sPath)
@@ -840,7 +905,7 @@ Func _DD_ExtractDeclaredNames($sLine)
             Next
         EndIf
     Else
-        Local $aBare = StringRegExp($sTrim, "(?i)^\$(\w+)\s*(?:\[[^\]]*\])?\s*(?:\+=|-=|\*=|/=|&=|=(?!=))")
+        Local $aBare = StringRegExp($sTrim, "(?i)^\$(\w+)\s*(?:\[[^\]]*\])?\s*(?:\+=|-=|\*=|/=|&=|=(?!=))", 1)
         If Not @error Then
             If $iCount >= UBound($aNames) Then ReDim $aNames[UBound($aNames) * 2]
             $aNames[$iCount] = $aBare[0]
@@ -1138,8 +1203,10 @@ Func _DD_GenerateReports()
     _DD_WriteTextReport($sReportsDir & "\DispatchDoctor-report.txt")
     _DD_WriteJsonReport($sReportsDir & "\DispatchDoctor-report.json")
     _DD_WriteHtmlReport($sReportsDir & "\DispatchDoctor-report.html")
+    $g_sHtmlReportPath = $sReportsDir & "\DispatchDoctor-report.html"
 
     ConsoleWrite("[*] Rapports generes dans " & $sReportsDir & @CRLF)
+    _DD_GuiLog("[*] Rapports generes dans " & $sReportsDir)
 EndFunc   ;==>_DD_GenerateReports
 
 Func _DD_DiagnosticPassesFilter($iRow)
@@ -1405,6 +1472,122 @@ EndFunc   ;==>_DD_WriteHtmlReport
 #endregion
 
 ; ============================================================================
+#region Interface graphique (fenetre de progression)
+; ============================================================================
+
+; Fenetre de progression optionnelle, dans le meme style visuel que
+; MainDispatch.au3 (fond sombre, Segoe UI). Toutes les fonctions _DD_Gui*
+; sont sans effet tant que $g_bGuiActive est a False, ce qui permet au
+; mode "selftest" de rester 100% console (rapide, non interactif). On
+; evite deliberement toute dependance a GUIConstantsEx.au3 : le code de
+; fermeture de fenetre -3 et les styles par defaut de GUICtrlCreateEdit
+; suffisent, comme le fait deja MainDispatch.au3 (If $iMsg = -3 Then Exit).
+Func _DD_GuiInit()
+    $g_hGui = GUICreate($DD_TOOLNAME & " v" & $DD_VERSION & "  -  " & $g_sMode, 640, 460)
+    GUISetBkColor(0x1E1E1E, $g_hGui)
+    GUISetFont(10, 400, 0, "Segoe UI", $g_hGui)
+
+    Local $idTitle = GUICtrlCreateLabel($DD_TOOLNAME & " - Diagnostic Dispatch", 20, 15, 600, 24)
+    GUICtrlSetFont($idTitle, 13, 700, 0, "Segoe UI")
+    GUICtrlSetColor($idTitle, 0x66CCFF)
+    GUICtrlSetBkColor($idTitle, 0x1E1E1E)
+
+    $g_idLblStatus = GUICtrlCreateLabel("Initialisation...", 20, 48, 600, 20)
+    GUICtrlSetColor($g_idLblStatus, 0x00FF88)
+    GUICtrlSetBkColor($g_idLblStatus, 0x1E1E1E)
+
+    $g_idLblStats = GUICtrlCreateLabel("", 20, 72, 600, 20)
+    GUICtrlSetColor($g_idLblStats, 0xCCCCCC)
+    GUICtrlSetBkColor($g_idLblStats, 0x1E1E1E)
+
+    ; Styles par defaut de GUICtrlCreateEdit (multiline + ascenseur vertical
+    ; automatique) : suffisants pour un journal en lecture visuelle, pas
+    ; besoin de deviner des constantes de style non verifiees ici.
+    $g_idEditLog = GUICtrlCreateEdit("", 20, 100, 600, 300)
+    GUICtrlSetFont($g_idEditLog, 9, 400, 0, "Consolas")
+    GUICtrlSetColor($g_idEditLog, 0xDDDDDD)
+    GUICtrlSetBkColor($g_idEditLog, 0x111111)
+
+    $g_idBtnClose = GUICtrlCreateButton("Fermer", 480, 415, 140, 28)
+
+    GUISetState(@SW_SHOW, $g_hGui)
+    $g_bGuiActive = True
+    _DD_GuiPump()
+EndFunc   ;==>_DD_GuiInit
+
+Func _DD_GuiSetStatus($sText)
+    If Not $g_bGuiActive Then Return
+    GUICtrlSetData($g_idLblStatus, $sText)
+    ConsoleWrite("[*] " & $sText & @CRLF)
+    _DD_GuiLog("[*] " & $sText)
+EndFunc   ;==>_DD_GuiSetStatus
+
+Func _DD_GuiRefreshStats()
+    If Not $g_bGuiActive Then Return
+    Local $sStats = "Fichiers: " & $g_iFileCount & "   Fonctions: " & $g_iFuncCount & "   Variables: " & $g_iVariableCount & _
+        "   Erreurs: " & $g_iCountError & "   Avertissements: " & $g_iCountWarning & "   Infos: " & $g_iCountInfo
+    GUICtrlSetData($g_idLblStats, $sStats)
+    _DD_GuiPump()
+EndFunc   ;==>_DD_GuiRefreshStats
+
+; Ajoute une ligne au journal visible dans la fenetre. Le tampon est borne
+; pour rester fluide meme si le projet grandit beaucoup (des centaines de
+; diagnostics) : on ne garde que les ~50 Ko les plus recents.
+Func _DD_GuiLog($sLine)
+    If Not $g_bGuiActive Then Return
+    $g_sGuiLogBuffer &= $sLine & @CRLF
+    If StringLen($g_sGuiLogBuffer) > 60000 Then
+        $g_sGuiLogBuffer = "[... journal tronque ...]" & @CRLF & StringRight($g_sGuiLogBuffer, 50000)
+    EndIf
+    GUICtrlSetData($g_idEditLog, $g_sGuiLogBuffer)
+    _DD_GuiPump()
+EndFunc   ;==>_DD_GuiLog
+
+; Vide la file de messages Windows pour garder la fenetre reactive
+; (deplacement, redessin, clic sur Fermer) pendant les phases d'analyse.
+; Gere aussi la fermeture anticipee par l'utilisateur (croix ou bouton
+; Fermer) sans jamais planter : le code de sortie reste base sur les
+; erreurs deja detectees a cet instant.
+Func _DD_GuiPump()
+    If Not $g_bGuiActive Then Return
+    Local $iMsg = GUIGetMsg()
+    If $iMsg = -3 Then
+        _DD_GuiCloseAndExit()
+    ElseIf $iMsg = $g_idBtnClose Then
+        _DD_GuiCloseAndExit()
+    ElseIf $g_idBtnOpenHtml <> 0 And $iMsg = $g_idBtnOpenHtml Then
+        If $g_sHtmlReportPath <> "" And FileExists($g_sHtmlReportPath) Then ShellExecute($g_sHtmlReportPath)
+    EndIf
+EndFunc   ;==>_DD_GuiPump
+
+Func _DD_GuiCloseAndExit()
+    Local $iCode = 0
+    If $g_iCountError > 0 Then $iCode = 1
+    If $g_hGui <> 0 Then GUIDelete($g_hGui)
+    Exit $iCode
+EndFunc   ;==>_DD_GuiCloseAndExit
+
+; Affiche le bouton "Ouvrir le rapport HTML" (si un rapport a ete genere)
+; et garde la fenetre ouverte jusqu'a ce que l'utilisateur la ferme, pour
+; qu'il ait le temps de lire le journal et les statistiques finales.
+Func _DD_GuiWaitClose()
+    If Not $g_bGuiActive Then Return
+
+    If $g_sHtmlReportPath <> "" Then
+        $g_idBtnOpenHtml = GUICtrlCreateButton("Ouvrir le rapport HTML", 20, 415, 220, 28)
+    EndIf
+
+    _DD_GuiSetStatus("Termine. Vous pouvez consulter le journal ci-dessus ou fermer cette fenetre.")
+
+    While 1
+        _DD_GuiPump()
+        Sleep(50)
+    WEnd
+EndFunc   ;==>_DD_GuiWaitClose
+
+#endregion
+
+; ============================================================================
 #region Utilitaires
 ; ============================================================================
 
@@ -1466,7 +1649,10 @@ Func _DD_AddDiagnostic($sSeverity, $sCode, $sDomain, $sFile, $iLine, $sFunction,
 
     Local $sLineInfo = ""
     If $iLine > 0 Then $sLineInfo = ":" & $iLine
-    ConsoleWrite("[" & $sSeverity & "] " & $sCode & " - " & _DD_RelativePath($sFile, $g_sProjectRoot) & $sLineInfo & " - " & $sMessage & @CRLF)
+    Local $sLogLine = "[" & $sSeverity & "] " & $sCode & " - " & _DD_RelativePath($sFile, $g_sProjectRoot) & $sLineInfo & " - " & $sMessage
+    ConsoleWrite($sLogLine & @CRLF)
+    _DD_GuiLog($sLogLine)
+    _DD_GuiRefreshStats()
 EndFunc   ;==>_DD_AddDiagnostic
 
 Func _DD_HasDiagnosticCode($sCode)

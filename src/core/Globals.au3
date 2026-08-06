@@ -150,7 +150,7 @@ $g_iAuditCheckTimer = TimerInit()
 ; Boucle principale
 While 1
     Local $iClientSocket = TCPAccept($g_iMainSocket)
-    If $iClientSocket <> -1 Then _HandleClient($iClientSocket)
+  If $iClientSocket <> -1 Then HttpServer_HandleClient($iClientSocket)
 
     ; Vérification silencieuse en arrière-plan (chaque minute)
     If TimerDiff($g_iAuditCheckTimer) > $AUDIT_CHECK_INTERVAL Then

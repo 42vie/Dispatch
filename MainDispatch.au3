@@ -25,7 +25,7 @@ Opt("GUIOnEventMode", 0)
 #include "src\core\Config.au3"
 #include "src\core\HttpResponse.au3"
 #include "src\core\HttpRouter.au3"
-#include "src\core\HttpServer.au3"
+
 
 ; ========== SERVICES ==========
 #include "src\services\StateService.au3"

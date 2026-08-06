@@ -72,6 +72,7 @@ Global Const $DD_CODE_UNKNOWN_FUNCTION = "UNKNOWN_FUNCTION"
 Global Const $DD_CODE_BAD_PARAM_COUNT = "BAD_PARAM_COUNT"
 Global Const $DD_CODE_COMPILER_ERROR = "COMPILER_ERROR"
 Global Const $DD_CODE_AUTOIT_NOT_FOUND = "AUTOIT_NOT_FOUND"
+Global Const $DD_CODE_REDIM_UNSAFE = "REDIM_UNSAFE_FIRST_REFERENCE"
 Global Const $DD_CODE_OK = "OK"
 
 ; Colonnes table des fichiers
@@ -155,6 +156,11 @@ Global $g_idBtnClose = 0
 Global $g_idBtnOpenHtml = 0
 Global $g_sGuiLogBuffer = ""
 Global $g_sHtmlReportPath = ""
+Global $g_idComboDomain = 0
+Global $g_idInputSearch = 0
+Global $g_idBtnSearch = 0
+Global $g_idBtnOpenFile = 0
+Global $g_idListFunc = 0
 
 ; Table de classification par domaine : {sous-chaine (chemin ou nom, en
 ; minuscules), domaine}. Premiere ligne qui correspond gagne. Ajouter un
@@ -175,6 +181,18 @@ Global $g_aDomainRules[14][2] = [ _
     ["\core\backuputils", "FILES"], _
     ["file", "FILES"] _
 ]
+
+; Prefixes/noms de constantes standard AutoIt et Windows API (issues des
+; #include <...> systeme comme GUIConstantsEx.au3, WindowsConstants.au3,
+; EditConstants.au3, ListViewConstants.au3, MsgBoxConstants.au3, ...) que
+; l'outil ne lit jamais (hors perimetre du projet Dispatch). Sans cette
+; liste, l'analyse heuristique des variables les signale a tort comme non
+; declarees des qu'un fichier les utilise sans les redefinir localement.
+; Ajouter un prefixe ici si un nouveau fichier standard AutoIt est utilise
+; par le projet et genere du bruit similaire.
+Global $g_aKnownConstantPrefixes[20] = ["GUI_", "WS_", "ES_", "SS_", "BS_", "CBS_", "LVS_", "LVM_", "LVIF_", _
+    "LVNI_", "MB_", "TVS_", "TVIF_", "DTN_", "UDS_", "ICC_", "PBS_", "TCS_", "STM_", "GUI_RUNDEFMSG"]
+Global $g_aKnownConstantExact[8] = ["idyes", "idno", "idok", "idcancel", "idabort", "idretry", "idignore", "idclose"]
 
 #endregion
 
@@ -223,6 +241,7 @@ Func _DD_Main()
             _DD_GuiSetStatus("Indexation des fonctions...")
             _DD_IndexFunctions()
             _DD_GuiRefreshStats()
+            _DD_GuiPopulateBrowser()
             _DD_ModeList()
 
         Case "compile"
@@ -244,6 +263,7 @@ Func _DD_Main()
             _DD_GuiSetStatus("Indexation des fonctions...")
             _DD_IndexFunctions()
             _DD_GuiRefreshStats()
+            _DD_GuiPopulateBrowser()
             _DD_GuiSetStatus("Indexation des variables...")
             _DD_IndexGlobalVariables()
             _DD_GuiSetStatus("Analyse heuristique des variables...")
@@ -262,6 +282,7 @@ Func _DD_Main()
             _DD_GuiSetStatus("Indexation des fonctions...")
             _DD_IndexFunctions()
             _DD_GuiRefreshStats()
+            _DD_GuiPopulateBrowser()
             _DD_GuiSetStatus("Indexation des variables...")
             _DD_IndexGlobalVariables()
             _DD_GuiSetStatus("Analyse heuristique des variables...")
@@ -917,13 +938,99 @@ Func _DD_ExtractDeclaredNames($sLine)
     Return $aNames
 EndFunc   ;==>_DD_ExtractDeclaredNames
 
+; Vrai si $sKeyLower (nom de variable en minuscules, sans le $) ressemble
+; a une constante standard AutoIt/Windows API plutot qu'a une variable du
+; projet Dispatch (qui n'utilise jamais ces prefixes dans sa propre
+; convention de nommage). Voir $g_aKnownConstantPrefixes plus haut.
+Func _DD_IsLikelyBuiltinConstant($sKeyLower)
+    Local $i = 0
+    For $i = 0 To UBound($g_aKnownConstantExact) - 1
+        If $sKeyLower = $g_aKnownConstantExact[$i] Then Return True
+    Next
+
+    Local $sUpper = StringUpper($sKeyLower)
+    For $i = 0 To UBound($g_aKnownConstantPrefixes) - 1
+        If StringLeft($sUpper, StringLen($g_aKnownConstantPrefixes[$i])) = $g_aKnownConstantPrefixes[$i] Then Return True
+    Next
+
+    Return False
+EndFunc   ;==>_DD_IsLikelyBuiltinConstant
+
 Func _DD_AnalyzeAllVariables()
     ConsoleWrite("[*] Analyse heuristique des variables (best-effort)..." & @CRLF)
     Local $i = 0
     For $i = 0 To $g_iFuncCount - 1
         _DD_AnalyzeFunctionVariables($i)
+        _DD_CheckReDimSafety($i)
     Next
 EndFunc   ;==>_DD_AnalyzeAllVariables
+
+; Piege AutoIt reel et deterministe (pas une simple heuristique) : si la
+; toute premiere reference a une variable dans une fonction est un ReDim,
+; AutoIt ne la relie PAS automatiquement a une variable Global du meme nom
+; declaree ailleurs, meme sans MustDeclareVars. Le ReDim leve alors
+; "Variable used without being declared" au runtime -- uniquement quand
+; cette fonction precise est appelee, ce que /ErrorStdOut ne declenche pas
+; forcement pendant les quelques secondes ou l'on regarde tourner le
+; script. C'est exactement le bug remonte sur _QueueClearRows (generation
+; CMR) : la variable etait bien "Global $g_aQueueBlocks[0]" ailleurs, mais
+; jamais relue avant le ReDim dans cette fonction precise. Confiance
+; "high" car ce n'est pas une supposition : c'est un comportement connu et
+; systematique du langage.
+Func _DD_CheckReDimSafety($iFuncRow)
+    Local $sName = $g_aFunctions[$iFuncRow][$UCOL_NAME]
+    Local $sFile = $g_aFunctions[$iFuncRow][$UCOL_FILE]
+    Local $iStart = $g_aFunctions[$iFuncRow][$UCOL_LINE]
+    Local $iEnd = $g_aFunctions[$iFuncRow][$UCOL_ENDLINE]
+    Local $sDomain = $g_aFunctions[$iFuncRow][$UCOL_DOMAIN]
+
+    Local $oSeen = ObjCreate("Scripting.Dictionary")
+    Local $oFlagged = ObjCreate("Scripting.Dictionary")
+
+    Local $aParams = StringSplit($g_aFunctions[$iFuncRow][$UCOL_PARAMS], ",", $STR_NOCOUNT)
+    Local $p = 0
+    For $p = 0 To UBound($aParams) - 1
+        Local $aPName = StringRegExp($aParams[$p], "\$(\w+)", 1)
+        If Not @error Then
+            Local $k = StringLower($aPName[0])
+            If Not $oSeen.Exists($k) Then $oSeen.Add($k, True)
+        EndIf
+    Next
+
+    Local $aLines = _DD_GetFileLines($sFile)
+    Local $iLine = 0
+
+    For $iLine = $iStart To $iEnd - 1
+        If $iLine - 1 < 0 Or $iLine - 1 >= UBound($aLines) Then ContinueLoop
+        Local $sLine = $aLines[$iLine - 1]
+
+        Local $sTrim = StringStripWS($sLine, $STR_STRIPLEADING)
+        If StringLeft($sTrim, 1) = ";" Then ContinueLoop
+
+        Local $aReDim = StringRegExp($sLine, "(?i)^\s*ReDim\s+\$(\w+)", 1)
+        If Not @error Then
+            Local $sVar = $aReDim[0]
+            Local $sKey = StringLower($sVar)
+            If Not $oSeen.Exists($sKey) And Not $oFlagged.Exists($sKey) Then
+                _DD_AddDiagnostic($DD_SEV_ERROR, $DD_CODE_REDIM_UNSAFE, $sDomain, $sFile, $iLine, $sName, "$" & $sVar, _
+                    "ReDim sur '$" & $sVar & "' est la toute premiere reference a cette variable dans '" & $sName & _
+                    "'. Sous AutoIt, ReDim ne se lie pas automatiquement a une variable existante dans ce cas et peut lever 'Variable used without being declared' au runtime des que cette fonction est appelee -- meme si '$" & _
+                    $sVar & "' est bien declaree ailleurs.", _
+                    "Ajouter 'Global $" & $sVar & "' (ou 'Local $" & $sVar & "' si elle doit rester locale) au tout debut de '" & $sName & "', avant ce ReDim.", "high")
+                $oFlagged.Add($sKey, True)
+            EndIf
+        EndIf
+
+        Local $aUsages = StringRegExp($sLine, "\$(\w+)", 3)
+        If Not @error Then
+            Local $u = 0
+            For $u = 0 To UBound($aUsages) - 1
+                Local $k2 = StringLower($aUsages[$u])
+                If Not $oSeen.Exists($k2) Then $oSeen.Add($k2, True)
+            Next
+        EndIf
+    Next
+EndFunc   ;==>_DD_CheckReDimSafety
 
 Func _DD_AnalyzeFunctionVariables($iFuncRow)
     Local $sName = $g_aFunctions[$iFuncRow][$UCOL_NAME]
@@ -963,6 +1070,20 @@ Func _DD_AnalyzeFunctionVariables($iFuncRow)
             Local $k3 = StringLower($aForVar[0])
             If Not $oLocalKnown.Exists($k3) Then $oLocalKnown.Add($k3, True)
         EndIf
+
+        ; Idiome AutoIt courant : IsDeclared("nom") garde l'usage d'une
+        ; variable qui peut ne pas exister selon le chemin d'execution
+        ; (ex. _API_JobStatus dans StateService.au3). Ce n'est pas un bug :
+        ; on considere le nom comme connu des qu'il apparait dans un tel
+        ; garde-fou, meme sans declaration Local/Global classique.
+        Local $aGuards = StringRegExp($sLine, '(?i)IsDeclared\s*\(\s*"(\w+)"', 3)
+        If Not @error Then
+            Local $g = 0
+            For $g = 0 To UBound($aGuards) - 1
+                Local $k4 = StringLower($aGuards[$g])
+                If Not $oLocalKnown.Exists($k4) Then $oLocalKnown.Add($k4, True)
+            Next
+        EndIf
     Next
 
     For $iLine = $iStart To $iEnd - 1
@@ -982,6 +1103,7 @@ Func _DD_AnalyzeFunctionVariables($iFuncRow)
 
             If $oLocalKnown.Exists($sKeyU) Then ContinueLoop
             If $oDD_GlobalVars.Exists($sKeyU) Then ContinueLoop
+            If _DD_IsLikelyBuiltinConstant($sKeyU) Then ContinueLoop
 
             Local $sSuggestion = _DD_SuggestCloseName($sKeyU, $oLocalKnown)
 
@@ -1483,7 +1605,7 @@ EndFunc   ;==>_DD_WriteHtmlReport
 ; fermeture de fenetre -3 et les styles par defaut de GUICtrlCreateEdit
 ; suffisent, comme le fait deja MainDispatch.au3 (If $iMsg = -3 Then Exit).
 Func _DD_GuiInit()
-    $g_hGui = GUICreate($DD_TOOLNAME & " v" & $DD_VERSION & "  -  " & $g_sMode, 640, 460)
+    $g_hGui = GUICreate($DD_TOOLNAME & " v" & $DD_VERSION & "  -  " & $g_sMode, 640, 660)
     GUISetBkColor(0x1E1E1E, $g_hGui)
     GUISetFont(10, 400, 0, "Segoe UI", $g_hGui)
 
@@ -1503,17 +1625,131 @@ Func _DD_GuiInit()
     ; Styles par defaut de GUICtrlCreateEdit (multiline + ascenseur vertical
     ; automatique) : suffisants pour un journal en lecture visuelle, pas
     ; besoin de deviner des constantes de style non verifiees ici.
-    $g_idEditLog = GUICtrlCreateEdit("", 20, 100, 600, 300)
+    $g_idEditLog = GUICtrlCreateEdit("", 20, 98, 600, 170)
     GUICtrlSetFont($g_idEditLog, 9, 400, 0, "Consolas")
     GUICtrlSetColor($g_idEditLog, 0xDDDDDD)
     GUICtrlSetBkColor($g_idEditLog, 0x111111)
 
-    $g_idBtnClose = GUICtrlCreateButton("Fermer", 480, 415, 140, 28)
+    Local $idBrowseLabel = GUICtrlCreateLabel("Parcourir les fonctions detectees :", 20, 276, 400, 18)
+    GUICtrlSetColor($idBrowseLabel, 0x66CCFF)
+    GUICtrlSetBkColor($idBrowseLabel, 0x1E1E1E)
+
+    ; Combo : liste des domaines (peuplee une fois l'indexation terminee).
+    ; Style par defaut de GUICtrlCreateCombo (liste deroulante simple),
+    ; suffisant ici, pas besoin de style explicite.
+    $g_idComboDomain = GUICtrlCreateCombo("", 20, 298, 140, 24)
+
+    $g_idInputSearch = GUICtrlCreateInput("", 170, 298, 280, 24)
+    $g_idBtnSearch = GUICtrlCreateButton("Chercher", 455, 297, 75, 26)
+    $g_idBtnOpenFile = GUICtrlCreateButton("Ouvrir fichier", 535, 297, 85, 26)
+
+    ; Style par defaut de GUICtrlCreateList (liste simple a selection unique) :
+    ; suffisant pour parcourir des noms de fonctions, pas de style a deviner.
+    $g_idListFunc = GUICtrlCreateList("", 20, 328, 600, 250)
+    GUICtrlSetFont($g_idListFunc, 9, 400, 0, "Consolas")
+    GUICtrlSetColor($g_idListFunc, 0xDDDDDD)
+    GUICtrlSetBkColor($g_idListFunc, 0x111111)
+
+    $g_idBtnClose = GUICtrlCreateButton("Fermer", 480, 610, 140, 28)
 
     GUISetState(@SW_SHOW, $g_hGui)
     $g_bGuiActive = True
     _DD_GuiPump()
 EndFunc   ;==>_DD_GuiInit
+
+; Peuple le menu deroulant des domaines (COMMON, CMR, COMAT, ETMS, ...)
+; et affiche la liste des fonctions correspondantes. A appeler une fois
+; que _DD_IndexFunctions() a tourne.
+Func _DD_GuiPopulateBrowser()
+    If Not $g_bGuiActive Then Return
+
+    Local $oDomains = ObjCreate("Scripting.Dictionary")
+    Local $i = 0
+    For $i = 0 To $g_iFuncCount - 1
+        Local $k = $g_aFunctions[$i][$UCOL_DOMAIN]
+        If Not $oDomains.Exists($k) Then $oDomains.Add($k, True)
+    Next
+
+    Local $aKeys = $oDomains.Keys()
+    Local $n = UBound($aKeys)
+    Local $a = 0
+    Local $b = 0
+    For $a = 0 To $n - 2
+        For $b = 0 To $n - 2 - $a
+            If $aKeys[$b] > $aKeys[$b + 1] Then
+                Local $sTmp = $aKeys[$b]
+                $aKeys[$b] = $aKeys[$b + 1]
+                $aKeys[$b + 1] = $sTmp
+            EndIf
+        Next
+    Next
+
+    Local $sData = "TOUS LES DOMAINES"
+    For $i = 0 To $n - 1
+        $sData &= "|" & $aKeys[$i]
+    Next
+    GUICtrlSetData($g_idComboDomain, $sData, "TOUS LES DOMAINES")
+
+    _DD_GuiShowFunctionsForDomain("TOUS LES DOMAINES")
+EndFunc   ;==>_DD_GuiPopulateBrowser
+
+; Construit une ligne d'affichage pour une fonction, avec un separateur
+; "::" facile a re-decouper (utilise par le bouton "Ouvrir fichier").
+; Le caractere "|" est neutralise car il sert de separateur entre entrees
+; dans les controles List d'AutoIt.
+Func _DD_FormatFuncEntry($iRow)
+    Local $sEntry = $g_aFunctions[$iRow][$UCOL_NAME] & "(" & $g_aFunctions[$iRow][$UCOL_PARAMS] & ")  ::  " & _
+        _DD_RelativePath($g_aFunctions[$iRow][$UCOL_FILE], $g_sProjectRoot) & "::" & $g_aFunctions[$iRow][$UCOL_LINE] & _
+        "::" & $g_aFunctions[$iRow][$UCOL_DOMAIN]
+    Return StringReplace($sEntry, "|", "/")
+EndFunc   ;==>_DD_FormatFuncEntry
+
+Func _DD_GuiShowFunctionsForDomain($sDomain)
+    If Not $g_bGuiActive Then Return
+    Local $sData = ""
+    Local $i = 0
+    For $i = 0 To $g_iFuncCount - 1
+        If $sDomain <> "TOUS LES DOMAINES" And $g_aFunctions[$i][$UCOL_DOMAIN] <> $sDomain Then ContinueLoop
+        If $sData <> "" Then $sData &= "|"
+        $sData &= _DD_FormatFuncEntry($i)
+    Next
+    If $sData = "" Then $sData = "(aucune fonction dans ce domaine)"
+    GUICtrlSetData($g_idListFunc, $sData)
+EndFunc   ;==>_DD_GuiShowFunctionsForDomain
+
+Func _DD_GuiSearchFunctions()
+    If Not $g_bGuiActive Then Return
+    Local $sQuery = StringLower(StringStripWS(GUICtrlRead($g_idInputSearch), BitOR($STR_STRIPLEADING, $STR_STRIPTRAILING)))
+    If $sQuery = "" Then
+        _DD_GuiShowFunctionsForDomain(GUICtrlRead($g_idComboDomain))
+        Return
+    EndIf
+
+    Local $sData = ""
+    Local $i = 0
+    For $i = 0 To $g_iFuncCount - 1
+        If StringInStr(StringLower($g_aFunctions[$i][$UCOL_NAME]), $sQuery) = 0 Then ContinueLoop
+        If $sData <> "" Then $sData &= "|"
+        $sData &= _DD_FormatFuncEntry($i)
+    Next
+    If $sData = "" Then $sData = "(aucun resultat)"
+    GUICtrlSetData($g_idListFunc, $sData)
+EndFunc   ;==>_DD_GuiSearchFunctions
+
+; Ouvre, dans l'application associee (SciTE en general pour .au3), le
+; fichier de la fonction actuellement selectionnee dans la liste.
+Func _DD_GuiOpenSelectedFile()
+    If Not $g_bGuiActive Then Return
+    Local $sSelected = GUICtrlRead($g_idListFunc)
+    If $sSelected = "" Or StringLeft($sSelected, 1) = "(" Then Return
+
+    Local $aParts = StringSplit($sSelected, "::", BitOR($STR_NOCOUNT, $STR_ENTIRESPLIT))
+    If UBound($aParts) < 2 Then Return
+
+    Local $sRelPath = StringStripWS($aParts[1], BitOR($STR_STRIPLEADING, $STR_STRIPTRAILING))
+    Local $sFullPath = $g_sProjectRoot & "\" & $sRelPath
+    If FileExists($sFullPath) Then ShellExecute($sFullPath)
+EndFunc   ;==>_DD_GuiOpenSelectedFile
 
 Func _DD_GuiSetStatus($sText)
     If Not $g_bGuiActive Then Return
@@ -1557,6 +1793,12 @@ Func _DD_GuiPump()
         _DD_GuiCloseAndExit()
     ElseIf $g_idBtnOpenHtml <> 0 And $iMsg = $g_idBtnOpenHtml Then
         If $g_sHtmlReportPath <> "" And FileExists($g_sHtmlReportPath) Then ShellExecute($g_sHtmlReportPath)
+    ElseIf $iMsg = $g_idComboDomain Then
+        _DD_GuiShowFunctionsForDomain(GUICtrlRead($g_idComboDomain))
+    ElseIf $iMsg = $g_idBtnSearch Then
+        _DD_GuiSearchFunctions()
+    ElseIf $iMsg = $g_idBtnOpenFile Then
+        _DD_GuiOpenSelectedFile()
     EndIf
 EndFunc   ;==>_DD_GuiPump
 
@@ -1890,6 +2132,38 @@ Func _DD_RunSelfTests()
     _DD_IndexGlobalVariables()
     _DD_AnalyzeAllVariables()
     _DD_SelfTestReport("Cas 9 : variable Global valide entre fonctions", Not _DD_HasDiagnosticCode($DD_CODE_UNDECLARED_VARIABLE), $iPass, $iFail)
+
+    ; Cas 10 : ReDim en toute premiere reference (piege reel decouvert sur
+    ; _QueueClearRows / generation CMR) doit etre detecte
+    Local $sMain10 = $sTestDir & "\Main10.au3"
+    FileWriteLine($sMain10, "Global $g_aTest10[0]")
+    FileWriteLine($sMain10, "Func _Test_ReDimUnsafe()")
+    FileWriteLine($sMain10, "    ReDim $g_aTest10[5]")
+    FileWriteLine($sMain10, "EndFunc")
+
+    _DD_ResetState()
+    $g_sProjectRoot = $sTestDir
+    _DD_BuildIncludeGraph($sMain10)
+    _DD_IndexFunctions()
+    _DD_IndexGlobalVariables()
+    _DD_AnalyzeAllVariables()
+    _DD_SelfTestReport("Cas 10 : ReDim en premiere reference detecte (piege _QueueClearRows)", _DD_HasDiagnosticCode($DD_CODE_REDIM_UNSAFE), $iPass, $iFail)
+
+    ; Cas 11 : ReDim precede d'une lecture (UBound) ne doit jamais etre signale
+    Local $sMain11 = $sTestDir & "\Main11.au3"
+    FileWriteLine($sMain11, "Global $g_aTest11[0]")
+    FileWriteLine($sMain11, "Func _Test_ReDimSafe()")
+    FileWriteLine($sMain11, "    Local $n = UBound($g_aTest11)")
+    FileWriteLine($sMain11, "    ReDim $g_aTest11[$n + 1]")
+    FileWriteLine($sMain11, "EndFunc")
+
+    _DD_ResetState()
+    $g_sProjectRoot = $sTestDir
+    _DD_BuildIncludeGraph($sMain11)
+    _DD_IndexFunctions()
+    _DD_IndexGlobalVariables()
+    _DD_AnalyzeAllVariables()
+    _DD_SelfTestReport("Cas 11 : ReDim precede d'une lecture (pas de faux positif)", Not _DD_HasDiagnosticCode($DD_CODE_REDIM_UNSAFE), $iPass, $iFail)
 
     DirRemove($sTestDir, 1)
 

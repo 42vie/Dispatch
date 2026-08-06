@@ -854,6 +854,7 @@ Func _SnapshotOutputs(ByRef $aNums, $index)
 EndFunc
 
 Func _AddResult(ByRef $aNums, $html, $pdf, $carrier, $delivery, $company, $snap)
+    Global $g_aBL, $g_aHTML, $g_aPDF, $g_aCarrier, $g_aDelivery, $g_aCompany, $g_aSnap
     Local $n = UBound($g_aBL)
     ReDim $g_aBL[$n + 1]
     ReDim $g_aHTML[$n + 1]
@@ -872,6 +873,7 @@ Func _AddResult(ByRef $aNums, $html, $pdf, $carrier, $delivery, $company, $snap)
 EndFunc
 
 Func _ClearResults()
+    Global $g_aBL, $g_aHTML, $g_aPDF, $g_aCarrier, $g_aDelivery, $g_aCompany, $g_aSnap
     ReDim $g_aBL[0]
     ReDim $g_aHTML[0]
     ReDim $g_aPDF[0]
@@ -1017,6 +1019,7 @@ Func _QueueAddFromInput($bImportMulti)
 EndFunc
 
 Func _QueueAppendBlock($sBlock)
+    Global $g_aQueueBlocks, $g_aQueueStatus
     Local $a = _QueueGroupToArray($sBlock)
     If UBound($a) = 0 Then Return False
     Local $clean = _JoinArray($a, @LF)
@@ -1062,6 +1065,7 @@ Func _QueueRemoveSelected()
 EndFunc
 
 Func _QueueClearRows()
+    Global $g_aQueueBlocks, $g_aQueueStatus
     ReDim $g_aQueueBlocks[0]
     ReDim $g_aQueueStatus[0]
     If $idQueueList <> 0 Then _GUICtrlListView_DeleteAllItems($idQueueList)
@@ -1527,6 +1531,7 @@ Func _CreateHoverButton($sText, $x, $y, $w, $h, $normalColor = 0xF8FAFC, $hoverC
 EndFunc
 
 Func _RegisterHoverButton($idButton, $normalColor, $hoverColor)
+    Global $g_aHoverIds, $g_aHoverNormal, $g_aHoverHover, $g_aHoverIsHover
     Local $n = UBound($g_aHoverIds)
     ReDim $g_aHoverIds[$n + 1]
     ReDim $g_aHoverNormal[$n + 1]

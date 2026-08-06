@@ -1,0 +1,1 @@
+Non compile ici: compiler MainDispatch.au3 avec AutoIt/Aut2Exe sous Windows pour obtenir Dispatch.exe.

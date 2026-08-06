@@ -162,6 +162,31 @@ Global $g_idInputSearch = 0
 Global $g_idBtnSearch = 0
 Global $g_idBtnOpenFile = 0
 Global $g_idListFunc = 0
+Global $g_idComboTestAction = 0
+Global $g_idInputParam1 = 0
+Global $g_idInputParam2 = 0
+Global $g_idBtnRunTest = 0
+Global $g_bTcpStarted = False
+Global $g_sLastHttpError = ""
+
+; Port HTTP reel du serveur Dispatch (voir MainDispatch.au3 : $giPort = 9500).
+Global Const $DD_DISPATCH_PORT = 9500
+Global $g_bActionTestRunning = False
+Global $g_iActionTestPid = 0
+
+; Registre des actions "testables en reel" via l'API HTTP de Dispatch
+; (POST /api/action, voir HttpRouter.au3). Ajouter une action plus tard =
+; ajouter une ligne ici, rien d'autre a toucher dans le moteur de test.
+; Colonnes : {libelle affiche, nom d'action HTTP, champ JSON principal,
+; champ JSON secondaire ("" si aucun), avertissement specifique}.
+Global $g_aTestableActions[3][5] = [ _
+    ["CMR - generer un dossier (CMR_GENERATE)", "CMR_GENERATE", "data", "", _
+        "Genere reellement les BL/PDF/HTML pour ce dossier (pas de mail ni d'upload EDOC automatique)."], _
+    ["COMAT - traiter un dossier seul (COMAT_SOLO)", "COMAT_SOLO", "file", "", _
+        "Affiche une confirmation (Oui/Non) dans la fenetre Dispatch : il faudra la valider a la main, sinon le test restera bloque jusqu'au timeout."], _
+    ["ETMS - commande sur un dossier (ETMS_CMD)", "ETMS_CMD", "file", "cmd", _
+        "Necessite que la fenetre E.TMS (TfmBrowser) soit deja ouverte sur ce poste, sinon l'action echoue proprement sans rien tester."] _
+]
 
 ; Table de classification par domaine : {sous-chaine (chemin ou nom, en
 ; minuscules), domaine}. Premiere ligne qui correspond gagne. Ajouter un
@@ -846,6 +871,32 @@ Func _DD_FindEnclosingFunction($sFile, $iLine)
     Return -1
 EndFunc   ;==>_DD_FindEnclosingFunction
 
+Func _DD_FunctionExists($sName)
+    Local $sKey = StringLower($sName)
+    Local $i = 0
+    For $i = 0 To $g_iFuncCount - 1
+        If StringLower($g_aFunctions[$i][$UCOL_NAME]) = $sKey Then Return True
+    Next
+    Return False
+EndFunc   ;==>_DD_FunctionExists
+
+; Cherche, parmi toutes les fonctions indexees, le nom le plus proche
+; (distance d'edition) de $sName. Retourne "" si rien d'assez proche.
+Func _DD_ClosestFunctionName($sName)
+    Local $sBest = ""
+    Local $iBestDist = 999
+    Local $i = 0
+    For $i = 0 To $g_iFuncCount - 1
+        Local $iDist = _DD_Levenshtein(StringLower($sName), StringLower($g_aFunctions[$i][$UCOL_NAME]))
+        If $iDist > 0 And $iDist < $iBestDist Then
+            $iBestDist = $iDist
+            $sBest = $g_aFunctions[$i][$UCOL_NAME]
+        EndIf
+    Next
+    If $sBest <> "" And $iBestDist <= 3 Then Return $sBest
+    Return ""
+EndFunc   ;==>_DD_ClosestFunctionName
+
 #endregion
 
 ; ============================================================================
@@ -1270,6 +1321,75 @@ Func _DD_ParseCompilerOutput($sOutput)
                     $sConfidence = "faible"
                 EndIf
             EndIf
+
+        ElseIf $sCode = $DD_CODE_DUPLICATE_FUNCTION Then
+            ; Va chercher, dans l'index deja construit, TOUTES les
+            ; definitions du nom concerne pour dire precisement ou est
+            ; le doublon dans le code (pas juste "il y a un doublon").
+            Local $sDupName = ""
+            Local $aDupMatch = StringRegExp($sSourceLine, "(?i)Func\s+([A-Za-z_]\w*)", 1)
+            If Not @error Then
+                $sDupName = $aDupMatch[0]
+            Else
+                Local $aLineAtErr = _DD_GetFileLines($sFile)
+                If $iLine - 1 >= 0 And $iLine - 1 < UBound($aLineAtErr) Then
+                    Local $aDupMatch2 = StringRegExp($aLineAtErr[$iLine - 1], "(?i)Func\s+([A-Za-z_]\w*)", 1)
+                    If Not @error Then $sDupName = $aDupMatch2[0]
+                EndIf
+            EndIf
+
+            If $sDupName <> "" Then
+                $sSymbol = $sDupName
+                Local $sLocations = ""
+                Local $f = 0
+                For $f = 0 To $g_iFuncCount - 1
+                    If StringLower($g_aFunctions[$f][$UCOL_NAME]) = StringLower($sDupName) Then
+                        If $sLocations <> "" Then $sLocations &= " | "
+                        $sLocations &= _DD_RelativePath($g_aFunctions[$f][$UCOL_FILE], $g_sProjectRoot) & ":" & $g_aFunctions[$f][$UCOL_LINE]
+                    EndIf
+                Next
+                If $sLocations <> "" Then
+                    $sSuggestion = "Definitions trouvees dans le code : " & $sLocations & _
+                        ". Garder une seule implementation active et retirer l'inclusion ou la definition redondante."
+                    $sConfidence = "high"
+                Else
+                    $sSuggestion = "Rechercher 'Func " & $sDupName & "(' dans le projet pour localiser les definitions en conflit."
+                    $sConfidence = "moyenne"
+                EndIf
+            EndIf
+
+        ElseIf $sCode = $DD_CODE_UNKNOWN_FUNCTION And $sSourceLine <> "" Then
+            ; Identifie l'identifiant appele qui n'existe dans aucune
+            ; fonction indexee, puis propose le nom connu le plus proche
+            ; (faute de frappe probable).
+            Local $aCalls = StringRegExp($sSourceLine, "([A-Za-z_]\w*)\s*\(", 3)
+            Local $sCandidates = ""
+            If Not @error Then
+                Local $c = 0
+                For $c = 0 To UBound($aCalls) - 1
+                    Local $sCallName = StringRegExpReplace($aCalls[$c], "\($", "")
+                    If Not _DD_FunctionExists($sCallName) Then
+                        If $sCandidates <> "" Then $sCandidates &= ", "
+                        $sCandidates &= $sCallName
+                    EndIf
+                Next
+            EndIf
+
+            If $sCandidates <> "" And StringInStr($sCandidates, ",") = 0 Then
+                $sSymbol = $sCandidates
+                Local $sClosest = _DD_ClosestFunctionName($sCandidates)
+                If $sClosest <> "" Then
+                    $sSuggestion = "Fonction '" & $sCandidates & "' introuvable. Faute de frappe probable, fonction proche existante : '" & $sClosest & "'."
+                Else
+                    $sSuggestion = "Fonction '" & $sCandidates & "' introuvable dans le projet. Verifier qu'elle est bien definie et que son fichier est inclus."
+                EndIf
+                $sConfidence = "high"
+            ElseIf $sCandidates <> "" Then
+                $sSymbol = $sCandidates
+                $sSuggestion = "Plusieurs appels sur cette ligne ne correspondent a aucune fonction indexee (" & $sCandidates & _
+                    "). Verifier chacun individuellement (l'un d'eux peut etre une fonction standard AutoIt non indexee ici)."
+                $sConfidence = "faible"
+            EndIf
         EndIf
 
         Local $sFullMessage = $sMessage
@@ -1595,6 +1715,383 @@ EndFunc   ;==>_DD_WriteHtmlReport
 #endregion
 
 ; ============================================================================
+#region Client HTTP (pour le Test CMR)
+; ============================================================================
+
+; Test rapide et non bloquant : le port TCP est-il ouvert localement ?
+; Utilise pour savoir si un serveur Dispatch ecoute deja avant de tester,
+; et pour savoir quand l'instance lancee par DispatchDoctor est prete.
+Func _DD_IsPortOpen($sHost, $iPort)
+    If Not $g_bTcpStarted Then
+        TCPStartup()
+        $g_bTcpStarted = True
+    EndIf
+
+    Local $iSocket = TCPConnect($sHost, $iPort)
+    If $iSocket = -1 Then Return False
+    TCPCloseSocket($iSocket)
+    Return True
+EndFunc   ;==>_DD_IsPortOpen
+
+; Envoie une requete HTTP POST minimale et retourne le corps de la
+; reponse (ou "" en cas d'echec, avec le detail dans $g_sLastHttpError).
+; Implementation volontairement simple (TCP brut, pas de gestion du
+; chunked-encoding) : suffisant pour dialoguer avec le serveur maison de
+; Dispatch (HttpRouter.au3), qui repond toujours en Content-Length simple.
+Func _DD_HttpPost($sHost, $iPort, $sPath, $sBody)
+    $g_sLastHttpError = ""
+
+    If Not $g_bTcpStarted Then
+        TCPStartup()
+        $g_bTcpStarted = True
+    EndIf
+
+    Local $iSocket = TCPConnect($sHost, $iPort)
+    If $iSocket = -1 Then
+        $g_sLastHttpError = "connexion impossible a " & $sHost & ":" & $iPort
+        Return ""
+    EndIf
+
+    Local $sReq = "POST " & $sPath & " HTTP/1.1" & @CRLF & _
+        "Host: " & $sHost & ":" & $iPort & @CRLF & _
+        "Content-Type: application/json" & @CRLF & _
+        "Content-Length: " & StringLen($sBody) & @CRLF & _
+        "Connection: close" & @CRLF & @CRLF & $sBody
+
+    TCPSend($iSocket, StringToBinary($sReq, 4))
+    If @error Then
+        $g_sLastHttpError = "echec d'envoi de la requete HTTP"
+        TCPCloseSocket($iSocket)
+        Return ""
+    EndIf
+
+    Local $sResp = ""
+    Local $hTimer = TimerInit()
+    While TimerDiff($hTimer) < 10000
+        Local $sChunk = TCPRecv($iSocket, 65536)
+        If @error Then ExitLoop
+        If $sChunk <> "" Then
+            $sResp &= $sChunk
+        Else
+            Sleep(20)
+        EndIf
+    WEnd
+
+    TCPCloseSocket($iSocket)
+
+    Local $iPos = StringInStr($sResp, @CRLF & @CRLF)
+    If $iPos > 0 Then Return StringMid($sResp, $iPos + 4)
+    Return $sResp
+EndFunc   ;==>_DD_HttpPost
+
+; Extraction naive d'une valeur chaine depuis un petit JSON plat, du style
+; de ceux produits par HttpRouter.au3 ($sKey":"valeur"). Suffisant pour
+; lire "status"/"message" dans les reponses de _CMR_StatusJSON() ; pas un
+; parseur JSON general.
+Func _DD_JsonGetValue($sJson, $sKey)
+    Local $aMatch = StringRegExp($sJson, '"' & $sKey & '"\s*:\s*"([^"]*)"', 1)
+    If Not @error Then Return $aMatch[0]
+
+    Local $aMatchBool = StringRegExp($sJson, '"' & $sKey & '"\s*:\s*(true|false)', 1)
+    If Not @error Then Return $aMatchBool[0]
+
+    Return ""
+EndFunc   ;==>_DD_JsonGetValue
+
+#endregion
+
+; ============================================================================
+#region Test d'action reelle (CMR / COMAT / ETMS ...)
+; ============================================================================
+
+; Lance une VRAIE instance de Dispatch (dediee au test, avec /ErrorStdOut
+; pour que les erreurs runtime partent en texte au lieu d'ouvrir le popup
+; "AutoIt Error" bloquant), declenche l'action choisie via son API HTTP
+; reelle (POST /api/action, voir HttpRouter.au3), surveille le resultat,
+; et si ca plante, croise l'erreur avec tout ce que l'analyse statique a
+; deja trouve dans la meme fonction (doublons, ReDim dangereux, etc.).
+;
+; Attention : ceci execute reellement l'action (pas une simulation). Voir
+; l'avertissement specifique de chaque action dans $g_aTestableActions.
+Func _DD_RunActionTest($sActionLabel, $sParam1, $sParam2)
+    If Not $g_bGuiActive Then Return
+    If $g_bActionTestRunning Then
+        _DD_GuiLog("[WARNING] Un test est deja en cours, attends qu'il se termine avant d'en relancer un.")
+        Return
+    EndIf
+
+    Local $iRow = -1
+    Local $t = 0
+    For $t = 0 To UBound($g_aTestableActions, 1) - 1
+        If $g_aTestableActions[$t][0] = $sActionLabel Then
+            $iRow = $t
+            ExitLoop
+        EndIf
+    Next
+    If $iRow = -1 Then
+        _DD_GuiLog("[ERROR] Action de test inconnue : '" & $sActionLabel & "'.")
+        Return
+    EndIf
+
+    Local $sActionName = $g_aTestableActions[$iRow][1]
+    Local $sField1 = $g_aTestableActions[$iRow][2]
+    Local $sField2 = $g_aTestableActions[$iRow][3]
+    Local $sWarning = $g_aTestableActions[$iRow][4]
+
+    If StringStripWS($sParam1, 3) = "" Then
+        _DD_GuiLog("[ERROR] Test '" & $sActionName & "' : le parametre principal (" & $sField1 & ") est vide.")
+        Return
+    EndIf
+    If $sField2 <> "" And StringStripWS($sParam2, 3) = "" Then
+        _DD_GuiLog("[ERROR] Test '" & $sActionName & "' : le parametre secondaire (" & $sField2 & ") est requis pour cette action.")
+        Return
+    EndIf
+
+    $g_bActionTestRunning = True
+    _DD_GuiLog("")
+    _DD_GuiLog("=== Test '" & $sActionName & "' ===")
+    _DD_GuiLog("Attention : " & $sWarning)
+
+    _DD_GuiSetStatus("Test '" & $sActionName & "' : verification du port " & $DD_DISPATCH_PORT & "...")
+    If _DD_IsPortOpen("127.0.0.1", $DD_DISPATCH_PORT) Then
+        _DD_GuiLog("[ERROR] Le port " & $DD_DISPATCH_PORT & " est deja utilise (une instance de Dispatch tourne peut-etre deja). " & _
+            "Ferme-la avant de lancer un test : je ne peux capturer les erreurs que d'une instance que je lance moi-meme avec /ErrorStdOut.")
+        _DD_GuiSetStatus("Test annule : port deja occupe.")
+        $g_bActionTestRunning = False
+        Return
+    EndIf
+
+    If $g_sAutoItPath = "" Then _DD_DetectAutoIt()
+    If $g_sAutoItPath = "" Then
+        _DD_GuiLog("[ERROR] AutoIt3.exe introuvable, impossible de lancer le test.")
+        $g_bActionTestRunning = False
+        Return
+    EndIf
+
+    Local $sMainScript = $g_sProjectRoot & "\" & $DD_DEFAULT_MAIN
+    If Not FileExists($sMainScript) Then
+        _DD_GuiLog("[ERROR] " & $DD_DEFAULT_MAIN & " introuvable dans " & $g_sProjectRoot & ".")
+        $g_bActionTestRunning = False
+        Return
+    EndIf
+
+    _DD_GuiSetStatus("Test '" & $sActionName & "' : demarrage de Dispatch (instance dediee)...")
+    Local $sCmd = '"' & $g_sAutoItPath & '" /ErrorStdOut "' & $sMainScript & '"'
+    Local $iPid = Run($sCmd, $g_sProjectRoot, @SW_HIDE, BitOR($DD_STDOUT_CHILD, $DD_STDERR_CHILD))
+    If @error Or $iPid = 0 Then
+        _DD_GuiLog("[ERROR] Impossible de lancer Dispatch.")
+        $g_bActionTestRunning = False
+        Return
+    EndIf
+    $g_iActionTestPid = $iPid
+
+    Local $sOutput = ""
+    Local $hBootTimer = TimerInit()
+    Local $bPortReady = False
+    While TimerDiff($hBootTimer) < 15000
+        $sOutput &= StdoutRead($iPid)
+        $sOutput &= StderrRead($iPid)
+        If Not ProcessExists($iPid) Then ExitLoop
+        If _DD_IsPortOpen("127.0.0.1", $DD_DISPATCH_PORT) Then
+            $bPortReady = True
+            ExitLoop
+        EndIf
+        Sleep(150)
+        _DD_GuiPump()
+    WEnd
+
+    If Not ProcessExists($iPid) Then
+        $sOutput &= StdoutRead($iPid)
+        $sOutput &= StderrRead($iPid)
+        $g_iActionTestPid = 0
+        _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, "CRASH_DEMARRAGE", $sOutput, "")
+        $g_bActionTestRunning = False
+        Return
+    EndIf
+
+    If Not $bPortReady Then
+        ProcessClose($iPid)
+        $g_iActionTestPid = 0
+        _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, "TIMEOUT_DEMARRAGE", $sOutput, "")
+        $g_bActionTestRunning = False
+        Return
+    EndIf
+
+    Local $sParam2Info = ""
+    If $sField2 <> "" Then $sParam2Info = ", " & $sField2 & "=" & $sParam2
+    _DD_GuiSetStatus("Test '" & $sActionName & "' : envoi de l'action (" & $sField1 & "=" & $sParam1 & $sParam2Info & ")...")
+
+    Local $sPayload = '{"action":"' & $sActionName & '","' & $sField1 & '":"' & _DD_JsonEscape($sParam1) & '"'
+    If $sField2 <> "" Then $sPayload &= ',"' & $sField2 & '":"' & _DD_JsonEscape($sParam2) & '"'
+    $sPayload &= '}'
+
+    _DD_HttpPost("127.0.0.1", $DD_DISPATCH_PORT, "/api/action", $sPayload)
+    If $g_sLastHttpError <> "" Then
+        ProcessClose($iPid)
+        $g_iActionTestPid = 0
+        _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, "ECHEC_HTTP", $sOutput, "")
+        $g_bActionTestRunning = False
+        Return
+    EndIf
+
+    _DD_GuiSetStatus("Test '" & $sActionName & "' : execution en cours, surveillance...")
+    Local $hTimer = TimerInit()
+    Local $sOutcome = "TIMEOUT"
+    Local $sFinalStatusJson = ""
+
+    While TimerDiff($hTimer) < 60000
+        $sOutput &= StdoutRead($iPid)
+        $sOutput &= StderrRead($iPid)
+
+        If Not ProcessExists($iPid) Then
+            $sOutcome = "CRASH"
+            ExitLoop
+        EndIf
+
+        ; CMR_STATUS est la seule action qui expose un vrai suivi d'etat
+        ; aujourd'hui ; pour les autres, on se contente de surveiller un
+        ; eventuel crash pendant la duree de surveillance.
+        If $sActionName = "CMR_GENERATE" Then
+            Local $sStatusResp = _DD_HttpPost("127.0.0.1", $DD_DISPATCH_PORT, "/api/action", '{"action":"CMR_STATUS"}')
+            If $g_sLastHttpError = "" And $sStatusResp <> "" Then
+                If _DD_JsonGetValue($sStatusResp, "running") = "false" Then
+                    $sOutcome = "OK"
+                    $sFinalStatusJson = $sStatusResp
+                    ExitLoop
+                EndIf
+            EndIf
+        EndIf
+
+        Sleep(500)
+        _DD_GuiPump()
+    WEnd
+
+    $sOutput &= StdoutRead($iPid)
+    $sOutput &= StderrRead($iPid)
+
+    If $sOutcome = "TIMEOUT" And $sActionName <> "CMR_GENERATE" Then $sOutcome = "AUCUN_CRASH_DETECTE"
+
+    If ProcessExists($iPid) Then ProcessClose($iPid)
+    $g_iActionTestPid = 0
+
+    _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, $sOutcome, $sOutput, $sFinalStatusJson)
+    $g_bActionTestRunning = False
+EndFunc   ;==>_DD_RunActionTest
+
+; Analyse le resultat d'un test : si crash, reutilise _DD_ParseCompilerOutput
+; (meme moteur que le mode "compile") pour identifier fichier/ligne/cause,
+; puis recoupe avec les diagnostics DEJA connus (analyse statique faite
+; plus tot) pour la meme fonction -- exactement ce qui permet de dire
+; "cette erreur est probablement liee a X, deja repere avant meme le test".
+Func _DD_FinishActionTest($sActionName, $sField1, $sParam1, $sField2, $sParam2, $sOutcome, $sOutput, $sFinalStatusJson)
+    Local $iDiagBefore = $g_iDiagCount
+    Local $sCrashDetail = ""
+    Local $sRelated = ""
+
+    If $sOutcome = "CRASH" Or $sOutcome = "CRASH_DEMARRAGE" Then
+        _DD_ParseCompilerOutput($sOutput)
+        Local $d = 0
+        For $d = $iDiagBefore To $g_iDiagCount - 1
+            $sCrashDetail &= @CRLF & "  [" & $g_aDiagnostics[$d][$DCOL_CODE] & "] " & $g_aDiagnostics[$d][$DCOL_MESSAGE]
+            If $g_aDiagnostics[$d][$DCOL_SUGGESTION] <> "" Then $sCrashDetail &= @CRLF & "    -> " & $g_aDiagnostics[$d][$DCOL_SUGGESTION]
+
+            Local $sCrashFile = $g_aDiagnostics[$d][$DCOL_FILE]
+            Local $iCrashLine = $g_aDiagnostics[$d][$DCOL_LINE]
+            Local $iFuncRow = _DD_FindEnclosingFunction($sCrashFile, $iCrashLine)
+            If $iFuncRow >= 0 Then
+                Local $iFStart = $g_aFunctions[$iFuncRow][$UCOL_LINE]
+                Local $iFEnd = $g_aFunctions[$iFuncRow][$UCOL_ENDLINE]
+                Local $r = 0
+                For $r = 0 To $iDiagBefore - 1
+                    If StringLower($g_aDiagnostics[$r][$DCOL_FILE]) = StringLower($sCrashFile) Then
+                        Local $iRLine = $g_aDiagnostics[$r][$DCOL_LINE]
+                        If $iRLine >= $iFStart And $iRLine <= $iFEnd Then
+                            $sRelated &= @CRLF & "  [deja detecte en analyse statique] [" & $g_aDiagnostics[$r][$DCOL_CODE] & _
+                                "] ligne " & $iRLine & " : " & $g_aDiagnostics[$r][$DCOL_MESSAGE]
+                        EndIf
+                    EndIf
+                Next
+            EndIf
+        Next
+        If $sCrashDetail = "" Then $sCrashDetail = @CRLF & "  (erreur non reconnue automatiquement, voir la sortie brute dans le rapport)"
+    EndIf
+
+    Local $sSummary = ""
+    Switch $sOutcome
+        Case "OK"
+            $sSummary = "Termine sans crash. " & _DD_JsonGetValue($sFinalStatusJson, "message")
+            _DD_GuiSetStatus("Test '" & $sActionName & "' : termine sans crash.")
+            _DD_GuiLog("[OK] " & $sSummary)
+
+        Case "CRASH", "CRASH_DEMARRAGE"
+            $sSummary = "Dispatch a plante pendant le test." & $sCrashDetail
+            If $sRelated <> "" Then $sSummary &= @CRLF & "Lien possible avec l'analyse statique deja faite :" & $sRelated
+            _DD_GuiSetStatus("Test '" & $sActionName & "' : CRASH detecte (voir journal et rapport).")
+            _DD_GuiLog("[ERROR] Dispatch a plante pendant le test '" & $sActionName & "'." & $sCrashDetail)
+            If $sRelated <> "" Then _DD_GuiLog("[INFO] Lien avec l'analyse statique :" & $sRelated)
+
+        Case "TIMEOUT"
+            $sSummary = "CMR toujours 'running' apres le delai de surveillance (pas de crash detecte, mais pas confirme termine)."
+            _DD_GuiSetStatus("Test '" & $sActionName & "' : pas de crash, mais toujours en cours au bout du delai.")
+            _DD_GuiLog("[WARNING] " & $sSummary)
+
+        Case "AUCUN_CRASH_DETECTE"
+            $sSummary = "Aucun crash pendant la surveillance. Cette action n'a pas de statut interrogeable comme CMR : " & _
+                "ce n'est pas une confirmation de succes, seulement l'absence de plantage observe."
+            _DD_GuiSetStatus("Test '" & $sActionName & "' : aucun crash observe.")
+            _DD_GuiLog("[OK] " & $sSummary)
+
+        Case "TIMEOUT_DEMARRAGE"
+            $sSummary = "Le serveur Dispatch n'a jamais ouvert le port " & $DD_DISPATCH_PORT & " (demarrage anormalement long ou bloque)."
+            _DD_GuiSetStatus("Test '" & $sActionName & "' : demarrage bloque.")
+            _DD_GuiLog("[ERROR] " & $sSummary)
+
+        Case "ECHEC_HTTP"
+            $sSummary = "Impossible de contacter Dispatch en HTTP : " & $g_sLastHttpError
+            _DD_GuiSetStatus("Test '" & $sActionName & "' : echec de connexion HTTP.")
+            _DD_GuiLog("[ERROR] " & $sSummary)
+
+        Case Else
+            $sSummary = "Resultat : " & $sOutcome
+    EndSwitch
+
+    _DD_WriteActionTestReport($sActionName, $sField1, $sParam1, $sField2, $sParam2, $sOutcome, $sSummary, $sOutput)
+EndFunc   ;==>_DD_FinishActionTest
+
+Func _DD_WriteActionTestReport($sActionName, $sField1, $sParam1, $sField2, $sParam2, $sOutcome, $sSummary, $sRawOutput)
+    Local $sReportsDir = @ScriptDir & "\reports"
+    If Not FileExists($sReportsDir) Then DirCreate($sReportsDir)
+
+    Local $sTimestamp = @YEAR & @MON & @MDAY & "_" & @HOUR & @MIN & @SEC
+    Local $sPath = $sReportsDir & "\DispatchDoctor-test-" & $sActionName & "-" & $sTimestamp & ".txt"
+
+    Local $hFile = FileOpen($sPath, 2)
+    If $hFile = -1 Then Return
+
+    FileWriteLine($hFile, "========================================================")
+    FileWriteLine($hFile, $DD_TOOLNAME & " - Rapport de test d'action reelle")
+    FileWriteLine($hFile, "========================================================")
+    FileWriteLine($hFile, "Date       : " & _DD_NowString())
+    FileWriteLine($hFile, "Action     : " & $sActionName)
+    FileWriteLine($hFile, $sField1 & " : " & $sParam1)
+    If $sField2 <> "" Then FileWriteLine($hFile, $sField2 & " : " & $sParam2)
+    FileWriteLine($hFile, "Resultat   : " & $sOutcome)
+    FileWriteLine($hFile, "")
+    FileWriteLine($hFile, "--- Resume ---")
+    FileWriteLine($hFile, $sSummary)
+    FileWriteLine($hFile, "")
+    FileWriteLine($hFile, "--- Sortie brute capturee (stdout/stderr, /ErrorStdOut) ---")
+    FileWriteLine($hFile, $sRawOutput)
+
+    FileClose($hFile)
+
+    _DD_GuiLog("[*] Rapport de test ecrit : " & $sPath)
+    ConsoleWrite("[*] Rapport de test ecrit : " & $sPath & @CRLF)
+EndFunc   ;==>_DD_WriteActionTestReport
+
+#endregion
+
+; ============================================================================
 #region Interface graphique (fenetre de progression)
 ; ============================================================================
 
@@ -1606,7 +2103,7 @@ EndFunc   ;==>_DD_WriteHtmlReport
 ; fermeture de fenetre -3 et les styles par defaut de GUICtrlCreateEdit
 ; suffisent, comme le fait deja MainDispatch.au3 (If $iMsg = -3 Then Exit).
 Func _DD_GuiInit()
-    $g_hGui = GUICreate($DD_TOOLNAME & " v" & $DD_VERSION & "  -  " & $g_sMode, 640, 660)
+    $g_hGui = GUICreate($DD_TOOLNAME & " v" & $DD_VERSION & "  -  " & $g_sMode, 640, 700)
     GUISetBkColor(0x1E1E1E, $g_hGui)
     GUISetFont(10, 400, 0, "Segoe UI", $g_hGui)
 
@@ -1655,7 +2152,26 @@ Func _DD_GuiInit()
     GUICtrlSetColor($g_idListFunc, 0xDDDDDD)
     GUICtrlSetBkColor($g_idListFunc, 0x111111)
 
-    $g_idBtnClose = GUICtrlCreateButton("Fermer", 480, 610, 140, 28)
+    Local $idTestLabel = GUICtrlCreateLabel("Tester une action reelle (sur une instance de Dispatch dediee au test) : action, param. principal, param. secondaire", 20, 586, 600, 18)
+    GUICtrlSetColor($idTestLabel, 0x66CCFF)
+    GUICtrlSetBkColor($idTestLabel, 0x1E1E1E)
+
+    $g_idComboTestAction = GUICtrlCreateCombo("", 20, 606, 290, 24)
+    Local $t = 0
+    Local $sActionData = ""
+    For $t = 0 To UBound($g_aTestableActions, 1) - 1
+        If $sActionData <> "" Then $sActionData &= "|"
+        $sActionData &= $g_aTestableActions[$t][0]
+    Next
+    GUICtrlSetData($g_idComboTestAction, $sActionData, $g_aTestableActions[0][0])
+
+    $g_idInputParam1 = GUICtrlCreateInput("", 315, 606, 100, 26)
+    $g_idInputParam2 = GUICtrlCreateInput("", 420, 606, 80, 26)
+    $g_idBtnRunTest = GUICtrlCreateButton("Lancer le test", 505, 605, 115, 28)
+
+    ; $g_idBtnOpenHtml est cree plus tard (une fois les rapports generes),
+    ; a cet emplacement fixe reserve pour lui.
+    $g_idBtnClose = GUICtrlCreateButton("Fermer", 480, 650, 140, 28)
 
     GUISetState(@SW_SHOW, $g_hGui)
     $g_bGuiActive = True
@@ -1810,12 +2326,17 @@ Func _DD_GuiPump()
         _DD_GuiSearchFunctions()
     ElseIf $iMsg = $g_idBtnOpenFile Then
         _DD_GuiOpenSelectedFile()
+    ElseIf $iMsg = $g_idBtnRunTest Then
+        _DD_RunActionTest(GUICtrlRead($g_idComboTestAction), GUICtrlRead($g_idInputParam1), GUICtrlRead($g_idInputParam2))
     EndIf
 EndFunc   ;==>_DD_GuiPump
 
 Func _DD_GuiCloseAndExit()
     Local $iCode = 0
     If $g_iCountError > 0 Then $iCode = 1
+    ; Evite de laisser une instance de test orpheline si la fenetre est
+    ; fermee pendant un test d'action en cours.
+    If $g_iActionTestPid <> 0 And ProcessExists($g_iActionTestPid) Then ProcessClose($g_iActionTestPid)
     If $g_hGui <> 0 Then GUIDelete($g_hGui)
     Exit $iCode
 EndFunc   ;==>_DD_GuiCloseAndExit
@@ -1827,7 +2348,7 @@ Func _DD_GuiWaitClose()
     If Not $g_bGuiActive Then Return
 
     If $g_sHtmlReportPath <> "" Then
-        $g_idBtnOpenHtml = GUICtrlCreateButton("Ouvrir le rapport HTML", 20, 415, 220, 28)
+        $g_idBtnOpenHtml = GUICtrlCreateButton("Ouvrir le rapport HTML", 20, 650, 220, 28)
     EndIf
 
     _DD_GuiSetStatus("Termine. Vous pouvez consulter le journal ci-dessus ou fermer cette fenetre.")

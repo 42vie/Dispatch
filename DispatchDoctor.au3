@@ -157,6 +157,7 @@ Global $g_idBtnOpenHtml = 0
 Global $g_sGuiLogBuffer = ""
 Global $g_sHtmlReportPath = ""
 Global $g_idComboDomain = 0
+Global $g_idBtnFilterDomain = 0
 Global $g_idInputSearch = 0
 Global $g_idBtnSearch = 0
 Global $g_idBtnOpenFile = 0
@@ -1636,12 +1637,16 @@ Func _DD_GuiInit()
 
     ; Combo : liste des domaines (peuplee une fois l'indexation terminee).
     ; Style par defaut de GUICtrlCreateCombo (liste deroulante simple),
-    ; suffisant ici, pas besoin de style explicite.
-    $g_idComboDomain = GUICtrlCreateCombo("", 20, 298, 140, 24)
+    ; suffisant ici, pas besoin de style explicite. Le filtrage se fait
+    ; via le bouton "Filtrer" (et non uniquement au changement de
+    ; selection dans le combo) pour rester fiable quelle que soit la
+    ; maniere dont l'utilisateur valide son choix (clic, clavier, ...).
+    $g_idComboDomain = GUICtrlCreateCombo("", 20, 298, 115, 24)
+    $g_idBtnFilterDomain = GUICtrlCreateButton("Filtrer", 140, 297, 65, 26)
 
-    $g_idInputSearch = GUICtrlCreateInput("", 170, 298, 280, 24)
-    $g_idBtnSearch = GUICtrlCreateButton("Chercher", 455, 297, 75, 26)
-    $g_idBtnOpenFile = GUICtrlCreateButton("Ouvrir fichier", 535, 297, 85, 26)
+    $g_idInputSearch = GUICtrlCreateInput("", 210, 298, 205, 24)
+    $g_idBtnSearch = GUICtrlCreateButton("Chercher", 420, 297, 70, 26)
+    $g_idBtnOpenFile = GUICtrlCreateButton("Ouvrir fichier", 495, 297, 125, 26)
 
     ; Style par defaut de GUICtrlCreateList (liste simple a selection unique) :
     ; suffisant pour parcourir des noms de fonctions, pas de style a deviner.
@@ -1697,21 +1702,25 @@ EndFunc   ;==>_DD_GuiPopulateBrowser
 ; "::" facile a re-decouper (utilise par le bouton "Ouvrir fichier").
 ; Le caractere "|" est neutralise car il sert de separateur entre entrees
 ; dans les controles List d'AutoIt.
-Func _DD_FormatFuncEntry($iRow)
-    Local $sEntry = $g_aFunctions[$iRow][$UCOL_NAME] & "(" & $g_aFunctions[$iRow][$UCOL_PARAMS] & ")  ::  " & _
-        _DD_RelativePath($g_aFunctions[$iRow][$UCOL_FILE], $g_sProjectRoot) & "::" & $g_aFunctions[$iRow][$UCOL_LINE] & _
-        "::" & $g_aFunctions[$iRow][$UCOL_DOMAIN]
+Func _DD_FormatFuncEntry($iRow, $bShowDomain = True)
+    Local $sEntry = $g_aFunctions[$iRow][$UCOL_NAME] & "(" & $g_aFunctions[$iRow][$UCOL_PARAMS] & ")  ->  " & _
+        _DD_RelativePath($g_aFunctions[$iRow][$UCOL_FILE], $g_sProjectRoot) & "::" & $g_aFunctions[$iRow][$UCOL_LINE]
+    If $bShowDomain Then $sEntry &= "::" & $g_aFunctions[$iRow][$UCOL_DOMAIN]
     Return StringReplace($sEntry, "|", "/")
 EndFunc   ;==>_DD_FormatFuncEntry
 
+; Filtre la liste sur un domaine precis. Quand un seul domaine est
+; affiche, son nom n'est plus repete sur chaque ligne (deja connu via le
+; combo) pour garder l'affichage lisible dans la petite fenetre de liste.
 Func _DD_GuiShowFunctionsForDomain($sDomain)
     If Not $g_bGuiActive Then Return
+    Local $bAll = ($sDomain = "TOUS LES DOMAINES" Or $sDomain = "")
     Local $sData = ""
     Local $i = 0
     For $i = 0 To $g_iFuncCount - 1
-        If $sDomain <> "TOUS LES DOMAINES" And $g_aFunctions[$i][$UCOL_DOMAIN] <> $sDomain Then ContinueLoop
+        If Not $bAll And $g_aFunctions[$i][$UCOL_DOMAIN] <> $sDomain Then ContinueLoop
         If $sData <> "" Then $sData &= "|"
-        $sData &= _DD_FormatFuncEntry($i)
+        $sData &= _DD_FormatFuncEntry($i, $bAll)
     Next
     If $sData = "" Then $sData = "(aucune fonction dans ce domaine)"
     GUICtrlSetData($g_idListFunc, $sData)
@@ -1730,7 +1739,7 @@ Func _DD_GuiSearchFunctions()
     For $i = 0 To $g_iFuncCount - 1
         If StringInStr(StringLower($g_aFunctions[$i][$UCOL_NAME]), $sQuery) = 0 Then ContinueLoop
         If $sData <> "" Then $sData &= "|"
-        $sData &= _DD_FormatFuncEntry($i)
+        $sData &= _DD_FormatFuncEntry($i, True)
     Next
     If $sData = "" Then $sData = "(aucun resultat)"
     GUICtrlSetData($g_idListFunc, $sData)
@@ -1794,6 +1803,8 @@ Func _DD_GuiPump()
     ElseIf $g_idBtnOpenHtml <> 0 And $iMsg = $g_idBtnOpenHtml Then
         If $g_sHtmlReportPath <> "" And FileExists($g_sHtmlReportPath) Then ShellExecute($g_sHtmlReportPath)
     ElseIf $iMsg = $g_idComboDomain Then
+        _DD_GuiShowFunctionsForDomain(GUICtrlRead($g_idComboDomain))
+    ElseIf $iMsg = $g_idBtnFilterDomain Then
         _DD_GuiShowFunctionsForDomain(GUICtrlRead($g_idComboDomain))
     ElseIf $iMsg = $g_idBtnSearch Then
         _DD_GuiSearchFunctions()

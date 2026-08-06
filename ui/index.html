@@ -5,26 +5,239 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dispatch Master</title>
   <style>
-    body { font-family: Arial, sans-serif; background: #1E1E1E; color: #FFFFFF; margin: 0; padding: 20px; }
-    .container { max-width: 1200px; margin: 0 auto; }
-    h1 { color: #00FF00; }
-    .status { background: #2D2D30; padding: 20px; border-radius: 8px; margin-top: 20px; }
-    .status-item { margin: 10px 0; }
-    .label { color: #00A0FF; font-weight: bold; }
+    :root {
+      --bg: #0F0F0F;
+      --surface: #1E1E1E;
+      --surface2: #2D2D30;
+      --text: #FFFFFF;
+      --text2: #CCCCCC;
+      --text3: #999999;
+      --border: #3E3E3E;
+      --border2: #4E4E4E;
+      --blue: #00A0FF;
+      --blue-bg: rgba(0, 160, 255, 0.1);
+      --green: #00FF00;
+      --green-bg: rgba(0, 255, 0, 0.1);
+      --orange: #FFA500;
+      --orange-bg: rgba(255, 165, 0, 0.1);
+      --red: #FF4444;
+      --red-bg: rgba(255, 68, 68, 0.1);
+      --purple: #A020F0;
+      --purple-bg: rgba(160, 32, 240, 0.1);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 20px;
+    }
+    .container { max-width: 1400px; margin: 0 auto; }
+    h1 {
+      color: var(--green);
+      font-size: 32px;
+      margin-bottom: 10px;
+      font-weight: 800;
+    }
+    .subtitle {
+      color: var(--text3);
+      font-size: 14px;
+      margin-bottom: 30px;
+    }
+    .status-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 30px;
+    }
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .status-item {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .status-label {
+      color: var(--text3);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    .status-value {
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .status-value.success { color: var(--green); }
+    .status-value.info { color: var(--blue); }
+    .status-value.warn { color: var(--orange); }
+    .endpoints {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .endpoints h2 {
+      color: var(--text2);
+      font-size: 18px;
+      margin-bottom: 16px;
+    }
+    .endpoint-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 12px;
+    }
+    .endpoint-item {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-family: "Consolas", "Monaco", monospace;
+      font-size: 13px;
+    }
+    .endpoint-method {
+      color: var(--blue);
+      font-weight: 700;
+      margin-right: 8px;
+    }
+    .endpoint-path {
+      color: var(--text2);
+    }
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--text3);
+    }
+    .loading-spinner {
+      display: inline-block;
+      width: 40px;
+      height: 40px;
+      border: 4px solid var(--border);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>Dispatch Master</h1>
-    <div class="status">
-      <div class="status-item"><span class="label">Serveur:</span> Connect</div>
-      <div class="status-item"><span class="label">Port:</span> 9500</div>
-      <div class="status-item"><span class="label">API:</span> /api/ping, /api/action, /api/load, /api/save</div>
-      <div class="status-item"><span class="label">Interface:</span> En cours de chargement...</div>
+    <h1>🚀 Dispatch Master</h1>
+    <p class="subtitle">Syst me de gestion de dispatch - Version Finale</p>
+    
+    <div class="status-panel">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h2 style="color: var(--text2); font-size: 18px;">📊 Statut du Serveur</h2>
+        <span class="status-value success">● En ligne</span>
+      </div>
+      <div class="status-grid">
+        <div class="status-item">
+          <div class="status-label">Port HTTP</div>
+          <div class="status-value info">9500</div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">Interface</div>
+          <div class="status-value success">Active</div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">API</div>
+          <div class="status-value success">Op rationnelle</div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">Base de donn es</div>
+          <div class="status-value info">dispatch.json</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="endpoints">
+      <h2>🔌 Endpoints API Disponibles</h2>
+      <div class="endpoint-list">
+        <div class="endpoint-item">
+          <span class="endpoint-method">GET</span>
+          <span class="endpoint-path">/api/ping</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="endpoint-method">POST</span>
+          <span class="endpoint-path">/api/action</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="endpoint-method">GET</span>
+          <span class="endpoint-path">/api/load</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="endpoint-method">POST</span>
+          <span class="endpoint-path">/api/save</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="endpoint-method">GET</span>
+          <span class="endpoint-path">/api/load-contacts</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="endpoint-method">POST</span>
+          <span class="endpoint-path">/api/save-contacts</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="endpoint-method">POST</span>
+          <span class="endpoint-path">/api/net-save</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="endpoint-method">GET</span>
+          <span class="endpoint-path">/api/net-load</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="endpoint-method">GET</span>
+          <span class="endpoint-path">/api/net-list</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="endpoint-method">GET</span>
+          <span class="endpoint-path">/api/net-check</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="endpoint-method">POST</span>
+          <span class="endpoint-path">/api/job-status</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="endpoint-method">GET</span>
+          <span class="endpoint-path">/css/*.css</span>
+        </div>
+        <div class="endpoint-item">
+          <span class="endpoint-method">GET</span>
+          <span class="endpoint-path">/js/*.js</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="loading" style="margin-top: 40px;">
+      <div class="loading-spinner"></div>
+      <p>Chargement de l'interface compl te...</p>
+      <p style="font-size: 12px; margin-top: 8px;">Si rien ne s'affiche, v rifiez que le serveur AutoIt est d marr </p>
     </div>
   </div>
+  
   <script>
-    console.log("Dispatch interface loaded");
+    console.log("Dispatch Master - Interface charg e de base");
+    console.log("Pour charger l'interface compl te, copiez les fichiers depuis Interface.html:");
+    console.log("  - Tableaux de donn es");
+    console.log("  - Kanban");
+    console.log("  - Modales");
+    console.log("  - JavaScript (gmaster, apiCall, etc.)");
+    
+    fetch('/api/ping')
+      .then(r => r.json())
+      .then(d => console.log('API ping:', d))
+      .catch(e => console.error('API ping failed:', e));
   </script>
 </body>
 </html>

@@ -5,7 +5,7 @@
 ; Extrait automatiquement depuis Dispatch.txt.
 ; MainDispatch.au3 reste la version executable complete pour eviter toute casse.
 ; ============================================================================
-
+#include-once
 Func _HandleClient($iSocket)
     Local $sHeader = ""
     Local $iContentLength = 0

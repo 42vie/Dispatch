@@ -1,0 +1,104 @@
+// ║  EXPORT / IMPORT WORKFLOW — dossiers actifs uniquement                  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.getElementById('btn-export-wf').onclick = () => {
+  const myName = localStorage.getItem('dispatch_operator') || '';
+
+  // Exporter uniquement les dossiers en cours (pas les terminés/archivés)
+  const active = g_master.filter(r => {
+    const s = parseInt(statutNum(r.statut));
+    return s >= 1 && s <= 9 && s !== 8; // Tout sauf "Terminé"
+  });
+  if (!active.length) return toast('Aucun dossier actif à exporter.');
+
+  // S'assurer que chaque dossier a un opérateur (tag avec le nom si absent)
+  active.forEach(r => { if (!r.operator && myName) r.operator = myName; });
+
+  // Exporter aussi les rawData correspondants
+  const activeRaw = {};
+  active.forEach(r => {
+    (r.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean).forEach(f => {
+      if (g_rawData[f]) activeRaw[f] = g_rawData[f];
+    });
+  });
+
+  // Résumé par opérateur pour le header
+  const byOp = {};
+  active.forEach(r => { const op = r.operator || 'Non assigné'; byOp[op] = (byOp[op]||0) + 1; });
+
+  const payload = {
+    _type: 'dispatch_workflow',
+    _exportDate: new Date().toISOString(),
+    _exportedBy: myName || 'inconnu',
+    _version: 3,
+    _summary: byOp,
+    master: active,
+    rawData: activeRaw,
+    cpData: g_cpData,
+    contacts: g_contacts
+  };
+
+  const ts = new Date().toISOString().slice(0,16).replace('T','_').replace(':','-');
+  const nameTag = myName ? `_${myName}` : '';
+  downloadText(`Workflow${nameTag}_${active.length}dossiers_${ts}.json`, JSON.stringify(payload, null, 2));
+  toast(`${active.length} dossier(s) exportés par ${myName || '?'}. Fichier prêt à transmettre.`);
+};
+
+document.getElementById('btn-import-wf').onclick = () => document.getElementById('wf-input').click();
+document.getElementById('wf-input').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const d = JSON.parse(ev.target.result);
+      if (!d.master || !d.master.length) return toast('Fichier workflow vide ou invalide.');
+
+      // Fusionner : ajouter les dossiers absents, mettre à jour ceux existants
+      let added = 0, updated = 0;
+      d.master.forEach(imported => {
+        const existing = g_master.find(r => r.file === imported.file);
+        if (existing) {
+          // Mettre à jour les champs éditables (statut, contact, etc.)
+          ['statut','contact','tel','email','comment','cc','operator','fcDate','fcHoraire'].forEach(k => {
+            if (imported[k] !== undefined) existing[k] = imported[k];
+          });
+          updated++;
+        } else {
+          g_master.push(imported);
+          added++;
+        }
+      });
+
+      // Fusionner rawData
+      if (d.rawData) Object.assign(g_rawData, d.rawData);
+
+      // Fusionner contacts (ajouter les absents)
+      if (d.contacts) {
+        d.contacts.forEach(c => {
+          if (!g_contacts.find(x => (x.societe||'').toLowerCase() === (c.societe||'').toLowerCase() && (x.nom||'').toLowerCase() === (c.nom||'').toLowerCase())) {
+            g_contacts.push(c);
+          }
+        });
+      }
+
+      // Fusionner cpData
+      if (d.cpData) {
+        d.cpData.forEach(cp => {
+          if (!g_cpData.find(x => x.client === cp.client && JSON.stringify(x.files) === JSON.stringify(cp.files))) {
+            g_cpData.push(cp);
+          }
+        });
+      }
+
+      renderMaster(); renderKanban(); renderCP(); renderContacts(); updateStats();
+      populateOperatorFilter(); // Rafraîchir le filtre avec les nouveaux opérateurs
+      if (d.contacts && typeof saveContacts === 'function') saveContacts();
+      markDirty();
+      const from = d._exportedBy ? ` (de ${d._exportedBy})` : '';
+      toast(`Workflow importé${from} : +${added} nouveau(x), ${updated} mis à jour.`);
+    } catch(err) { alert('Erreur lecture workflow : ' + err.message); }
+  };
+  reader.readAsText(f);
+  e.target.value = '';
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

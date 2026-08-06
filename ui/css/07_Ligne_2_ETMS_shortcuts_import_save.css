@@ -1,0 +1,20 @@
+/* Ligne 2 : ETMS shortcuts + import/save */
+/* Ligne 2 : ETMS shortcuts + import/save */
+#header-actions {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border-top: 1px solid var(--border);
+}
+.etms-btn {
+  height: 26px; padding: 0 9px; border-radius: 4px;
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  cursor: pointer; border: 1px solid var(--border2); background: var(--surface2);
+  color: var(--blue); transition: all .15s;
+}
+.etms-btn:hover { background: var(--blue-bg); border-color: var(--blue); }
+.etms-btn.warn  { color: var(--orange); }
+.etms-btn.warn:hover { background: var(--orange-bg); border-color: var(--orange); }
+.etms-sep { width: 1px; height: 18px; background: var(--border); }
+

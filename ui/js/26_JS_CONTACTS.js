@@ -1,0 +1,106 @@
+// ║  CONTACTS                                                                ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function renderContacts() {
+  const tbody=document.getElementById('contacts-tbody');
+  tbody.innerHTML=g_contacts.map((c,i)=>`
+    <tr>
+      <td><strong>${c.societe||''}</strong></td>
+      <td>${c.nom||''}</td>
+      <td style="font-family:var(--mono);font-size:11px">${c.tel||''}</td>
+      <td style="font-family:var(--mono);font-size:11px">${c.email||''}</td>
+      <td>${c.cp?`<span class="badge b2">${c.cp}</span>`:''}</td>
+      <td style="color:var(--text2)">${c.notes||''}</td>
+      <td style="display:flex;gap:4px">
+        <button class="btn btn-ghost btn-sm" onclick="editContact(${i})">✏</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteContact(${i})">✕</button>
+      </td>
+    </tr>`).join('');
+}
+
+document.getElementById('btn-add-contact').onclick = () => {
+  g_conIdx=-1;
+  document.getElementById('mcon-title').textContent='Ajouter Contact';
+  ['con-societe','con-nom','con-tel','con-email','con-notes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('con-cp').value='';
+  openModal('modal-contact');
+};
+
+function editContact(i) {
+  g_conIdx=i;
+  const c=g_contacts[i];
+  document.getElementById('mcon-title').textContent='Modifier Contact';
+  document.getElementById('con-societe').value=c.societe||'';
+  document.getElementById('con-nom').value=c.nom||'';
+  document.getElementById('con-tel').value=c.tel||'';
+  document.getElementById('con-email').value=c.email||'';
+  document.getElementById('con-cp').value=c.cp||'';
+  document.getElementById('con-notes').value=c.notes||'';
+  openModal('modal-contact');
+}
+
+function deleteContact(i) {
+  if (!confirm('Supprimer ce contact ?')) return;
+  g_contacts.splice(i,1);
+  renderContacts();
+  saveContacts();
+}
+
+function saveContact() {
+  const c={
+    societe:document.getElementById('con-societe').value,
+    nom:document.getElementById('con-nom').value,
+    tel:document.getElementById('con-tel').value,
+    email:document.getElementById('con-email').value,
+    cp:document.getElementById('con-cp').value,
+    notes:document.getElementById('con-notes').value,
+  };
+  if (g_conIdx>=0) g_contacts[g_conIdx]=c;
+  else g_contacts.push(c);
+  closeModal('modal-contact');
+  renderContacts();
+  saveContacts();
+  toast('Contact sauvegardé.');
+}
+
+// ── Export / Import Contacts (fichier séparé, partageable) ──
+document.getElementById('btn-export-contacts').onclick = () => {
+  if (!g_contacts.length) return toast('Aucun contact à exporter.');
+  const payload = {
+    _type: 'dispatch_contacts',
+    _exportDate: new Date().toISOString(),
+    _count: g_contacts.length,
+    contacts: g_contacts
+  };
+  const ts = new Date().toISOString().slice(0,10);
+  downloadText(`Contacts_${g_contacts.length}_${ts}.json`, JSON.stringify(payload, null, 2));
+  toast(`${g_contacts.length} contact(s) exportés.`);
+};
+
+document.getElementById('btn-import-contacts').onclick = () => document.getElementById('contacts-input').click();
+document.getElementById('contacts-input').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const d = JSON.parse(ev.target.result);
+      const imported = d.contacts || (Array.isArray(d) ? d : []);
+      if (!imported.length) return toast('Aucun contact trouvé dans ce fichier.');
+      let added = 0, skipped = 0;
+      imported.forEach(c => {
+        const exists = g_contacts.find(x =>
+          (x.societe||'').toLowerCase() === (c.societe||'').toLowerCase() &&
+          (x.nom||'').toLowerCase() === (c.nom||'').toLowerCase()
+        );
+        if (exists) { skipped++; }
+        else { g_contacts.push(c); added++; }
+      });
+      renderContacts();
+      saveContacts();
+      toast(`Contacts importés : +${added} nouveau(x), ${skipped} déjà existant(s).`);
+    } catch(err) { alert('Erreur lecture contacts : ' + err.message); }
+  };
+  reader.readAsText(f);
+  e.target.value = '';
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

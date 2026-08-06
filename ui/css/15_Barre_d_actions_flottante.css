@@ -1,0 +1,17 @@
+/* Barre d'actions flottante */
+/* Barre d'actions flottante */
+#kanban-action-bar {
+  display: none; position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+  background: var(--surface); border: 1.5px solid var(--purple);
+  border-radius: 10px; padding: 10px 16px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.4);
+  z-index: 9999; display: none;
+  gap: 8px; align-items: center; min-width: 420px; flex-wrap: wrap;
+}
+#kanban-action-bar.visible { display: flex; }
+.kab-count { font-size: 13px; font-weight: 700; color: var(--purple); margin-right: 4px; }
+.k-file   { font-family: var(--mono); font-size: 11px; font-weight: 500; }
+.k-client { font-size: 11px; color: var(--text2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k-meta   { font-size: 10px; color: var(--text3); margin-top: 2px; }
+.k-col.drag-over { background: var(--blue-bg); border-color: var(--blue); }
+

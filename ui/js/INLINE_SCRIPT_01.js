@@ -1,0 +1,4058 @@
+'use strict';
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  STATE                                                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+// ── Chemins réseau par défaut (hardcodés) ──
+const DEFAULT_STATE_PATH = 'F:\\CDG\\PRODUCT\\TRANSCON\\Shared\\Clients\\HPE\\Workboard\\dispatch_state.json';
+
+let g_master   = [];  // dossiers actifs
+let g_operatorFilter = localStorage.getItem('dispatch_operator') || ''; // restauré immédiatement
+let g_rawData  = {};  // {fileId -> {client,svct,poids,vol,taxable,dept,rdl}}
+let g_cpData   = [];  // [{client,files[],palettes,colis,poids,vol,taxable,doc}]
+let g_contacts = [];  // [{societe,nom,tel,email,cp,notes}]
+let g_editIdx  = -1;
+let g_groupIdx = -1;
+let g_conIdx   = -1;
+let g_dragFile = null;
+let g_sortCol  = null;
+let g_sortAsc  = true;
+let g_colFilters = {}; // {colName: Set of allowed values}
+
+const TODAY = new Date(); TODAY.setHours(0,0,0,0);
+
+// ── Utilitaires perf ──
+function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  MÉTIER                                                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+const IDF = new Set(['75','77','78','91','92','93','94','95','60']);
+
+function calcTaxable(p, v) {
+  return Math.round(Math.max(+p||0, (+v||0)*333) * 100) / 100;
+}
+function calcTransp(svct, tax, dept, cpFlag, poidsBrut) {
+  // poidsBrut = poids brut réel (pas taxable) — c'est lui qui détermine le transporteur
+  const brut = poidsBrut !== undefined ? +poidsBrut : +tax; // fallback sur taxable si brut absent
+  const isIDF = IDF.has(String(dept||'').trim());
+  // UPS uniquement si SVCT = S5, ST, ou vide
+  const sv = (svct||'').toUpperCase().trim();
+  const upsOK = (sv === '' || sv === 'S5' || sv === 'ST' || sv.includes('S5') || sv.includes('ST'));
+
+  // Règle 1 : 0–10 kg BRUT + SVCT compatible (S5/ST/vide) → UPS partout
+  if (brut <= 10 && upsOK) return 'UPS';
+
+  // Règle 2 : IDF (75,77,78,91,92,93,94,95,60) + > 10 kg brut (ou noUPS) → Flex
+  if (isIDF) return 'Flex (7)';
+
+  // Règle 3 : Hors IDF
+  // CP hors IDF → EFDS / Groussard
+  if (cpFlag) return 'EFDS (1) / Groussard (12)';
+
+  // 0–90 kg brut hors IDF (inclut noUPS <= 10kg) → DGS
+  if (brut <= 90) return 'DGS (13)';
+
+  // > 90 kg brut hors IDF → EFDS / Groussard
+  return 'EFDS (1) / Groussard (12)';
+}
+function isCP(client) {
+  // Matching partiel : le mot-clé CP doit être contenu dans le nom client
+  // ex: "Arrow" reconnaît "Arrow ECS SAS", "MC3 LOGISTIQUE" reconnaît "MC3 LOGISTIQUE SAS"
+  const cl = (client||'').toLowerCase().trim();
+  const names = (typeof _cpNames !== 'undefined' && _cpNames.length)
+    ? _cpNames
+    : ['arrow','scc','computacenter','also','mc3 logistique','dexxon'];
+  return names.some(c => c && cl.includes(c));
+}
+function mergeSVCT(cur, nw) {
+  if (['SY','SZ','S8'].some(c => (nw||'').includes(c))) return nw;
+  if ((nw||'').includes('S5') && !['SY','SZ','S8'].some(c => (cur||'').includes(c))) return nw;
+  return cur;
+}
+function transpTarget(svct, client) {
+  // CP : toujours RDV à envoyer (statut 2), quel que soit le SVCT
+  if (isCP(client)) return '2';
+  if (['S8','SZ','SY'].some(c=>(svct||'').includes(c))) return '2';
+  if ((svct||'').includes('S5')) return '4';
+  return '5';
+}
+function statutLabel(n) {
+  const L = {'1':'1. Pas encore CC','2':'2. RDV à envoyer','3':'3. Attente réponse',
+    '4':'4. Pré-alerte & FC','5':'5. Prêt pour FC','6':'6. COMAT','7':'7. NTO','8':'8. Terminé'};
+  return L[String(n)] || String(n);
+}
+function statutNum(s) { const m = String(s||'').match(/^(\d)/); return m?m[1]:'1'; }
+function statutClass(n) {
+  return ['b1','b1','b2','b3','b4','b5','b6','b7','b8'][+n]||'b1';
+}
+function daysSince(dateStr) {
+  if (!dateStr) return 0;
+  const d = new Date(dateStr); d.setHours(0,0,0,0);
+  return Math.floor((TODAY - d) / 86400000);
+}
+function daysBadge(n) {
+  if (n === 0) return `<span class="days-badge days-0">Aujourd'hui</span>`;
+  if (n === 1) return `<span class="days-badge days-1">J+1</span>`;
+  if (n <= 2)  return `<span class="days-badge days-2">J+${n}</span>`;
+  return `<span class="days-badge days-3">J+${n} ⚠</span>`;
+}
+function storeRaw(file, client, svct, poids, vol, taxable, dept, rdl, supplement) {
+  if (!g_rawData[file]) {
+    g_rawData[file] = {client,svct,poids:+poids,vol:+vol,taxable:+taxable,dept,rdl,supplement:+(supplement||0)};
+  }
+}
+function autoFillContact(file, client) {
+  const c = g_contacts.find(c => (c.societe||'').toLowerCase() === (client||'').toLowerCase());
+  if (!c) return;
+  const idx = g_master.findIndex(r => r.file === file);
+  if (idx < 0) return;
+  if (!g_master[idx].contact && c.nom)   g_master[idx].contact = c.nom;
+  if (!g_master[idx].tel     && c.tel)   g_master[idx].tel     = c.tel;
+  if (!g_master[idx].email   && c.email) g_master[idx].email   = c.email;
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  RENDER MASTER                                                           ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+// Détecte les dossiers allant au même endroit (client+dept) pour signaler les regroupements possibles
+function buildSiblingsMap() {
+  const map = {}; // clé = "client_lower|dept" → [fichiers]
+  g_master.forEach(r => {
+    const key = (r.client||'').toLowerCase().trim() + '|' + (r.dept||'').trim();
+    if (!map[key]) map[key] = [];
+    map[key].push(r);
+  });
+  return map;
+}
+
+function getSiblingBadge(r, siblingsMap) {
+  const key = (r.client||'').toLowerCase().trim() + '|' + (r.dept||'').trim();
+  const siblings = siblingsMap[key];
+  if (!siblings || siblings.length < 2) return '';
+  // Compter ceux qui ne sont pas encore CC
+  const notCC = siblings.filter(s => s.cc !== 'Cc' && s.file !== r.file);
+  const alreadyCC = siblings.filter(s => s.cc === 'Cc' && s.file !== r.file);
+  if (notCC.length === 0 && alreadyCC.length === 0) return '';
+  // S'il y a des frères pas encore CC → badge orange "X en attente CC"
+  if (notCC.length > 0) {
+    return `<span title="${siblings.length} dossiers pour ${r.client} dept ${r.dept} — ${notCC.length} pas encore CC" style="font-size:9px;font-weight:700;color:var(--orange);background:var(--orange-bg);padding:1px 5px;border-radius:8px;margin-left:4px;white-space:nowrap">🔗 ${notCC.length} att. CC</span>`;
+  }
+  // Tous les frères sont CC → badge vert "groupable"
+  if (alreadyCC.length > 0) {
+    return `<span title="${alreadyCC.length + 1} dossiers CC pour ${r.client} dept ${r.dept} — regroupement possible" style="font-size:9px;font-weight:700;color:var(--green);background:var(--green-bg);padding:1px 5px;border-radius:8px;margin-left:4px;white-space:nowrap">🔗 ${alreadyCC.length + 1} groupable</span>`;
+  }
+  return '';
+}
+
+function renderMaster(filter='') {
+  const fl = (filter||'').toLowerCase();
+  let rows = g_master;
+  if (fl) rows = rows.filter(r =>
+    (r.file||'').toLowerCase().includes(fl) ||
+    (r.client||'').toLowerCase().includes(fl) ||
+    (r.statut&&statutLabel(statutNum(r.statut)).toLowerCase().includes(fl))
+  );
+  if (g_operatorFilter) rows = rows.filter(r => (r.operator||'') === g_operatorFilter);
+  // Filtres colonnes (style Excel)
+  for (const [col, allowed] of Object.entries(g_colFilters)) {
+    if (!allowed || !allowed.size) continue;
+    rows = rows.filter(r => {
+      const v = col === 'statut' ? statutLabel(statutNum(r.statut)) : String(r[col]||'');
+      return allowed.has(v);
+    });
+  }
+  if (g_sortCol) {
+    rows = [...rows].sort((a,b) => {
+      let va=a[g_sortCol]||'', vb=b[g_sortCol]||'';
+      if (!isNaN(+va)&&!isNaN(+vb)){va=+va;vb=+vb;}
+      return (va<vb?-1:va>vb?1:0) * (g_sortAsc?1:-1);
+    });
+  }
+  const siblingsMap = buildSiblingsMap();
+  const tbody = document.getElementById('master-tbody');
+  tbody.innerHTML = rows.map(r => {
+    const idx = g_master.indexOf(r);
+    const sn = statutNum(r.statut);
+    const isGroup = (r.file||'').includes(' + ');
+    const days = daysSince(r._dateCreated);
+    const fileDisp = (r.file||'').length>15 ? r.file.substring(0,15)+'…' : r.file;
+    const sibBadge = getSiblingBadge(r, siblingsMap);
+    return `<tr class="${isGroup?'is-group':''}" ondblclick="openEdit(${idx})">
+      <td style="text-align:center">
+        <input type="checkbox" ${r.cc==='Cc'?'checked':''} onchange="onCCCheck(${idx},this.checked)" style="accent-color:var(--green)">
+      </td>
+      <td title="${r.file||''}">
+        ${fileDisp}${isGroup?'<span class="tag-group">GROUPE</span>':''}${sibBadge}
+      </td>
+      <td title="${r.client||''}">${trunc(r.client,20)}</td>
+      <td>${r.rdl||''}${isRdlOverdue(r.rdl)&&+sn>=2&&+sn<=6?'<span style="color:var(--red);font-weight:700;font-size:10px;margin-left:3px" title="RDL dépassée">⚠</span>':''}</td>
+      <td style="font-family:var(--mono);font-size:11px">${r.svct||''}</td>
+      <td title="${r.transp||''}">${trunc(r.transp,17)}</td>
+      <td class="poids-val" style="text-align:right">${fmt(r.poids)}</td>
+      <td class="poids-val" style="text-align:right">${fmt(r.vol,3)}</td>
+      <td class="taxable-val" style="text-align:right">${fmt(r.taxable)}</td>
+      <td style="text-align:center">${r.dept||''}</td>
+      <td>${trunc(r.contact,13)}</td>
+      <td style="font-family:var(--mono);font-size:11px">${r.tel||''}</td>
+      <td title="${r.email||''}">${trunc(r.email,16)}</td>
+      <td class="${r.cc==='Cc'?'cc-yes':'cc-no'}">${r.cc==='Cc'?'✓ Cc':'—'}</td>
+      <td>${r.statut&&+sn>=2&&+sn<=7 ? daysBadge(days) : ''}</td>
+      <td title="${r.comment||''}" style="color:var(--text2)">${trunc(r.comment,22)}</td>
+      <td><span class="badge ${statutClass(sn)}">${trunc(statutLabel(sn),24)}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function trunc(s,n){s=s||'';return s.length>n?s.substring(0,n)+'…':s;}
+function fmt(v,d=2){const n=parseFloat(v);return isNaN(n)?'':n.toFixed(d);}
+
+// Tri colonnes
+document.querySelectorAll('table.t-master thead th[data-col]').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.col;
+    if (g_sortCol===col) g_sortAsc=!g_sortAsc;
+    else { g_sortCol=col; g_sortAsc=true; }
+    document.querySelectorAll('th[data-col]').forEach(t=>t.classList.remove('sorted'));
+    th.classList.add('sorted');
+    renderMaster(document.getElementById('inp-search').value);
+  });
+});
+
+// ── Filtres colonnes (style Excel) ──────────────────────────────────────
+function getColValues(col) {
+  let vals;
+  if (col === 'statut') {
+    vals = g_master.map(r => statutLabel(statutNum(r.statut)));
+  } else {
+    vals = g_master.map(r => String(r[col]||''));
+  }
+  if (g_operatorFilter) {
+    const filtered = g_master.filter(r => (r.operator||'') === g_operatorFilter);
+    if (col === 'statut') vals = filtered.map(r => statutLabel(statutNum(r.statut)));
+    else vals = filtered.map(r => String(r[col]||''));
+  }
+  return [...new Set(vals)].sort((a,b) => a.localeCompare(b,'fr'));
+}
+
+function openColFilter(btn, col) {
+  closeColFilter();
+  const rect = btn.getBoundingClientRect();
+  const popup = document.createElement('div');
+  popup.className = 'col-filter-popup';
+  popup.id = 'col-filter-popup';
+  popup.style.left = Math.min(rect.left, window.innerWidth - 220) + 'px';
+  popup.style.top  = (rect.bottom + 4) + 'px';
+  popup.style.position = 'fixed';
+
+  const allVals = getColValues(col);
+  const active = g_colFilters[col]; // Set or undefined (undefined = all shown)
+
+  popup.innerHTML = `
+    <input class="cfp-search" type="text" placeholder="Rechercher..." oninput="filterColList(this.value)">
+    <div class="cfp-item" style="border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:4px">
+      <input type="checkbox" id="cfp-all" ${!active?'checked':allVals.every(v=>active.has(v))?'checked':''} onchange="cfpToggleAll(this.checked,'${col}')">
+      <label for="cfp-all" style="font-weight:600;cursor:pointer">(Tout sélectionner)</label>
+    </div>
+    <div class="cfp-list" id="cfp-list">
+      ${allVals.map((v,i) => `<div class="cfp-item" data-val="${v.replace(/"/g,'&quot;').toLowerCase()}">
+        <input type="checkbox" id="cfp-${i}" data-v="${v.replace(/"/g,'&quot;')}" ${!active||active.has(v)?'checked':''}>
+        <label for="cfp-${i}" style="cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${v||'(vide)'}">${v||'<i>(vide)</i>'}</label>
+      </div>`).join('')}
+    </div>
+    <div class="cfp-actions">
+      <button class="btn btn-purple-out" onclick="applyColFilter('${col}')">Appliquer</button>
+      <button class="btn btn-ghost" onclick="clearColFilter('${col}')">Effacer</button>
+    </div>`;
+  document.body.appendChild(popup);
+
+  // Close on outside click
+  setTimeout(() => document.addEventListener('click', _colFilterOutClick), 10);
+}
+
+function _colFilterOutClick(e) {
+  const popup = document.getElementById('col-filter-popup');
+  if (popup && !popup.contains(e.target)) closeColFilter();
+}
+
+function closeColFilter() {
+  const popup = document.getElementById('col-filter-popup');
+  if (popup) popup.remove();
+  document.removeEventListener('click', _colFilterOutClick);
+}
+
+function filterColList(q) {
+  const lq = q.toLowerCase();
+  document.querySelectorAll('#cfp-list .cfp-item').forEach(el => {
+    el.style.display = el.dataset.val.includes(lq) ? '' : 'none';
+  });
+}
+
+function cfpToggleAll(checked, col) {
+  document.querySelectorAll('#cfp-list input[type=checkbox]').forEach(cb => { cb.checked = checked; });
+}
+
+function applyColFilter(col) {
+  const checks = document.querySelectorAll('#cfp-list input[type=checkbox]');
+  const selected = new Set();
+  checks.forEach(cb => { if (cb.checked) selected.add(cb.dataset.v); });
+  const allVals = getColValues(col);
+  if (selected.size === allVals.length || selected.size === 0) {
+    delete g_colFilters[col];
+  } else {
+    g_colFilters[col] = selected;
+  }
+  // Update header highlight
+  document.querySelectorAll('th[data-col]').forEach(th => {
+    if (th.dataset.col === col) th.classList.toggle('filtered', !!g_colFilters[col]);
+  });
+  closeColFilter();
+  renderMaster(document.getElementById('inp-search').value);
+  renderKanban(); updateStats();
+}
+
+function clearColFilter(col) {
+  delete g_colFilters[col];
+  document.querySelectorAll('th[data-col]').forEach(th => {
+    if (th.dataset.col === col) th.classList.remove('filtered');
+  });
+  closeColFilter();
+  renderMaster(document.getElementById('inp-search').value);
+  renderKanban(); updateStats();
+}
+
+// Recherche
+document.getElementById('inp-search').addEventListener('input', e => renderMaster(e.target.value));
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key==='f'){e.preventDefault();document.getElementById('inp-search').focus();return;}
+  if (e.ctrlKey && e.key==='s'){e.preventDefault();autoSave();toast('Sauvegarde lancée.');return;}
+  if (e.ctrlKey && e.key==='z'){e.preventDefault();undoLast();return;}
+});
+
+function onCCCheck(idx, checked) {
+  if (checked && g_master[idx].cc !== 'Cc') processCC(idx);
+  else if (!checked) { g_master[idx].cc = 'Non'; renderMaster(); updateStats(); }
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  KANBAN                                                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+const K_CFG = [
+  {n:1, title:'Pas encore CC',   c:'--k1-c', bg:'--k1-bg'},
+  {n:2, title:'RDV à envoyer',   c:'--k2-c', bg:'--k2-bg', action:'ENVOYER →3'},
+  {n:3, title:'Attente réponse', c:'--k3-c', bg:'--k3-bg', action:'VALIDER →5'},
+  {n:4, title:'Pré-alerte S5',   c:'--k4-c', bg:'--k4-bg', action:'ALERTER →5'},
+  {n:5, title:'Prêt pour FC',    c:'--k5-c', bg:'--k5-bg', action:'FC →6'},
+  {n:6, title:'COMAT',           c:'--k6-c', bg:'--k6-bg', action:'COMAT →7'},
+  {n:7, title:'NTO',             c:'--k7-c', bg:'--k7-bg', action:'NTO →8'},
+  {n:9, title:'En attente',       c:'--k9-c', bg:'--k9-bg'},
+];
+
+function buildKanban() {
+  const wrap = document.getElementById('kanban-wrap');
+  wrap.innerHTML = K_CFG.map(k => `
+    <div class="k-col" id="k-col-${k.n}"
+      ondragover="event.preventDefault();document.getElementById('k-col-${k.n}').classList.add('drag-over')"
+      ondragleave="document.getElementById('k-col-${k.n}').classList.remove('drag-over')"
+      ondrop="onKDrop(event,${k.n})">
+      <div class="k-header" style="border-top-color:var(${k.c})">
+        <span class="k-title" style="color:var(${k.c})">${k.title}</span>
+        <span class="k-count" style="background:var(${k.bg});color:var(${k.c})" id="k-cnt-${k.n}">0</span>
+        ${k.action ? `<span class="k-action-btn" style="border-color:var(${k.c});color:var(${k.c});background:var(${k.bg})" onclick="kanbanAction(${k.n})">${k.action}</span>` : ''}
+      </div>
+      <div class="k-body" id="k-body-${k.n}"></div>
+    </div>`).join('');
+}
+
+let g_kabSelected = new Set(); // fichiers sélectionnés
+
+function renderKanban() {
+  const kSort = document.getElementById('kanban-sort')?.value || '';
+  const siblingsMap = buildSiblingsMap();
+  K_CFG.forEach(k => {
+    let items = g_master.filter(r => parseInt(statutNum(r.statut))===k.n && (!g_operatorFilter || (r.operator||'')===g_operatorFilter));
+    for (const [col, allowed] of Object.entries(g_colFilters)) {
+      if (!allowed || !allowed.size) continue;
+      items = items.filter(r => {
+        const v = col === 'statut' ? statutLabel(statutNum(r.statut)) : String(r[col]||'');
+        return allowed.has(v);
+      });
+    }
+    // Tri Kanban
+    if (kSort) {
+      items.sort((a, b) => {
+        const va = (a[kSort]||'').toString().toLowerCase();
+        const vb = (b[kSort]||'').toString().toLowerCase();
+        return va < vb ? -1 : va > vb ? 1 : 0;
+      });
+    }
+    document.getElementById(`k-cnt-${k.n}`).textContent = items.length;
+    document.getElementById(`k-body-${k.n}`).innerHTML = items.map(r => {
+      const idx = g_master.indexOf(r);
+      const days = daysSince(r._dateCreated);
+      const sel   = g_kabSelected.has(r.file);
+      const fileE = r.file.replace(/'/g,"\\'");
+      const isGrp = (r.file||'').includes(' + ');
+      const subFiles = isGrp ? r.file.split(' + ') : null;
+      const fileDisp = isGrp
+        ? `<span style="font-size:10px;color:var(--purple);font-weight:700">${subFiles.length} dossiers</span>`
+        : `<span style="font-family:var(--mono)">${trunc(r.file,14)}</span>`;
+      // Colonne 5 : afficher date livraison + transporteur éditables
+      const fcRow = (k.n === 5) ? (() => {
+        fcEnsureAutoDate(r, false);
+        const safeFile = (r.file||'').replace(/[^a-zA-Z0-9]/g,'_');
+        return `<div class="k-fc-row" onclick="event.stopPropagation()">
+          <span class="k-fc-lbl">📅</span>
+          <input class="k-fc-inp" style="width:70px" value="${r.fcDate}"
+            id="kfc-date-${safeFile}"
+            onchange="kabFcUpdate('${fileE}','date',this.value)"
+            onclick="event.stopPropagation()" onfocus="event.stopPropagation()">
+          <span class="k-fc-lbl">🚚</span>
+          <input class="k-fc-inp" style="width:90px" value="${trunc(r.transp||'?',12)}"
+            id="kfc-transp-${safeFile}"
+            onchange="kabFcUpdate('${fileE}','transp',this.value)"
+            onclick="event.stopPropagation()" onfocus="event.stopPropagation()">
+        </div>`;
+      })() : '';
+      return `<div class="k-item${sel?' k-selected':''}${isGrp?' k-group':''}" style="border-left-color:var(${k.c})"
+        data-file="${(r.file||'').replace(/"/g,'&quot;')}" data-client="${(r.client||'').replace(/"/g,'&quot;')}" data-transp="${(r.transp||'').replace(/"/g,'&quot;')}" data-email="${(r.email||'').replace(/"/g,'&quot;')}" data-rdl="${(r.rdl||'').replace(/"/g,'&quot;')}" data-cp="${(r.cp||r.cc||'').replace(/"/g,'&quot;')}"
+        draggable="true"
+        ondragstart="kanbanDragStartBulk(event,'${fileE}')"
+        ondragover="event.preventDefault();event.stopPropagation();this.classList.add('k-drop-target')"
+        ondragleave="this.classList.remove('k-drop-target')"
+        ondrop="event.stopPropagation();this.classList.remove('k-drop-target');onCardDrop(event,'${fileE}')"
+        ondblclick="openEdit(${idx})">
+        <input type="checkbox" class="k-chk" ${sel?'checked':''} onclick="event.stopPropagation();kabToggle(event,'${fileE}')">
+        <div class="k-file">${fileDisp}${isGrp?`<span class="tag-group" style="font-size:9px;margin-left:4px">GRP</span>`:''}</div>
+        <div class="k-client">${trunc(r.client,20)}${getSiblingBadge(r, siblingsMap)}</div>
+        ${(k.n>=2&&k.n<=7||k.n===9) ? `<div class="k-meta">${daysBadge(days)}</div>` : ''}
+        ${fcRow}
+      </div>`;
+    }).join('');
+  });
+  kabUpdateBar();
+}
+
+function kabToggle(e, file) {
+  // Ignorer si double-clic (handled by ondblclick)
+  if (e && e.detail >= 2) return;
+  if (g_kabSelected.has(file)) g_kabSelected.delete(file);
+  else g_kabSelected.add(file);
+  renderKanban();
+}
+
+function kabUpdateBar() {
+  const bar = document.getElementById('kanban-action-bar');
+  const cnt = g_kabSelected.size;
+  document.getElementById('kab-count').textContent = cnt;
+  if (cnt > 0) bar.classList.add('visible');
+  else bar.classList.remove('visible');
+}
+
+function kabClearSel() {
+  g_kabSelected.clear();
+  renderKanban();
+}
+
+function kabSelectAll() {
+  // Sélectionner tous les éléments visibles dans le kanban
+  const items = document.querySelectorAll('.k-item');
+  const allVisible = [];
+  items.forEach(el => {
+    const mono = el.querySelector('.k-file');
+    if (mono) allVisible.push(mono.textContent.trim());
+  });
+  // Trouver le fichier complet dans g_master (le trunc peut couper)
+  allVisible.forEach(short => {
+    const r = g_master.find(r => r.file.startsWith(short.replace('…','')) || r.file === short);
+    if (r) g_kabSelected.add(r.file);
+  });
+  renderKanban();
+}
+
+function kabGetSelected() {
+  return g_master.filter(r => g_kabSelected.has(r.file));
+}
+
+function kabChangeStatus() {
+  const sel = kabGetSelected();
+  if (!sel.length) return;
+  document.getElementById('kab-status-files').textContent =
+    sel.length + ' dossier(s) : ' + sel.map(r => r.file).join(', ');
+  openModal('modal-kab-status');
+}
+
+function kabApplyStatus() {
+  const newStat = document.getElementById('kab-new-status').value;
+  kabGetSelected().forEach(r => { r.statut = newStat; stampRecord(r); });
+  closeModal('modal-kab-status');
+  kabClearSel();
+  renderMaster(); renderKanban(); updateStats(); markDirty();
+  toast(`Statut ${newStat} appliqué.`);
+}
+
+function kabOpenEdit() {
+  const sel = kabGetSelected();
+  if (!sel.length) return;
+  document.getElementById('kab-edit-title').textContent = 'Éditer ' + sel.length + ' dossier(s)';
+  document.getElementById('kab-edit-files').textContent =
+    sel.map(r => r.file).join(' · ');
+  ['kab-contact','kab-tel','kab-email','kab-comment'].forEach(id =>
+    document.getElementById(id).value = '');
+  openModal('modal-kab-edit');
+}
+
+function kabSaveEdit() {
+  const contact = document.getElementById('kab-contact').value.trim();
+  const tel     = document.getElementById('kab-tel').value.trim();
+  const email   = document.getElementById('kab-email').value.trim();
+  const comment = document.getElementById('kab-comment').value.trim();
+  kabGetSelected().forEach(r => {
+    if (contact) r.contact = contact;
+    if (tel)     r.tel     = tel;
+    if (email)   r.email   = email;
+    if (comment) r.comment = comment;
+  });
+  closeModal('modal-kab-edit');
+  kabClearSel();
+  renderMaster(); renderKanban(); updateStats(); markDirty();
+  toast('Modifications appliquées à la sélection.');
+}
+
+async function kabSendMail() {
+  const sel = kabGetSelected();
+  if (!sel.length) return;
+  const missing = sel.filter(r => !r.email);
+  if (missing.length) {
+    if (!confirm(`${missing.length} dossier(s) sans email (${missing.map(r=>r.file).join(', ')}).
+Continuer pour les autres ?`)) return;
+  }
+  const withEmail = sel.filter(r => r.email);
+  if (!withEmail.length) return toast('Aucun dossier avec email dans la sélection.');
+  const strData = withEmail.map(r => {
+    const contactStr = `${r.contact||''} ${r.tel||''}`.trim();
+    return `${r.file};${r.email};${r.client};${r.transp||''};${contactStr}`;
+  }).join('|');
+  toast(`📧 Envoi mail RDV pour ${withEmail.length} dossier(s)...`);
+  const mailResult = await apiCall('action', { action: 'KANBAN_2', data: strData });
+  if (!mailResult || mailResult.error) {
+    toast('Erreur lors de l\'envoi des mails. Les dossiers restent à leur statut actuel.');
+    return;
+  }
+  withEmail.forEach(r => { if (parseInt(statutNum(r.statut)) < 3) r.statut = '3'; });
+  kabClearSel();
+  renderMaster(); renderKanban(); updateStats(); markDirty();
+  toast(`Mail RDV envoyé pour ${withEmail.length} dossier(s).`);
+}
+
+// ══ Actions batch depuis la barre Kanban ══
+
+async function kabSendAlerte() {
+  const sel = kabGetSelected();
+  if (!sel.length) return toast('Sélectionnez au moins un dossier.');
+  const withEmail = sel.filter(r => r.email);
+  if (!withEmail.length) return toast('Aucun dossier avec email dans la sélection.');
+  if (!confirm(`Envoyer une pré-alerte pour ${withEmail.length} dossier(s) ?`)) return;
+  const strData = withEmail.map(r => {
+    const contactStr = `${r.contact||''} ${r.tel||''}`.trim();
+    return `${r.file};${r.email};${r.client};${r.transp||''};${contactStr}`;
+  }).join('|');
+  showSpinner(`Pré-alerte : ${withEmail.length} dossier(s)...`);
+  try {
+    await apiCall('action', { action: 'KANBAN_4', data: strData });
+    withEmail.forEach(r => { if (parseInt(statutNum(r.statut)) < 5) r.statut = '5'; stampRecord(r); });
+    kabClearSel();
+    renderMaster(); renderKanban(); updateStats(); markDirty();
+    toast(`Pré-alerte envoyée pour ${withEmail.length} dossier(s).`);
+  } catch(e) { toast('Erreur pré-alerte : ' + (e.message||'')); }
+  finally { hideSpinner(); }
+}
+
+function kabLaunchFC() {
+  const sel = kabGetSelected();
+  if (!sel.length) return toast('Sélectionnez au moins un dossier.');
+  // Ouvrir la modale FC avec les dossiers sélectionnés
+  fcOpenModal(sel);
+  kabClearSel();
+}
+
+async function kabLaunchCOMAT() {
+  const sel = kabGetSelected();
+  if (!sel.length) return toast('Sélectionnez au moins un dossier.');
+  if (!confirm(`Lancer COMAT pour ${sel.length} dossier(s) ?`)) return;
+  // Déterminer le statut cible (7 ou 8 selon d'où ils viennent)
+  const toStatus = 7;
+  comatStartBatch(sel, toStatus);
+  kabClearSel();
+}
+
+function onKDrop(event, status) {
+  event.preventDefault();
+  document.getElementById(`k-col-${status}`).classList.remove('drag-over');
+  const files = (window._kanbanBulkDragFiles && window._kanbanBulkDragFiles.length) ? window._kanbanBulkDragFiles : (g_dragFile ? [g_dragFile] : []);
+  if (!files.length) return;
+  pushUndo('Déplacement groupé → statut ' + status);
+  files.forEach(f => {
+    const idx = g_master.findIndex(r => r.file===f);
+    if (idx < 0) return;
+    g_master[idx].statut = String(status);
+    stampRecord(g_master[idx]);
+    if (status>=2 && g_master[idx].cc!=='Cc') g_master[idx].cc='Cc';
+  });
+  cleanupCpData();
+  window._kanbanBulkDragFiles = [];
+  g_dragFile = null;
+  g_kabSelected.clear();
+  renderMaster(); renderKanban(); updateStats(); markDirty();
+  toast(files.length + ' dossier(s) déplacé(s).');
+}
+
+function onCardDrop(event, targetFile) {
+  event.preventDefault();
+  if (!g_dragFile || g_dragFile === targetFile) { g_dragFile = null; return; }
+  const srcIdx = g_master.findIndex(r => r.file === g_dragFile);
+  const tgtIdx = g_master.findIndex(r => r.file === targetFile);
+  if (srcIdx < 0 || tgtIdx < 0) { g_dragFile = null; return; }
+  pushUndo('Fusion ' + g_dragFile + ' + ' + targetFile);
+  const src = g_master[srcIdx], tgt = g_master[tgtIdx];
+  // Collecter tous les fichiers individuels
+  const srcFiles = (src.file||'').split(' + ').map(s=>s.trim()).filter(Boolean);
+  const tgtFiles = (tgt.file||'').split(' + ').map(s=>s.trim()).filter(Boolean);
+  const allFiles = [...tgtFiles, ...srcFiles];
+  // Vérifier pas de doublons
+  const uniq = [...new Set(allFiles)];
+  if (uniq.length < 2) { g_dragFile = null; return; }
+  // Agréger poids, vol
+  const newPoids = +(tgt.poids + src.poids).toFixed(2);
+  const newVol   = +(tgt.vol + src.vol).toFixed(3);
+  const newTax   = +calcTaxable(newPoids, newVol).toFixed(2);
+  const newSvct  = mergeSVCT(tgt.svct, src.svct);
+  const cpFlag   = isCP(tgt.client);
+  const newTransp = calcTransp(newSvct, newTax, tgt.dept, cpFlag);
+  // Créer la nouvelle ligne groupée
+  const merged = {
+    file: uniq.join(' + '), client: tgt.client, rdl: tgt.rdl, svct: newSvct,
+    transp: newTransp, poids: newPoids, vol: newVol, taxable: newTax,
+    dept: tgt.dept, contact: tgt.contact||'', tel: tgt.tel||'', email: tgt.email||'',
+    cc: tgt.cc, comment: tgt.comment||'', statut: tgt.statut,
+    operator: tgt.operator||'',
+    _dateCreated: tgt._dateCreated || new Date().toISOString().slice(0,10)
+  };
+  // Supprimer les deux lignes originales (plus grand index en premier)
+  const idxs = [srcIdx, tgtIdx].sort((a,b) => b-a);
+  idxs.forEach(i => g_master.splice(i, 1));
+  g_master.push(merged);
+  g_dragFile = null;
+  g_kabSelected.clear();
+  renderMaster(); renderKanban(); updateStats(); markDirty();
+  toast(`Groupe créé : ${uniq.length} dossiers fusionnés.`);
+}
+
+async function kanbanAction(from) {
+  const toMap = {2:3, 4:5, 5:6, 6:7, 7:8};
+  const affected = g_master.filter(r => parseInt(statutNum(r.statut)) === from && (!g_operatorFilter || (r.operator||'') === g_operatorFilter));
+
+  if (!affected.length) return toast('Aucun dossier dans cette colonne.');
+
+  // Colonne 3 : les S5 vont en 4 (pré-alerte), les autres en 5 (FC prêt)
+  let to;
+  if (from === 3) {
+    const hasS5 = affected.some(r => (r.svct||'').includes('S5'));
+    const hasNonS5 = affected.some(r => !(r.svct||'').includes('S5'));
+    if (hasS5 && hasNonS5) to = 'mixed';
+    else if (hasS5) to = 4;
+    else to = 5;
+  } else {
+    to = toMap[from];
+  }
+
+  if (!confirm(`Traiter ${affected.length} dossier(s) et avancer ?`)) return;
+
+  const strData = affected.map(r => {
+    const contactStr = `${r.contact || ''} ${r.tel || ''}`.trim();
+    const cleanFile = (r.file||'').replace(/[^\x20-\x7E+]/g, '').trim();
+    return `${cleanFile};${r.email};${r.client};${r.transp || ''};${contactStr}`;
+  }).join('|');
+
+  if (from === 7) {
+    // NTO batch : calculer chaque dossier, afficher dans onglet NTO, PAS d'avance auto
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tabpane').forEach(p => p.classList.remove('active'));
+    document.querySelector('[data-tab="nto"]').classList.add('active');
+    document.getElementById('tab-nto').classList.add('active');
+    ntoBatchLancer(affected); // stocke affected globalement pour valider après
+    return; // statut 8 = bouton "Passer statut 8" dans le batch
+  }
+
+  if (from === 6) {
+    // CAS COMAT : traitement séquentiel avec pause/reprise
+    comatStartBatch(affected, to);
+    return;
+  } else if (from === 5) {
+    // FC : ouvrir la modale de paramétrage dates/horaires
+    fcOpenModal(affected);
+    return; // fcLancer() gère la suite
+  } else {
+    toast(`Ordre envoyé à AutoIt pour ${affected.length} dossier(s)...`);
+    const kanResult = await apiCall('action', { action: 'KANBAN_' + from, data: strData });
+    if (!kanResult || kanResult.error) {
+      toast('Erreur lors de l\'envoi. Les dossiers restent à leur statut actuel.');
+      return;
+    }
+    if (to === 'mixed' || from === 3) {
+      // Colonne 3 : S5 → 4 (pré-alerte), non-S5 → 5 (FC prêt)
+      affected.forEach(r => {
+        r.statut = (r.svct||'').includes('S5') ? '4' : '5';
+      });
+    } else {
+      affected.forEach(r => { r.statut = String(to); });
+    }
+  }
+
+  cleanupCpData();
+  renderMaster(); renderKanban(); updateStats();
+  markDirty();
+}
+//╔══════════════════════════════════════════════════════════════════════════╗
+// ║  CC PROCESSING                                                           ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function processCC(idx) {
+  pushUndo('CC ' + (g_master[idx]?.file||''));
+  const r = g_master[idx];
+  r.cc = 'Cc';
+
+  // Cas 1 : c'est un groupe (file contient ' + ') → éclater en solos CC
+  if ((r.file||'').includes(' + ')) {
+    const subs = r.file.split(' + ').map(s=>s.trim()).filter(Boolean);
+    g_master.splice(idx, 1);
+    subs.forEach(sf => {
+      const raw = g_rawData[sf]||{};
+      const p=raw.poids||r.poids/subs.length, v=raw.vol||r.vol/subs.length;
+      const sv=raw.svct||r.svct, d=raw.dept||r.dept, t=calcTaxable(p,v);
+      const cp=isCP(r.client), tr=calcTransp(sv,t,d,cp,p);
+      const st=transpTarget(sv,r.client);
+      const dup=g_master.find(x=>x.file===sf);
+      if (dup) {
+        Object.assign(dup,{client:r.client,rdl:r.rdl,svct:sv,transp:tr,
+          poids:p,vol:v,taxable:t,dept:d,cc:'Cc',statut:st,operator:r.operator||''});
+      } else {
+        g_master.push({file:sf,client:r.client,rdl:r.rdl,svct:sv,transp:tr,
+          poids:p,vol:v,taxable:t,dept:d,contact:r.contact||'',tel:r.tel||'',
+          email:r.email||'',cc:'Cc',comment:'[Solo depuis groupe]',statut:st,
+          operator:r.operator||'',
+          _dateCreated:r._dateCreated||new Date().toISOString().slice(0,10)});
+      }
+      storeRaw(sf,r.client,sv,p,v,t,d,r.rdl);
+      autoFillContact(sf,r.client);
+      if (cp) addOrUpdateCP(r.client,sf,p,v,t,r.operator);
+    });
+    renderMaster(); renderCP(); updateStats();
+    toast('CC validée — groupe éclaté en solos.');
+    return;
+  }
+
+  // Cas 2 : solo → chercher s'il existe déjà un groupe CC du même client dans g_master
+  const existing = g_master.find((x, i) => i !== idx
+    && x.client === r.client
+    && x.cc === 'Cc'
+    && !x.file.includes(' + ')  // on cherche aussi les solos CC pour les fusionner
+    || (i !== idx && x.client === r.client && x.cc === 'Cc' && x.file.includes(' + '))
+  );
+
+  // Cherche plus proprement : un groupe CC existant (peut être solo ou multi)
+  const ccGroup = g_master.find((x, i) => i !== idx
+    && x.client === r.client
+    && x.cc === 'Cc'
+    && parseInt(statutNum(x.statut)) < 6  // pas déjà traité
+  );
+
+  if (ccGroup) {
+    // Rejoindre le groupe existant : fusionner les fichiers
+    const allFiles = [
+      ...ccGroup.file.split(' + ').map(s=>s.trim()).filter(Boolean),
+      ...r.file.split(' + ').map(s=>s.trim()).filter(Boolean)
+    ];
+    ccGroup.file    = allFiles.join(' + ');
+    ccGroup.poids   = +(ccGroup.poids + r.poids).toFixed(2);
+    ccGroup.vol     = +(ccGroup.vol   + r.vol  ).toFixed(3);
+    ccGroup.taxable = +calcTaxable(ccGroup.poids, ccGroup.vol).toFixed(2);
+    ccGroup.svct    = mergeSVCT(ccGroup.svct, r.svct);
+    ccGroup.transp  = calcTransp(ccGroup.svct, ccGroup.taxable, ccGroup.dept, isCP(ccGroup.client), ccGroup.poids);
+    // Supprimer le solo qui vient de rejoindre le groupe
+    g_master.splice(g_master.indexOf(r), 1);
+    toast(`Fichier ${r.file} rejoint le groupe CC de ${ccGroup.client} (${allFiles.length} dossiers)`);
+  } else {
+    // Pas de groupe existant → solo CC, déterminer statut
+    r.statut = transpTarget(r.svct, r.client);
+    if (isCP(r.client)) addOrUpdateCP(r.client, r.file, r.poids, r.vol, r.taxable, r.operator);
+    toast('CC validée.');
+  }
+
+  renderMaster(); renderCP(); updateStats();
+  toast('CC validée — dossiers mis à jour.');
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  IMPORT EXCEL                                                            ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.getElementById('btn-import').onclick = () => document.getElementById('file-input').click();
+
+// Retirer fichiers cochés du tableau CP vers g_master solo
+document.getElementById('btn-retirer-cp').onclick = () => {
+  const checked = g_cpData
+    .map((cp,i) => ({cp,i}))
+    .filter(({cp}) => !g_operatorFilter || (cp.operator||'') === g_operatorFilter)
+    .filter(({cp,i}) => { const cb = document.getElementById('chk-cp-'+i); return cb && cb.checked; });
+
+  if (!checked.length) return toast('Cochez au moins un groupe CP à retirer.');
+  if (!confirm(`Retirer ${checked.length} groupe(s) CP et remettre les dossiers en Solo ?`)) return;
+
+  const today = new Date().toISOString().slice(0,10);
+  checked.forEach(({cp}) => {
+    cp.files.forEach(sf => {
+      if (g_master.find(r => r.file === sf)) return; // déjà présent
+      const raw = g_rawData[sf] || {};
+      g_master.push({
+        file: sf, client: cp.client, rdl: '', svct: '',
+        transp: calcTransp('', raw.taxable||0, raw.dept||'', false),
+        poids: raw.poids||0, vol: raw.vol||0, taxable: raw.taxable||0,
+        dept: raw.dept||'', contact:'', tel:'', email:'',
+        cc:'Non', comment:'[Retiré CP]', statut:'1',
+        operator: cp.operator||'', _dateCreated: today
+      });
+    });
+  });
+
+  // Supprimer les groupes CP retirés
+  const idxToRemove = checked.map(({i}) => i).sort((a,b) => b-a);
+  idxToRemove.forEach(i => g_cpData.splice(i, 1));
+  renderCP(); renderMaster(); renderKanban(); updateStats(); markDirty();
+  toast(`${checked.length} groupe(s) CP retirés — dossiers remis en Solo.`);
+};
+document.getElementById('file-input').addEventListener('change', e => {
+  const f=e.target.files[0]; if (!f) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try {
+      const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+      importRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''}));
+    } catch(err){ alert('Erreur : '+err.message); }
+  };
+  reader.readAsArrayBuffer(f);
+  e.target.value='';
+});
+
+function importRows(rows) {
+  const grouped={}, order=[];
+  let skipped=0;
+  const today=new Date().toISOString().slice(0,10);
+
+  for (let i=1;i<rows.length;i++) {
+    const row=rows[i];
+    const file=String(row[0]||'').replace(/[^\x20-\x7E]/g, '').trim();
+    if (!file) continue;
+    // Déjà présent → on met à jour les champs vides seulement
+    const existing = g_master.find(r => r.file===file || (r.file||'').includes(file));
+    if (existing) { skipped++; continue; }
+
+    const rdl   =String(row[1]||'').trim();
+    const svct  =String(row[22]||'').trim().replace(/;/g,'');
+    const client=String(row[23]||'').trim();
+    const city  =String(row[24]||'').trim();
+    const poids =parseFloat(String(row[25]||'0').replace(',','.'))||0;
+    const vol   =parseFloat(String(row[26]||'0').replace(',','.'))||0;
+    const operator=String(row[27]||'').trim();
+    const supplement=parseFloat(String(row[28]||'0').replace(',','.'))||0;
+    const tax   =calcTaxable(poids,vol);
+    let isCons=false;
+    for (let c=8;c<=14;c++){
+      if ((String(row[c]||'')).includes('Consolidat')||(String(row[c]||'')).includes('Complete')){isCons=true;break;}
+    }
+    const dept=/^\d{2}/.test(city)?city.substring(0,2):'??';
+    storeRaw(file,client,svct,poids,vol,tax,dept,rdl,supplement);
+    const key=(client+'|'+city).toLowerCase();
+    if (!grouped[key]){
+      // ccFiles = fichiers déjà CC (isCons), nonFiles = pas encore CC
+      grouped[key]={ccFiles:[],nonFiles:[],client,rdl,svct,city,
+        poids:0,vol:0,taxable:0,dept,operator};
+      order.push(key);
+    }
+    const g=grouped[key];
+    if (isCons) g.ccFiles.push(file); else g.nonFiles.push(file);
+    g.poids+=poids; g.vol+=vol;
+    g.taxable=calcTaxable(g.poids,g.vol);
+    g.svct=mergeSVCT(g.svct,svct);
+  }
+
+  let added=0;
+  for (const key of order) {
+    const g=grouped[key];
+    const cpFlag=isCP(g.client);
+    const operator=g.operator||'';
+
+    // ── Fichiers CC (isCons) ─────────────────────────────────────────────
+    if (g.ccFiles.length > 0) {
+      if (cpFlag || ['S8','SZ','SY'].some(c=>(g.svct||'').includes(c))) {
+        // CP ou SVCT forbid → chaque file solo, statut 2
+        g.ccFiles.forEach(sf => {
+          const raw=g_rawData[sf]||{};
+          const p=raw.poids||0, v=raw.vol||0, t=calcTaxable(p,v);
+          const tr=calcTransp(g.svct,t,g.dept,cpFlag,p);
+          const dup=g_master.find(x=>x.file===sf);
+          if (dup) {
+            Object.assign(dup,{client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
+              poids:p,vol:v,taxable:t,dept:g.dept,cc:'Cc',statut:'2',operator});
+          } else {
+            g_master.push({file:sf,client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
+              poids:p,vol:v,taxable:t,dept:g.dept,contact:'',tel:'',email:'',
+              cc:'Cc',comment:'[Solo import]',statut:'2',operator,_dateCreated:today});
+          }
+          autoFillContact(sf,g.client);
+          if (cpFlag) addOrUpdateCP(g.client,sf,p,v,t,operator);
+        });
+      } else {
+        // Groupe CC → une ligne groupée
+        let ccP=0, ccV=0;
+        g.ccFiles.forEach(sf=>{const r=g_rawData[sf]||{};ccP+=r.poids||0;ccV+=r.vol||0;});
+        const ccT=calcTaxable(ccP,ccV);
+        const ccTr=calcTransp(g.svct,ccT,g.dept,false,ccP);
+        const st=g.svct.includes('S5')?'4':'5';
+        g_master.push({file:g.ccFiles.join(' + '),client:g.client,rdl:g.rdl,svct:g.svct,
+          transp:ccTr,poids:+ccP.toFixed(2),vol:+ccV.toFixed(3),taxable:+ccT.toFixed(2),
+          dept:g.dept,contact:'',tel:'',email:'',cc:'Cc',
+          comment:g.ccFiles.length>1?'[Groupe Auto]':'',statut:st,operator,_dateCreated:today});
+      }
+      added++;
+    }
+
+    // ── Fichiers non-CC → chacun en statut 1, attend la CC
+    if (g.nonFiles.length > 0) {
+      g.nonFiles.forEach(sf => {
+        const raw=g_rawData[sf]||{};
+        const p=raw.poids||0, v=raw.vol||0, t=calcTaxable(p,v);
+        const tr=calcTransp(g.svct,t,g.dept,cpFlag,p);
+        const dup=g_master.find(x=>x.file===sf);
+        if (dup) {
+          Object.assign(dup,{client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
+            poids:p,vol:v,taxable:t,dept:g.dept,operator});
+        } else {
+          g_master.push({file:sf,client:g.client,rdl:g.rdl,svct:g.svct,transp:tr,
+            poids:p,vol:v,taxable:t,dept:g.dept,contact:'',tel:'',email:'',
+            cc:'Non',comment:'',statut:'1',operator,_dateCreated:today});
+        }
+        autoFillContact(sf,g.client);
+      });
+      added++;
+    }
+  }
+
+  // Pré-remplir contacts depuis g_contacts
+  g_master.forEach(r => autoFillContact(r.file,r.client));
+
+  renderMaster(); renderKanban(); renderCP(); updateStats();
+  const infoEl=document.getElementById('import-info');
+  document.getElementById('import-info-text').textContent=
+    `${added} dossier(s) ajouté(s) · ${skipped} déjà présent(s) (données conservées)`;
+  infoEl.style.display='flex';
+  toast(skipped > 0 && added === 0
+    ? `Import : aucun nouveau dossier (${skipped} déjà présents).`
+    : `Import terminé : +${added} dossiers${skipped ? `, ${skipped} déjà présents (ignorés)` : ''}.`);
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  CP                                                                      ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function addOrUpdateCP(client, file, poids, vol, taxable, operator) {
+  const idx=g_cpData.findIndex(c=>c.client===client && (c.operator||'')===(operator||''));
+  if (idx>=0) {
+    if (!g_cpData[idx].files.includes(file)) {
+      g_cpData[idx].files.push(file);
+      if (!g_cpData[idx]._poidsManual) {
+        g_cpData[idx].poids+=+poids; g_cpData[idx].vol+=+vol;
+        g_cpData[idx].taxable=calcTaxable(g_cpData[idx].poids,g_cpData[idx].vol);
+      }
+    }
+  } else {
+    g_cpData.push({client,files:[file],palettes:'',colis:'',
+      poids:+poids,vol:+vol,taxable:+taxable,doc:'',operator:operator||''});
+  }
+  renderCP();
+}
+
+function renderCP() {
+  const tbody=document.getElementById('cp-tbody');
+  const visible = g_cpData
+    .map((cp,i) => ({cp,i}))
+    .filter(({cp}) => !g_operatorFilter || (cp.operator||'') === g_operatorFilter);
+  tbody.innerHTML=visible.map(({cp,i})=>`
+    <tr>
+      <td style="text-align:center"><input type="checkbox" id="chk-cp-${i}" style="accent-color:var(--green)"></td>
+      <td><input class="inline-inp" style="width:140px;font-weight:600;color:var(--k2-c)" value="${cp.client||''}" oninput="g_cpData[${i}].client=this.value"></td>
+      <td><input class="inline-inp" style="width:100%;font-family:var(--mono);font-size:11px" value="${cp.files.join(' + ')}" oninput="g_cpData[${i}].files=this.value.split(/\\s*\\+\\s*/).map(s=>s.trim()).filter(Boolean)"></td>
+      <td><input class="inline-inp" style="width:55px" value="${cp.palettes||''}" oninput="g_cpData[${i}].palettes=this.value"></td>
+      <td><input class="inline-inp" style="width:55px" value="${cp.colis||''}" oninput="g_cpData[${i}].colis=this.value"></td>
+      <td><input class="inline-inp" style="width:65px;text-align:right" type="number" step="0.01" value="${cp.poids||0}" oninput="g_cpData[${i}].poids=+this.value;g_cpData[${i}]._poidsManual=true;g_cpData[${i}].taxable=+calcTaxable(+this.value,g_cpData[${i}].vol).toFixed(2);_debouncedRenderCP()"></td>
+      <td><input class="inline-inp" style="width:60px;text-align:right" type="number" step="0.001" value="${cp.vol||0}" oninput="g_cpData[${i}].vol=+this.value;g_cpData[${i}]._poidsManual=true;g_cpData[${i}].taxable=+calcTaxable(g_cpData[${i}].poids,+this.value).toFixed(2);_debouncedRenderCP()"></td>
+      <td class="taxable-val" style="text-align:right;font-weight:600">${fmt(cp.taxable)}</td>
+      <td><input class="inline-inp" value="${cp.doc||''}" oninput="g_cpData[${i}].doc=this.value"></td>
+      <td style="text-align:center"><button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="cpDelete(${i})">✕</button></td>
+    </tr>`).join('');
+}
+const _debouncedRenderCP = debounce(renderCP, 300);
+
+// Nettoyer g_cpData : retirer les entrées dont tous les dossiers ont quitté le statut 2
+function cleanupCpData() {
+  const before = g_cpData.length;
+  g_cpData = g_cpData.filter(cp => {
+    // Garder le CP seulement si au moins un de ses fichiers est encore en statut 2
+    return cp.files.some(f => {
+      const r = g_master.find(m => m.file === f || (m.file||'').split(' + ').includes(f));
+      return r && String(r.statut) === '2';
+    });
+  });
+  if (g_cpData.length < before) {
+    console.log(`cleanupCpData: ${before - g_cpData.length} entrée(s) CP obsolète(s) retirée(s)`);
+    renderCP();
+  }
+}
+
+function cpAddManual() {
+  const client = prompt('Nom du client CP :');
+  if (!client) return;
+  const files = prompt('Numéro(s) de dossier (séparés par +) :');
+  if (!files) return;
+  const fileArr = files.split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean);
+  g_cpData.push({
+    client, files: fileArr, palettes: '', colis: '',
+    poids: 0, vol: 0, taxable: 0, doc: '', operator: g_operatorFilter || ''
+  });
+  renderCP(); markDirty();
+  toast('CP ajouté : ' + client + ' — ' + fileArr.length + ' dossier(s).');
+}
+
+function cpDelete(i) {
+  if (!confirm('Supprimer ce CP (' + (g_cpData[i]?.client||'') + ') ?')) return;
+  g_cpData.splice(i, 1);
+  renderCP(); markDirty();
+  toast('CP supprimé.');
+}
+
+// btn-rdv-cp géré par addEventListener ci-dessous
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  CONTACTS                                                                ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function renderContacts() {
+  const tbody=document.getElementById('contacts-tbody');
+  tbody.innerHTML=g_contacts.map((c,i)=>`
+    <tr>
+      <td><strong>${c.societe||''}</strong></td>
+      <td>${c.nom||''}</td>
+      <td style="font-family:var(--mono);font-size:11px">${c.tel||''}</td>
+      <td style="font-family:var(--mono);font-size:11px">${c.email||''}</td>
+      <td>${c.cp?`<span class="badge b2">${c.cp}</span>`:''}</td>
+      <td style="color:var(--text2)">${c.notes||''}</td>
+      <td style="display:flex;gap:4px">
+        <button class="btn btn-ghost btn-sm" onclick="editContact(${i})">✏</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteContact(${i})">✕</button>
+      </td>
+    </tr>`).join('');
+}
+
+document.getElementById('btn-add-contact').onclick = () => {
+  g_conIdx=-1;
+  document.getElementById('mcon-title').textContent='Ajouter Contact';
+  ['con-societe','con-nom','con-tel','con-email','con-notes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('con-cp').value='';
+  openModal('modal-contact');
+};
+
+function editContact(i) {
+  g_conIdx=i;
+  const c=g_contacts[i];
+  document.getElementById('mcon-title').textContent='Modifier Contact';
+  document.getElementById('con-societe').value=c.societe||'';
+  document.getElementById('con-nom').value=c.nom||'';
+  document.getElementById('con-tel').value=c.tel||'';
+  document.getElementById('con-email').value=c.email||'';
+  document.getElementById('con-cp').value=c.cp||'';
+  document.getElementById('con-notes').value=c.notes||'';
+  openModal('modal-contact');
+}
+
+function deleteContact(i) {
+  if (!confirm('Supprimer ce contact ?')) return;
+  g_contacts.splice(i,1);
+  renderContacts();
+  saveContacts();
+}
+
+function saveContact() {
+  const c={
+    societe:document.getElementById('con-societe').value,
+    nom:document.getElementById('con-nom').value,
+    tel:document.getElementById('con-tel').value,
+    email:document.getElementById('con-email').value,
+    cp:document.getElementById('con-cp').value,
+    notes:document.getElementById('con-notes').value,
+  };
+  if (g_conIdx>=0) g_contacts[g_conIdx]=c;
+  else g_contacts.push(c);
+  closeModal('modal-contact');
+  renderContacts();
+  saveContacts();
+  toast('Contact sauvegardé.');
+}
+
+// ── Export / Import Contacts (fichier séparé, partageable) ──
+document.getElementById('btn-export-contacts').onclick = () => {
+  if (!g_contacts.length) return toast('Aucun contact à exporter.');
+  const payload = {
+    _type: 'dispatch_contacts',
+    _exportDate: new Date().toISOString(),
+    _count: g_contacts.length,
+    contacts: g_contacts
+  };
+  const ts = new Date().toISOString().slice(0,10);
+  downloadText(`Contacts_${g_contacts.length}_${ts}.json`, JSON.stringify(payload, null, 2));
+  toast(`${g_contacts.length} contact(s) exportés.`);
+};
+
+document.getElementById('btn-import-contacts').onclick = () => document.getElementById('contacts-input').click();
+document.getElementById('contacts-input').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const d = JSON.parse(ev.target.result);
+      const imported = d.contacts || (Array.isArray(d) ? d : []);
+      if (!imported.length) return toast('Aucun contact trouvé dans ce fichier.');
+      let added = 0, skipped = 0;
+      imported.forEach(c => {
+        const exists = g_contacts.find(x =>
+          (x.societe||'').toLowerCase() === (c.societe||'').toLowerCase() &&
+          (x.nom||'').toLowerCase() === (c.nom||'').toLowerCase()
+        );
+        if (exists) { skipped++; }
+        else { g_contacts.push(c); added++; }
+      });
+      renderContacts();
+      saveContacts();
+      toast(`Contacts importés : +${added} nouveau(x), ${skipped} déjà existant(s).`);
+    } catch(err) { alert('Erreur lecture contacts : ' + err.message); }
+  };
+  reader.readAsText(f);
+  e.target.value = '';
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  EDIT MODAL                                                              ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function openEdit(idx) {
+  const r=g_master[idx];
+  if (!r) return;
+  if ((r.file||'').includes(' + ')) { openGroup(idx); return; }
+  g_editIdx=idx;
+  document.getElementById('med-title').textContent=`Édition : ${r.file}`;
+  document.getElementById('ed-file').value=r.file||'';
+  document.getElementById('ed-client').value=r.client||'';
+  document.getElementById('ed-rdl').value=r.rdl||'';
+  document.getElementById('ed-svct').value=r.svct||'';
+  document.getElementById('ed-dept').value=r.dept||'';
+  document.getElementById('ed-transp').value=r.transp||'';
+  document.getElementById('ed-poids').value=r.poids||0;
+  document.getElementById('ed-vol').value=r.vol||0;
+  document.getElementById('ed-taxable-display').textContent=fmt(r.taxable)+' kg taxable';
+  const rawEdit = g_rawData[r.file] || {};
+  document.getElementById('ed-supplement').value = rawEdit.supplement || 0;
+  document.getElementById('ed-contact').value=r.contact||'';
+  document.getElementById('ed-tel').value=r.tel||'';
+  document.getElementById('ed-email').value=r.email||'';
+  document.getElementById('ed-comment').value=r.comment||'';
+  document.getElementById('ed-operator').value=r.operator||'';
+  document.getElementById('ed-statut').value=statutNum(r.statut);
+  document.getElementById('ed-cc').checked=r.cc==='Cc';
+  openModal('modal-edit');
+}
+
+function autoRecalcTaxable() {
+  const p=parseFloat(document.getElementById('ed-poids').value)||0;
+  const v=parseFloat(document.getElementById('ed-vol').value)||0;
+  document.getElementById('ed-taxable-display').textContent=fmt(calcTaxable(p,v))+' kg taxable';
+}
+
+function recalcTransp() {
+  if (g_editIdx<0) return;
+  const r=g_master[g_editIdx];
+  const svct=document.getElementById('ed-svct').value;
+  const dept=document.getElementById('ed-dept').value;
+  const p=parseFloat(document.getElementById('ed-poids').value)||0;
+  const v=parseFloat(document.getElementById('ed-vol').value)||0;
+  const t=calcTaxable(p,v);
+  document.getElementById('ed-transp').value=calcTransp(svct,t,dept,isCP(r.client),p);
+}
+
+function saveEdit() {
+  if (g_editIdx<0) return;
+  const r=g_master[g_editIdx];
+  const ccWas=r.cc;
+  const oldFile=r.file;
+  r.file=document.getElementById('ed-file').value.trim();
+  r.client=document.getElementById('ed-client').value;
+  r.rdl=document.getElementById('ed-rdl').value;
+  r.svct=document.getElementById('ed-svct').value;
+  r.dept=document.getElementById('ed-dept').value;
+  r.transp=document.getElementById('ed-transp').value;
+  r.poids=parseFloat(document.getElementById('ed-poids').value)||0;
+  r.vol=parseFloat(document.getElementById('ed-vol').value)||0;
+  r.taxable=calcTaxable(r.poids,r.vol);
+  // Sauvegarder le supplément camion dans g_rawData
+  const supplVal = parseFloat(document.getElementById('ed-supplement').value) || 0;
+  if (!g_rawData[r.file]) g_rawData[r.file] = {};
+  g_rawData[r.file].supplement = supplVal;
+  r.contact=document.getElementById('ed-contact').value;
+  r.tel=document.getElementById('ed-tel').value;
+  r.email=document.getElementById('ed-email').value;
+  r.comment=document.getElementById('ed-comment').value;
+  r.operator=document.getElementById('ed-operator').value.trim();
+  r.statut=document.getElementById('ed-statut').value; stampRecord(r);
+  // Si contact renseigné → enrichir g_contacts auto
+  if (r.contact&&r.email) {
+    const existing=g_contacts.find(c=>c.email===r.email);
+    if (!existing) {
+      g_contacts.push({societe:r.client,nom:r.contact,tel:r.tel,email:r.email,cp:'',notes:''});
+      renderContacts();
+      saveContacts();
+    }
+  }
+  if (document.getElementById('ed-cc').checked&&ccWas!=='Cc') {
+    closeModal('modal-edit');
+    processCC(g_editIdx);
+  } else {
+    r.cc=document.getElementById('ed-cc').checked?'Cc':'Non';
+    closeModal('modal-edit');
+    renderMaster(); renderKanban(); updateStats();
+  }
+  toast('Dossier enregistré.');
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  GROUP MODAL                                                             ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function openGroup(idx) {
+  g_groupIdx=idx;
+  const r=g_master[idx];
+  const subs=r.file.split(' + ').map(s=>s.trim()).filter(Boolean);
+  document.getElementById('mgrp-title').textContent=
+    `Gestion Groupe : ${r.client} — ${subs.length} dossiers`;
+  let totP=0, totV=0;
+  const rows=subs.map((sf,i)=>{
+    const raw=g_rawData[sf]||{};
+    const p=raw.poids||0,v=raw.vol||0,t=calcTaxable(p,v);
+    const sv=raw.svct||r.svct,d=raw.dept||r.dept;
+    const suppl=raw.supplement||0;
+    totP+=p; totV+=v;
+    return `<tr>
+      <td style="text-align:center"><input type="checkbox" id="grpchk${i}" style="accent-color:var(--green)"></td>
+      <td style="font-family:var(--mono);font-weight:500;color:var(--blue)">${sf}</td>
+      <td style="text-align:right">${fmt(p)} kg</td>
+      <td style="text-align:right">${fmt(v,3)} m³</td>
+      <td style="text-align:right;color:var(--orange)">${fmt(t)} kg</td>
+      <td>${calcTransp(sv,t,d,isCP(r.client),p)}</td>
+      <td style="color:var(--text2)">${sv}</td>
+      <td><input type="number" step="0.01" min="0" value="${suppl}" style="width:70px;text-align:right;font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:3px;padding:2px 4px" onchange="grpSupplUpdate('${sf}',this.value)"></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('mgrp-body').innerHTML=`
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:var(--surface2)">
+        <th style="width:28px;padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)"></th>
+        <th style="padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">File J</th>
+        <th style="padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">Poids brut</th>
+        <th style="padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">Vol</th>
+        <th style="padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">Taxable</th>
+        <th style="padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">Transporteur</th>
+        <th style="padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">SVCT</th>
+        <th style="padding:5px 6px;font-size:11px;color:var(--teal);border-bottom:1px solid var(--border)">Camion €</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="margin-top:10px;padding:9px 12px;background:var(--blue-bg);border-radius:5px;
+      border:1px solid var(--blue);font-size:12px;color:var(--blue)">
+      <strong>Totaux groupe :</strong> ${fmt(totP)} kg brut &nbsp;·&nbsp;
+      ${fmt(totV,3)} m³ &nbsp;·&nbsp;
+      <span style="color:var(--orange);font-weight:600">${fmt(calcTaxable(totP,totV))} kg taxable</span>
+    </div>
+    <div style="margin-top:12px;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><div style="font-size:11px;font-weight:700;color:var(--purple);text-transform:uppercase;letter-spacing:.5px">Modifier le groupe</div><button class="btn btn-ghost btn-sm" onclick="grpAutoFillContact()" title="Chercher un contact enregistré pour ce client">👤 Auto contact</button></div>
+      <div style="display:grid;grid-template-columns:1fr 90px 90px;gap:8px;margin-bottom:10px"><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Transporteur</label><input id="grp-transp" type="text" value="${r.transp||''}" style="width:100%;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Poids kg</label><input id="grp-poids" type="number" step="0.01" value="${r.poids||0}" style="width:100%;font-size:12px;font-family:var(--mono);border:1px solid var(--border);border-radius:4px;padding:5px 6px;text-align:right;background:var(--surface);color:var(--text)"></div><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Vol m³</label><input id="grp-vol" type="number" step="0.001" value="${r.vol||0}" style="width:100%;font-size:12px;font-family:var(--mono);border:1px solid var(--border);border-radius:4px;padding:5px 6px;text-align:right;background:var(--surface);color:var(--text)"></div></div>
+      <div style="display:grid;grid-template-columns:1.1fr .85fr 1.35fr;gap:8px;margin-bottom:10px"><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Contact groupe</label><input id="grp-contact" type="text" value="${r.contact||''}" placeholder="Nom contact" style="width:100%;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Téléphone</label><input id="grp-tel" type="text" value="${r.tel||''}" placeholder="Téléphone" style="width:100%;font-size:12px;font-family:var(--mono);border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Email</label><input id="grp-email" type="email" value="${r.email||''}" placeholder="email@client.com" style="width:100%;font-size:12px;font-family:var(--mono);border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div></div>
+      <div style="display:grid;grid-template-columns:1fr 120px 120px;gap:8px;align-items:end"><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Commentaire groupe</label><input id="grp-comment" type="text" value="${r.comment||''}" placeholder="Commentaire visible sur le groupe" style="width:100%;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Opérateur</label><input id="grp-operator" type="text" value="${r.operator||''}" placeholder="Prénom" style="width:100%;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div><button class="btn btn-purple-out btn-sm" onclick="grpSaveFields()" style="height:30px">💾 Appliquer</button></div>
+      <div style="font-size:10px;color:var(--text3);margin-top:8px">Ces infos restent sur le groupe et seront reprises quand tu éclates / retires des dossiers du groupe.</div>
+    </div>
+    <p style="margin-top:8px;font-size:11px;color:var(--text3)">
+      Cochez les fichiers avant d'utiliser les boutons.
+    </p>`;
+  openModal('modal-group');
+}
+
+function grpSupplUpdate(file, val) {
+  if (!g_rawData[file]) g_rawData[file] = {};
+  g_rawData[file].supplement = parseFloat(val) || 0;
+  markDirty();
+}
+
+// ── Copier numéro(s) de dossier ──────────────────────────────────────────
+function copyDossier() {
+  const v = document.getElementById('ed-file').value.trim();
+  if (!v) return;
+  navigator.clipboard.writeText(v).then(() => toast('Numéro copié : ' + v));
+}
+
+function copyGroupDossiers() {
+  if (g_groupIdx < 0) return;
+  const r = g_master[g_groupIdx];
+  const subs = (r.file || '').split(' + ').map(s => s.trim()).filter(Boolean);
+  const text = subs.join('\n');
+  navigator.clipboard.writeText(text).then(() => toast(subs.length + ' numéro(s) copié(s)'));
+}
+
+// ── Modifier transporteur / poids / vol du groupe ────────────────────────
+function grpSaveFields() {
+  if (g_groupIdx < 0) return;
+  const r = g_master[g_groupIdx];
+  r.transp = document.getElementById('grp-transp').value.trim();
+  r.poids = parseFloat(document.getElementById('grp-poids').value) || 0;
+  r.vol = parseFloat(document.getElementById('grp-vol').value) || 0;
+  r.taxable = calcTaxable(r.poids, r.vol);
+  r.contact = document.getElementById('grp-contact')?.value.trim() || '';
+  r.tel = document.getElementById('grp-tel')?.value.trim() || '';
+  r.email = document.getElementById('grp-email')?.value.trim() || '';
+  r.comment = document.getElementById('grp-comment')?.value.trim() || '';
+  r.operator = document.getElementById('grp-operator')?.value.trim() || r.operator || '';
+  stampRecord(r);
+  if (r.contact && r.email && Array.isArray(g_contacts)) {
+    const exists = g_contacts.find(c => (c.email||'').toLowerCase() === r.email.toLowerCase());
+    if (!exists) {
+      g_contacts.push({societe:r.client||'', nom:r.contact, tel:r.tel||'', email:r.email, cp:'', notes:'Ajouté depuis groupe'});
+      if (typeof renderContacts === 'function') renderContacts();
+      if (typeof saveContacts === 'function') saveContacts();
+    }
+  }
+  renderMaster(); renderKanban(); updateStats(); markDirty();
+  toast('Groupe mis à jour — contact, transporteur et infos logistiques sauvegardés.');
+}
+
+function grpAutoFillContact() {
+  if (g_groupIdx < 0) return;
+  const r = g_master[g_groupIdx];
+  const c = (g_contacts||[]).find(x => (x.societe||'').toLowerCase() === (r.client||'').toLowerCase())
+        || (g_contacts||[]).find(x => (r.client||'').toLowerCase().includes((x.societe||'').toLowerCase()) && (x.societe||'').length > 2);
+  if (!c) return toast('Aucun contact trouvé pour ce client.');
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+  set('grp-contact', c.nom || '');
+  set('grp-tel', c.tel || '');
+  set('grp-email', c.email || '');
+  toast('Contact groupe rempli depuis le carnet contacts.');
+}
+
+function retirerCochesGroupe() {
+  if (g_groupIdx<0) return;
+  const r=g_master[g_groupIdx];
+  const subs=r.file.split(' + ').map(s=>s.trim()).filter(Boolean);
+  const toRet=subs.filter((_,i)=>{ const el=document.getElementById(`grpchk${i}`); return el&&el.checked; });
+  if (!toRet.length) return toast('Cochez au moins un fichier.');
+  if (toRet.length===subs.length) return toast('Impossible de retirer tous les fichiers.');
+  const remain=subs.filter(f=>!toRet.includes(f));
+  let nP=0,nV=0;
+  remain.forEach(sf=>{const rw=g_rawData[sf]||{};nP+=rw.poids||0;nV+=rw.vol||0;});
+  const nT=calcTaxable(nP,nV);
+  r.file=remain.join(' + ');
+  r.poids=+nP.toFixed(2); r.vol=+nV.toFixed(3); r.taxable=nT;
+  r.transp=calcTransp(r.svct,nT,r.dept,isCP(r.client),nP);
+  const today=new Date().toISOString().slice(0,10);
+  toRet.forEach(sf=>{
+    const raw=g_rawData[sf]||{};
+    // Reprendre les données ORIGINALES du fichier (pas celles du groupe)
+    const origClient=raw.client||r.client;
+    const origRdl=raw.rdl||r.rdl;
+    const p=raw.poids||0,v=raw.vol||0,sv=raw.svct||r.svct,d=raw.dept||r.dept,t=calcTaxable(p,v);
+    const cp=isCP(origClient);
+    const st=r.cc==='Cc'?transpTarget(sv,origClient):'1';
+    // Retrouver le contact original pour ce client
+    const origContact=g_contacts.find(c=>(c.societe||'').toLowerCase()===(origClient||'').toLowerCase());
+    const dup=g_master.find(x=>x.file===sf);
+    if (dup) {
+      Object.assign(dup,{client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp,p),poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||dup.contact||'',tel:origContact?.tel||dup.tel||'',email:origContact?.email||dup.email||'',
+        cc:r.cc==='Cc'?'Cc':'Non',statut:st});
+    } else {
+      g_master.push({file:sf,client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp,p),poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||r.contact||'',tel:origContact?.tel||r.tel||'',email:origContact?.email||r.email||'',
+        cc:r.cc==='Cc'?'Cc':'Non',comment:'',statut:st,_dateCreated:today});
+    }
+  });
+  closeModal('modal-group');
+  renderMaster(); renderKanban(); updateStats();
+  toast(`${toRet.length} fichier(s) retiré(s) du groupe.`);
+}
+
+function validerCCPartiels() {
+  if (g_groupIdx<0) return;
+  const r=g_master[g_groupIdx];
+  const subs=r.file.split(' + ').map(s=>s.trim()).filter(Boolean);
+  const ccY=[],ccN=[];
+  subs.forEach((sf,i)=>{
+    const el=document.getElementById(`grpchk${i}`);
+    (el&&el.checked?ccY:ccN).push(sf);
+  });
+  if (!ccY.length) return toast('Cochez au moins un fichier.');
+  g_master.splice(g_groupIdx,1);
+  const today=new Date().toISOString().slice(0,10);
+  ccY.forEach(sf=>{
+    const raw=g_rawData[sf]||{};
+    const origClient=raw.client||r.client;
+    const origRdl=raw.rdl||r.rdl;
+    const p=raw.poids||0,v=raw.vol||0,sv=raw.svct||r.svct,d=raw.dept||r.dept,t=calcTaxable(p,v);
+    const cp=isCP(origClient);
+    const origContact=g_contacts.find(c=>(c.societe||'').toLowerCase()===(origClient||'').toLowerCase());
+    const dup=g_master.find(x=>x.file===sf);
+    if (dup) {
+      Object.assign(dup,{client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp,p),poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||dup.contact||'',tel:origContact?.tel||dup.tel||'',email:origContact?.email||dup.email||'',
+        cc:'Cc',statut:transpTarget(sv,origClient)});
+    } else {
+      g_master.push({file:sf,client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp,p),poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||'',tel:origContact?.tel||'',email:origContact?.email||'',
+        cc:'Cc',comment:'',
+        statut:transpTarget(sv,origClient),_dateCreated:today});
+    }
+    if (cp) addOrUpdateCP(origClient,sf,p,v,t,r.operator);
+  });
+  if (ccN.length){
+    if (ccN.length === 1) {
+      // Un seul fichier restant → remettre en solo avec ses infos originales
+      const sf=ccN[0], raw=g_rawData[sf]||{};
+      const origClient=raw.client||r.client;
+      const origRdl=raw.rdl||r.rdl;
+      const p=raw.poids||0,v=raw.vol||0,sv=raw.svct||r.svct,d=raw.dept||r.dept,t=calcTaxable(p,v);
+      const origContact=g_contacts.find(c=>(c.societe||'').toLowerCase()===(origClient||'').toLowerCase());
+      g_master.push({
+        file:sf,client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,isCP(origClient),p),
+        poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||r.contact||'',tel:origContact?.tel||r.tel||'',email:origContact?.email||r.email||'',
+        cc:'Non',comment:'',statut:'1',_dateCreated:today
+      });
+    } else {
+      // Plusieurs fichiers restants → garder en groupe
+      let nP=0,nV=0;
+      ccN.forEach(sf=>{const rw=g_rawData[sf]||{};nP+=rw.poids||0;nV+=rw.vol||0;});
+      const nT=calcTaxable(nP,nV);
+      g_master.push({
+        file:ccN.join(' + '),client:r.client,rdl:r.rdl,svct:r.svct,
+        transp:calcTransp(r.svct,nT,r.dept,isCP(r.client),nP),
+        poids:+nP.toFixed(2),vol:+nV.toFixed(3),taxable:nT,dept:r.dept,
+        contact:r.contact||'',tel:r.tel||'',email:r.email||'',cc:'Non',
+        comment:'[Groupe - CC en attente]',
+        statut:'1',_dateCreated:today
+      });
+    }
+  }
+  closeModal('modal-group'); g_groupIdx=-1;
+  renderMaster(); renderKanban(); renderCP(); updateStats();
+  toast('CC partielle validée.');
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  ADD MANUAL                                                              ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.getElementById('btn-add-manual').onclick = () => {
+  ['add-file','add-client','add-svct','add-dept','add-transp'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('add-poids').value='0';
+  document.getElementById('add-vol').value='0';
+  openModal('modal-add');
+};
+
+function recalcTranspAdd() {
+  const svct=document.getElementById('add-svct').value;
+  const dept=document.getElementById('add-dept').value;
+  const p=parseFloat(document.getElementById('add-poids').value)||0;
+  const v=parseFloat(document.getElementById('add-vol').value)||0;
+  const client=document.getElementById('add-client').value;
+  document.getElementById('add-transp').value=calcTransp(svct,calcTaxable(p,v),dept,isCP(client));
+}
+
+function saveManual() {
+  const file=document.getElementById('add-file').value.trim();
+  if (!file) return toast('N° dossier obligatoire.');
+  if (g_master.some(r=>r.file===file)) return toast('Ce dossier existe déjà.');
+  const client=document.getElementById('add-client').value;
+  const svct=document.getElementById('add-svct').value;
+  const p=parseFloat(document.getElementById('add-poids').value)||0;
+  const v=parseFloat(document.getElementById('add-vol').value)||0;
+  const t=calcTaxable(p,v);
+  const dept=document.getElementById('add-dept').value;
+  let transp=document.getElementById('add-transp').value||calcTransp(svct,t,dept,isCP(client));
+  const today=new Date().toISOString().slice(0,10);
+  g_master.push({file,client,rdl:'',svct,transp,poids:p,vol:v,taxable:t,
+    dept,contact:'',tel:'',email:'',cc:'Non',comment:'',statut:'1',operator:'',_dateCreated:today});
+  storeRaw(file,client,svct,p,v,t,dept,'');
+  autoFillContact(file,client);
+  closeModal('modal-add');
+  renderMaster(); renderKanban(); updateStats();
+  toast('Dossier ajouté.');
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  CLEAR DONE                                                              ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.getElementById('btn-clear-done').onclick = () => {
+  const done = g_master.filter(r => String(r.statut)==='8' && !String(r.statut).includes('9'));
+  if (!done.length) return toast('Aucun dossier terminé.');
+  if (!confirm(`Supprimer ${done.length} dossier(s) terminés de la mémoire ?\n(Les contacts clients sont conservés)`)) return;
+  // Supprimer les rawData associés
+  done.forEach(r => {
+    (r.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean).forEach(f => {
+      delete g_rawData[f];
+    });
+  });
+  // Retirer de g_master — libère la mémoire
+  g_master = g_master.filter(r => String(r.statut)!=='8');
+  renderMaster(); renderKanban(); updateStats(); markDirty();
+  toast(`${done.length} dossier(s) supprimés. Contacts conservés.`);
+};
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  SAVE / LOAD JSON                                                        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.getElementById('btn-save').onclick = () => {
+  const data=JSON.stringify({master:g_master,rawData:g_rawData,cpData:g_cpData,contacts:g_contacts},null,2);
+  downloadText('DispatchMaster_'+new Date().toISOString().slice(0,16).replace('T','_')+'.json', data);
+  toast('Sauvegarde téléchargée.');
+};
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  EXPORT EXCEL — Tableau Dispatch complet                                ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.getElementById('btn-export-excel').onclick = () => {
+  if (!g_master.length) return toast('Aucun dossier à exporter.');
+  const headers = ['N° Dossier','Client','RDL','Service','Transporteur','Poids (kg)','Volume (m³)','Taxable','Dept','Contact','Téléphone','Email','CC','Statut','Opérateur','Commentaire','Date création'];
+  const rows = g_master.map(r => [
+    r.file || '',
+    r.client || '',
+    r.rdl || '',
+    r.svct || '',
+    r.transp || '',
+    r.poids || '',
+    r.vol || '',
+    r.taxable || '',
+    r.dept || '',
+    r.contact || '',
+    r.tel || '',
+    r.email || '',
+    r.cc || '',
+    STATUT_LABELS[String(r.statut||'')] || r.statut || '',
+    r.operator || '',
+    r.comment || '',
+    r._dateCreated || ''
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  // Auto-largeur colonnes
+  ws['!cols'] = headers.map((h,i) => ({ wch: Math.max(h.length, ...rows.map(r => String(r[i]).length).slice(0,50)) + 2 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Dispatch');
+  XLSX.writeFile(wb, 'Dispatch_Export_' + new Date().toISOString().slice(0,10) + '.xlsx');
+  toast('Export Excel téléchargé.');
+};
+
+document.getElementById('btn-load-json').onclick = () => document.getElementById('json-input').click();
+document.getElementById('json-input').addEventListener('change', e => {
+  const f=e.target.files[0]; if (!f) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try {
+      const d=JSON.parse(ev.target.result);
+      g_master  = d.master   || [];
+      g_rawData = d.rawData  || {};
+      g_cpData  = d.cpData   || [];
+      g_contacts= d.contacts || [];
+      renderMaster(); renderKanban(); renderCP(); renderContacts(); updateStats();
+      if (d.contacts && typeof saveContacts === 'function') saveContacts();
+      toast('Sauvegarde chargée — tous vos dossiers et contacts sont restaurés.');
+    } catch(err){ alert('Erreur lecture JSON : '+err.message); }
+  };
+  reader.readAsText(f);
+  e.target.value='';
+});
+
+function downloadText(filename, text) {
+  const a=document.createElement('a');
+  a.href='data:text/plain;charset=utf-8,'+encodeURIComponent(text);
+  a.download=filename; a.click();
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  EXPORT / IMPORT WORKFLOW — dossiers actifs uniquement                  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.getElementById('btn-export-wf').onclick = () => {
+  const myName = localStorage.getItem('dispatch_operator') || '';
+
+  // Exporter uniquement les dossiers en cours (pas les terminés/archivés)
+  const active = g_master.filter(r => {
+    const s = parseInt(statutNum(r.statut));
+    return s >= 1 && s <= 9 && s !== 8; // Tout sauf "Terminé"
+  });
+  if (!active.length) return toast('Aucun dossier actif à exporter.');
+
+  // S'assurer que chaque dossier a un opérateur (tag avec le nom si absent)
+  active.forEach(r => { if (!r.operator && myName) r.operator = myName; });
+
+  // Exporter aussi les rawData correspondants
+  const activeRaw = {};
+  active.forEach(r => {
+    (r.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean).forEach(f => {
+      if (g_rawData[f]) activeRaw[f] = g_rawData[f];
+    });
+  });
+
+  // Résumé par opérateur pour le header
+  const byOp = {};
+  active.forEach(r => { const op = r.operator || 'Non assigné'; byOp[op] = (byOp[op]||0) + 1; });
+
+  const payload = {
+    _type: 'dispatch_workflow',
+    _exportDate: new Date().toISOString(),
+    _exportedBy: myName || 'inconnu',
+    _version: 3,
+    _summary: byOp,
+    master: active,
+    rawData: activeRaw,
+    cpData: g_cpData,
+    contacts: g_contacts
+  };
+
+  const ts = new Date().toISOString().slice(0,16).replace('T','_').replace(':','-');
+  const nameTag = myName ? `_${myName}` : '';
+  downloadText(`Workflow${nameTag}_${active.length}dossiers_${ts}.json`, JSON.stringify(payload, null, 2));
+  toast(`${active.length} dossier(s) exportés par ${myName || '?'}. Fichier prêt à transmettre.`);
+};
+
+document.getElementById('btn-import-wf').onclick = () => document.getElementById('wf-input').click();
+document.getElementById('wf-input').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const d = JSON.parse(ev.target.result);
+      if (!d.master || !d.master.length) return toast('Fichier workflow vide ou invalide.');
+
+      // Fusionner : ajouter les dossiers absents, mettre à jour ceux existants
+      let added = 0, updated = 0;
+      d.master.forEach(imported => {
+        const existing = g_master.find(r => r.file === imported.file);
+        if (existing) {
+          // Mettre à jour les champs éditables (statut, contact, etc.)
+          ['statut','contact','tel','email','comment','cc','operator','fcDate','fcHoraire'].forEach(k => {
+            if (imported[k] !== undefined) existing[k] = imported[k];
+          });
+          updated++;
+        } else {
+          g_master.push(imported);
+          added++;
+        }
+      });
+
+      // Fusionner rawData
+      if (d.rawData) Object.assign(g_rawData, d.rawData);
+
+      // Fusionner contacts (ajouter les absents)
+      if (d.contacts) {
+        d.contacts.forEach(c => {
+          if (!g_contacts.find(x => (x.societe||'').toLowerCase() === (c.societe||'').toLowerCase() && (x.nom||'').toLowerCase() === (c.nom||'').toLowerCase())) {
+            g_contacts.push(c);
+          }
+        });
+      }
+
+      // Fusionner cpData
+      if (d.cpData) {
+        d.cpData.forEach(cp => {
+          if (!g_cpData.find(x => x.client === cp.client && JSON.stringify(x.files) === JSON.stringify(cp.files))) {
+            g_cpData.push(cp);
+          }
+        });
+      }
+
+      renderMaster(); renderKanban(); renderCP(); renderContacts(); updateStats();
+      populateOperatorFilter(); // Rafraîchir le filtre avec les nouveaux opérateurs
+      if (d.contacts && typeof saveContacts === 'function') saveContacts();
+      markDirty();
+      const from = d._exportedBy ? ` (de ${d._exportedBy})` : '';
+      toast(`Workflow importé${from} : +${added} nouveau(x), ${updated} mis à jour.`);
+    } catch(err) { alert('Erreur lecture workflow : ' + err.message); }
+  };
+  reader.readAsText(f);
+  e.target.value = '';
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  STATS                                                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function updateStats() {
+  const visible = g_operatorFilter
+    ? g_master.filter(r => (r.operator||'') === g_operatorFilter)
+    : g_master;
+  let total=visible.length, cc=0, fc=0, nto=0;
+  visible.forEach(r=>{
+    const sn=parseInt(statutNum(r.statut));
+    if (sn>=2&&sn<=7) cc++;
+    if (sn===5) fc++;
+    if (sn===7) nto++;
+  });
+  document.getElementById('st-total').textContent=total;
+  document.getElementById('st-cc').textContent=cc;
+  document.getElementById('st-fc').textContent=fc;
+  document.getElementById('st-nto').textContent=nto;
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  TABS                                                                    ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.tabpane').forEach(p=>p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-'+tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab==='workflow') renderKanban();
+    if (tab.dataset.tab==='contacts') renderContacts();
+  });
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  MODALS                                                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('open');
+  el.style.display = '';
+  if (id==='modal-edit') g_editIdx=-1;
+  if (id==='modal-group') g_groupIdx=-1;
+}
+document.querySelectorAll('.overlay').forEach(o => {
+  o.addEventListener('click', e=>{ if (e.target===o) closeModal(o.id); });
+});
+document.addEventListener('keydown', e => {
+  if (e.key==='Escape') document.querySelectorAll('.overlay.open').forEach(o=>closeModal(o.id));
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  TOAST                                                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+let _toastTimer=null;
+function toast(msg) {
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer=setTimeout(()=>el.classList.remove('show'),3000);
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  INIT                                                                    ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+buildKanban();
+updateStats();
+renderMaster();
+renderContacts();
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  PONT API AUTOIT (Serveur Local)                                         ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+const API_URL = window.location.origin + '/api';
+
+// Fonction générique pour parler à AutoIt
+async function apiCall(endpoint, data = {}) {
+  try {
+    const response = await fetch(`${API_URL}/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return await response.json();
+  } catch (err) {
+    console.error("Erreur API AutoIt:", err);
+  }
+}
+
+// Raccourcis réseau — endpoints dédiés (le body EST le JSON, pas de parsing côté AutoIt)
+async function netSave(path, state) {
+  try {
+    const url = `${API_URL}/net-save?path=${encodeURIComponent(path)}`;
+    const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(state) });
+    return await resp.json();
+  } catch(e) { console.warn('netSave:', e); }
+}
+async function netLoad(path) {
+  try {
+    const url = `${API_URL}/net-load?path=${encodeURIComponent(path)}`;
+    const resp = await fetch(url, { method:'POST' });
+    return await resp.json();
+  } catch(e) { console.warn('netLoad:', e); return null; }
+}
+
+async function netListFiles(pattern) {
+  try {
+    const url = `${API_URL}/net-list?pattern=${encodeURIComponent(pattern)}`;
+    const resp = await fetch(url, { method:'POST' });
+    return await resp.json();
+  } catch(e) { console.warn('netListFiles:', e); return []; }
+}
+
+// Construire le chemin opérateur à partir du chemin de base
+// dispatch_state.json → dispatch_state_Jason.json
+function _opPath(basePath, operatorName) {
+  return basePath.replace(/\.json$/i, '_' + operatorName.replace(/[^a-zA-Z0-9àâäéèêëïîôùûüÿçæœÀÂÄÉÈÊËÏÎÔÙÛÜŸÇÆŒ_-]/g, '') + '.json');
+}
+function _opPattern(basePath) {
+  return basePath.replace(/\.json$/i, '_*.json');
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  INDEXEDDB — Stockage local haute capacité (remplace JSON/localStorage) ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+const IDB_NAME = 'DispatchDB';
+const IDB_VERSION = 2;
+const IDB_STORE = 'state';
+const IDB_CONTACTS = 'contacts';
+let _idb = null;
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+      if (!db.objectStoreNames.contains(IDB_CONTACTS)) db.createObjectStore(IDB_CONTACTS);
+    };
+    req.onsuccess = e => { _idb = e.target.result; resolve(_idb); };
+    req.onerror = e => { console.warn('IndexedDB:', e.target.error); reject(e.target.error); };
+  });
+}
+
+function idbPut(store, key, data) {
+  if (!_idb) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const tx = _idb.transaction(store, 'readwrite');
+    tx.objectStore(store).put(data, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = e => { console.warn('IDB save:', e.target.error); reject(e.target.error); };
+  });
+}
+
+function idbGet(store, key) {
+  if (!_idb) return Promise.resolve(null);
+  return new Promise((resolve, reject) => {
+    const tx = _idb.transaction(store, 'readonly');
+    const req = tx.objectStore(store).get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+// Raccourcis pour compatibilité
+function idbSave(data) { return idbPut(IDB_STORE, 'dispatch_state', data); }
+function idbLoad() { return idbGet(IDB_STORE, 'dispatch_state'); }
+function idbSaveContacts() { return idbPut(IDB_CONTACTS, 'contacts', g_contacts); }
+function idbLoadContacts() { return idbGet(IDB_CONTACTS, 'contacts'); }
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  AUTO-SAVE — dirty flag + debounce (ne sauvegarde que si changement)    ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+let _dirty = false;
+let _saveTimer = null;
+const SAVE_DELAY = 1500; // 1.5s après dernière modification
+
+function markDirty() { _dirty = true; scheduleSave(); }
+
+// Marquer un dossier comme modifié par cet opérateur (pour la fusion réseau)
+function stampRecord(r) {
+  r._ts = Date.now();
+  const myName = localStorage.getItem('dispatch_operator') || '';
+  r._by = myName;
+  // Assigner l'opérateur si le dossier n'en a pas encore
+  if (!r.operator && myName) r.operator = myName;
+}
+
+function scheduleSave() {
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(autoSave, SAVE_DELAY);
+}
+
+async function autoSave() {
+  if (!_dirty) return;
+  _dirty = false;
+  // Fichier ÉTAT : statut + opérateur de chaque dossier (léger)
+  const statusData = g_master.map(r => ({ file: r.file, statut: r.statut, operator: r.operator || '', cc: r.cc || '', email: r.email || '', contact: r.contact || '', tel: r.tel || '', comment: r.comment || '', transp: r.transp || '', fcDate: r.fcDate || '', fcHoraire: r.fcHoraire || '' }));
+  // Fichier DATA : toutes les infos dossiers + rawData + cpData (sans contacts)
+  const infoData = { master: g_master, rawData: g_rawData, cpData: g_cpData };
+  // Fichier CONTACTS : g_contacts (séparé, persistant)
+  const contactsData = g_contacts;
+
+  // Sauvegarder en parallèle : IndexedDB + API AutoIt (3 fichiers) + Réseau
+  const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
+  try { await Promise.all([
+    idbSave(infoData),
+    idbSaveContacts(),
+    apiCall('save-status', statusData),
+    apiCall('save-data', infoData),
+    saveContactsChunked(),
+    path ? smartNetSave(path) : Promise.resolve()
+  ]); }
+  catch(e) { console.warn('autoSave error:', e); }
+}
+
+// Sauvegarde contacts avec auto-split si trop gros (>500 KB par fichier)
+const CONTACTS_CHUNK_SIZE = 500 * 1024; // 500 KB
+async function saveContactsChunked() {
+  const json = JSON.stringify(g_contacts);
+  if (json.length <= CONTACTS_CHUNK_SIZE) {
+    // Un seul fichier suffit
+    await apiCall('save-contacts', { chunk: 0, total: 1, data: g_contacts });
+  } else {
+    // Découper en morceaux
+    const chunkCount = Math.ceil(json.length / CONTACTS_CHUNK_SIZE);
+    const perChunk = Math.ceil(g_contacts.length / chunkCount);
+    const promises = [];
+    for (let i = 0; i < chunkCount; i++) {
+      const slice = g_contacts.slice(i * perChunk, (i + 1) * perChunk);
+      promises.push(apiCall('save-contacts', { chunk: i, total: chunkCount, data: slice }));
+    }
+    await Promise.all(promises);
+  }
+}
+
+// Sauvegarde contacts uniquement (après ajout/modif/suppression)
+async function saveContacts() {
+  try {
+    if (typeof saveContactsTSV === 'function') await saveContactsTSV();
+    else if (typeof saveContactsInline === 'function') await saveContactsInline();
+    else await Promise.all([idbSaveContacts(), saveContactsChunked()]);
+  }
+  catch(e) { console.warn('contacts save:', e); }
+}
+
+// Écoute intelligente : ne marque dirty que sur vrais changements
+document.addEventListener('input', markDirty);
+// Les fonctions appellent markDirty() après modification — le save est debounced automatiquement
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  REFRESH / SYNC DEPUIS SERVEUR (sans recharger la page)                  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+let _refreshing = false;
+async function refreshData(silent) {
+  if (_refreshing) return;
+  _refreshing = true;
+  if (!silent) toast('Rafraîchissement en cours...');
+  try {
+    // Sauvegarder les modifications locales non sauvées d'abord
+    await autoSave();
+
+    // Charger depuis l'API
+    let freshData = null;
+    try {
+      const resp = await fetch(`${API_URL}/load-data`);
+      freshData = await resp.json();
+    } catch(e) {
+      try {
+        const resp = await fetch(`${API_URL}/load`);
+        freshData = await resp.json();
+      } catch(e2) { /* ignore */ }
+    }
+
+    if (!freshData || !freshData.master || !freshData.master.length) {
+      if (!silent) toast('Aucune donnée reçue du serveur.');
+      _refreshing = false;
+      return;
+    }
+
+    const myName = localStorage.getItem('dispatch_operator') || '';
+
+    // L'API est la source de vérité : on réconcilie g_master avec le serveur
+    const serverMap = new Map();
+    freshData.master.forEach(r => serverMap.set(r.file, r));
+
+    // Retirer les dossiers locaux qui n'existent plus sur le serveur
+    const beforeCount = g_master.length;
+    g_master = g_master.filter(r => serverMap.has(r.file));
+    const removed = beforeCount - g_master.length;
+
+    // Mettre à jour les dossiers existants avec les données serveur si plus récentes
+    let updated = 0;
+    g_master.forEach(r => {
+      const remote = serverMap.get(r.file);
+      if (!remote) return;
+      serverMap.delete(r.file); // traité
+      if ((remote._ts || 0) > (r._ts || 0)) {
+        Object.keys(remote).forEach(k => { r[k] = remote[k]; });
+        updated++;
+      }
+    });
+
+    // Ajouter les vrais nouveaux dossiers (ajoutés par un autre opérateur/import)
+    let added = 0;
+    serverMap.forEach(r => {
+      g_master.push(r);
+      added++;
+    });
+
+    // Réconcilier rawData et cpData avec le serveur
+    if (freshData.rawData) {
+      g_rawData = freshData.rawData;
+    }
+    if (freshData.cpData && Array.isArray(freshData.cpData)) {
+      g_cpData = freshData.cpData;
+    }
+
+    // Nettoyer les CP obsolètes
+    cleanupCpData();
+
+    // Sauvegarder en local
+    idbSave({ master: g_master, rawData: g_rawData, cpData: g_cpData });
+
+    // Rafraîchir l'interface
+    renderMaster(); renderKanban(); renderCP(); updateStats();
+    populateOperatorFilter();
+
+    const changes = [updated && `${updated} mis à jour`, added && `${added} ajouté(s)`, removed && `${removed} retiré(s)`].filter(Boolean).join(', ');
+    if (!silent) {
+      toast(changes ? `Sync : ${changes}.` : 'Sync : données à jour.');
+    } else if (changes) {
+      toast(`Sync auto : ${changes}.`);
+    }
+  } catch(e) {
+    console.warn('refreshData error:', e);
+    if (!silent) toast('Erreur lors du rafraîchissement.');
+  }
+  _refreshing = false;
+}
+
+// Auto-sync toutes les 2 minutes
+setInterval(() => refreshData(true), 120000);
+
+// Chargement automatique au démarrage — IndexedDB prioritaire, API fallback
+window.onload = async () => {
+  // 1. Ouvrir IndexedDB
+  try { await idbOpen(); } catch(e) { console.warn('IndexedDB indisponible, fallback API seul.'); }
+
+  let loaded = false;
+
+  // 2. Charger contacts depuis leur store dédié (indépendant)
+  try {
+    const idbContacts = await idbLoadContacts();
+    if (idbContacts && idbContacts.length > 0) {
+      g_contacts = idbContacts;
+      console.log(`Contacts chargés depuis IndexedDB : ${g_contacts.length}`);
+    }
+  } catch(e) { console.warn('IDB contacts load:', e); }
+
+  // 3. Essayer IndexedDB d'abord pour les dossiers (instantané, pas de réseau)
+  try {
+    const idbData = await idbLoad();
+    if (idbData && idbData.master && idbData.master.length > 0) {
+      g_master = idbData.master || [];
+      g_rawData = idbData.rawData || {};
+      g_cpData = idbData.cpData || [];
+      if (!g_contacts.length && idbData.contacts) g_contacts = idbData.contacts;
+      loaded = true;
+      console.log('Chargé depuis IndexedDB (local).');
+    }
+  } catch(e) { console.warn('IDB load error:', e); }
+
+  // 4. Toujours essayer l'API AutoIt pour réconcilier (données fraîches)
+  // Si IDB a chargé, l'API sert de mise à jour ; sinon, elle est la source principale
+  try {
+    const respData = await fetch(`${API_URL}/load-data`);
+    const d = await respData.json();
+    if (d && d.master && d.master.length > 0) {
+      if (loaded) {
+        // Réconcilier : l'API est la source de vérité, IDB est le cache
+        // Garder seulement les dossiers qui existent aussi côté serveur
+        // OU qui ont été modifiés localement plus récemment
+        const serverFiles = new Set(d.master.map(r => r.file));
+        const serverMap = new Map(d.master.map(r => [r.file, r]));
+
+        // Retirer de g_master les dossiers absents du serveur (sauf si modifiés localement après dernier save)
+        g_master = g_master.filter(r => serverFiles.has(r.file));
+
+        // Mettre à jour avec les données serveur si plus récentes
+        g_master.forEach(r => {
+          const srv = serverMap.get(r.file);
+          if (srv && (srv._ts || 0) > (r._ts || 0)) {
+            Object.keys(srv).forEach(k => { r[k] = srv[k]; });
+          }
+          serverMap.delete(r.file);
+        });
+
+        // Ajouter les dossiers présents sur le serveur mais pas en local
+        serverMap.forEach(r => g_master.push(r));
+
+        // Réconcilier rawData et cpData
+        if (d.rawData) Object.assign(g_rawData, d.rawData);
+        if (d.cpData) g_cpData = d.cpData;
+      } else {
+        g_master = d.master || [];
+        g_rawData = d.rawData || {};
+        g_cpData = d.cpData || [];
+      }
+      loaded = true;
+      // Syncer vers IndexedDB avec les données réconciliées
+      idbSave({ master: g_master, rawData: g_rawData, cpData: g_cpData });
+    }
+  } catch(e) { console.log('load-data:', e); }
+
+  // Charger contacts séparément (multi-chunks)
+  if (!g_contacts.length) {
+    try {
+      const respC = await fetch(`${API_URL}/load-contacts`);
+      const c = await respC.json();
+      if (Array.isArray(c) && c.length > 0) g_contacts = c;
+    } catch(e) { console.log('load-contacts:', e); }
+  }
+
+  // Fallback ultime : ancien format monolithique (seulement si rien n'a chargé)
+  if (!loaded) {
+    try {
+      const response = await fetch(`${API_URL}/load`);
+      const d = await response.json();
+      if (d && d.master && d.master.length > 0) {
+        g_master = d.master || [];
+        g_rawData = d.rawData || {};
+        g_cpData = d.cpData || [];
+        if (!g_contacts.length && d.contacts) g_contacts = d.contacts;
+        loaded = true;
+      }
+    } catch(e) { console.log("Serveur hors ligne ou premier démarrage."); }
+
+    if (loaded) {
+      idbSave({ master: g_master, rawData: g_rawData, cpData: g_cpData });
+      idbSaveContacts();
+    }
+  }
+
+  if (loaded) {
+    // Assigner l'opérateur courant aux dossiers orphelins (sans opérateur)
+    const myName = localStorage.getItem('dispatch_operator') || '';
+    if (myName) g_master.forEach(r => { if (!r.operator) r.operator = myName; });
+
+    // Sync : s'assurer que tous les dossiers CP en statut 2 (CC) sont dans g_cpData
+    g_master.forEach(r => {
+      if (isCP(r.client) && r.cc === 'Cc' && ['2'].includes(String(r.statut))) {
+        (r.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean).forEach(sf => {
+          addOrUpdateCP(r.client, sf, r.poids, r.vol, r.taxable, r.operator);
+        });
+      }
+    });
+    // Nettoyer les CP dont les dossiers ne sont plus en statut 2
+    cleanupCpData();
+    renderMaster(); renderKanban(); renderCP(); renderContacts(); updateStats();
+    populateOperatorFilter();
+    toast(loaded ? '✓ Données restaurées.' : 'Premier démarrage.');
+  }
+};
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  ENVOI DES ACTIONS VERS AUTOIT                                           ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+// Spinner ETMS — affiché pendant les actions longues
+function showSpinner(msg, sub) {
+  const el = document.getElementById('etms-spinner');
+  document.getElementById('etms-spinner-msg').textContent = msg || 'Action en cours...';
+  document.getElementById('etms-spinner-sub').textContent = sub || 'Ne touchez pas à E.TMS pendant l\'exécution';
+  el.classList.add('active');
+}
+function hideSpinner() {
+  document.getElementById('etms-spinner').classList.remove('active');
+}
+
+async function sendAction(actionType, cmd = '') {
+  // Récupération des données depuis la fenêtre d'édition (Modal Edit)
+  const file = document.getElementById('ed-file').value.trim();
+  const client = document.getElementById('ed-client').value.trim();
+  const email = document.getElementById('ed-email').value.trim();
+
+  if (!file) {
+    toast('Erreur : Aucun N° de dossier détecté.');
+    return;
+  }
+
+  const payload = {
+    action: actionType,
+    cmd: cmd,
+    file: file,
+    client: client,
+    email: email
+  };
+
+  // ETMS_CMD : fire-and-forget, pas de spinner, réponse instantanée
+  if (actionType === 'ETMS_CMD') {
+    toast(`→ ${cmd} ${file}`);
+    apiCall('action', payload).catch(e => toast(`Erreur : ${e.message || 'Action échouée'}`));
+    return;
+  }
+
+  if (actionType === 'MAIL_RDV') {
+    showSpinner(`Outlook : Mail RDV pour ${client}`, 'Préparation du mail en cours...');
+  }
+
+  try {
+    await apiCall('action', payload);
+    if (actionType === 'MAIL_RDV') toast(`✓ Mail RDV envoyé pour ${client}`);
+  } catch(e) {
+    toast(`Erreur : ${e.message || 'Action échouée'}`);
+  } finally {
+    hideSpinner();
+  }
+}
+
+// Fonction pour les boutons du header (lit le champ hdr-file)
+async function sendActionHeader(actionType, cmd = '') {
+  const file = document.getElementById('hdr-file').value.trim();
+
+  if (!file) {
+    toast('Saisir un N° de dossier dans le champ J… à gauche des boutons.');
+    document.getElementById('hdr-file').focus();
+    return;
+  }
+
+  // Cherche le client/email dans g_master si le dossier existe
+  const row = g_master.find(r => r.file === file);
+  const client = row ? (row.client || '') : '';
+  const email  = row ? (row.email  || '') : '';
+
+  const payload = {
+    action: actionType,
+    cmd: cmd,
+    file: file,
+    client: client,
+    email: email
+  };
+
+  // ETMS_CMD : fire-and-forget, pas de spinner, réponse instantanée
+  if (actionType === 'ETMS_CMD') {
+    toast(`→ ${cmd} ${file}`);
+    apiCall('action', payload).catch(e => toast(`Erreur : ${e.message || 'Action échouée'}`));
+    return;
+  }
+
+  if (actionType === 'MAIL_RDV') showSpinner(`Mail RDV pour ${client || file}...`);
+
+  try {
+    await apiCall('action', payload);
+  } catch(e) {
+    toast(`Erreur : ${e.message || 'Action échouée'}`);
+  } finally {
+    hideSpinner();
+  }
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  2. ACTION BATCH POUR LES CHANNEL PARTNERS (Onglet CP)                   ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.getElementById('btn-rdv-cp').addEventListener('click', async () => {
+  // Récupérer les indices cochés dans le tableau CP (basés sur g_cpData visible)
+  const checkedCps = g_cpData
+    .map((cp,i) => ({cp,i}))
+    .filter(({cp}) => !g_operatorFilter || (cp.operator||'') === g_operatorFilter)
+    .filter(({cp,i}) => {
+      const cb = document.getElementById('chk-cp-' + i);
+      return cb && cb.checked;
+    });
+
+  if (!checkedCps.length) return toast('Cochez au moins un CP.');
+  if (!confirm(`Envoyer demandes RDV pour ${checkedCps.length} partenaire(s) ?`)) return;
+
+  // Construire les données pour AutoIt depuis g_cpData + g_cpConfig
+  const dataArr = checkedCps.map(({cp}) => {
+    // Matching partiel : "Arrow" trouve "Arrow ECS SAS"
+    const cl = (cp.client||'').toLowerCase();
+    const cfg = g_cpConfig.find(c => cl.includes((c.nom||'').toLowerCase()) || (c.nom||'').toLowerCase().includes(cl)) || {};
+    const cmds = cp.files.map(f => f.replace(/[^\x20-\x7E]/g, '').trim()).join(' + ');
+    const doc  = (cp.doc||'').replace(/[^\x20-\x7E]/g, '').trim();
+    // Poids = somme brute (pas taxable)
+    return `${cp.client};${cmds};${cp.palettes||''};${cp.colis||''};${fmt(cp.poids)};${doc};${cfg.emailTo||''};${cfg.emailCc||''}`;
+  });
+
+  const strData = dataArr.join('|');
+  toast(`Préparation de ${checkedCps.length} e-mail(s) CP en cours...`);
+  const cpResult = await apiCall('action', { action: 'BATCH_CP', data: strData });
+  if (!cpResult || cpResult.error) {
+    toast('Erreur lors de l\'envoi des mails CP. Les dossiers restent à leur statut actuel.');
+    return;
+  }
+
+  // Passer les dossiers CP au statut 3 + nettoyer g_cpData
+  const idxToRemove = checkedCps.map(({i}) => i).sort((a,b) => b-a);
+  checkedCps.forEach(({cp}) => {
+    cp.files.forEach(sf => {
+      const mi = g_master.findIndex(r => r.file === sf);
+      if (mi >= 0) g_master[mi].statut = '3';
+    });
+  });
+  idxToRemove.forEach(i => g_cpData.splice(i, 1));
+  renderCP(); renderMaster(); renderKanban(); updateStats(); markDirty();
+  toast(`${checkedCps.length} CP traité(s) — dossiers passés au statut 3.`);
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  COMAT                                                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.getElementById('btn-comat-multi').onclick = async (e) => {
+  e.stopPropagation();
+  const raw = document.getElementById('comat-list').value.trim();
+  if (!raw) return toast('Liste vide — saisir des N° de dossier.');
+  const numsRaw = raw.split('\n').map(s => s.trim()).filter(Boolean);
+  const nums = [];
+  numsRaw.forEach(n => n.split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean).forEach(s => nums.push(s)));
+  if (!nums.length) return toast('Aucun numéro valide.');
+  if (!confirm('Lancer COMAT sur ' + nums.length + ' dossier(s) ?')) return;
+  _comatRunning = true;
+  const total = nums.length;
+  _batchShowBar('COMAT', 0, total);
+  toast(`COMAT : ${total} dossier(s) — l'interface reste utilisable.`);
+  let done = 0;
+  async function _comatTabNext() {
+    if (done >= nums.length || !_comatRunning) {
+      _comatRunning = false; _batchHideBar();
+      toast(`COMAT terminé — ${done}/${total} dossier(s) traité(s).`);
+      return;
+    }
+    const n = nums[done];
+    _batchShowBar('COMAT', done, total, n);
+    try { await apiCall('action', { action: 'COMAT_MULTI', data: n + ';;;' }); } catch(e) {}
+    done++;
+    _batchShowBar('COMAT', done, total);
+    setTimeout(_comatTabNext, 50);
+  }
+  _comatTabNext();
+};
+
+document.getElementById('btn-comat-solo').onclick = async (e) => {
+  e.stopPropagation();
+  const num = document.getElementById('comat-solo-num').value.trim();
+  if (!num) return toast('Saisir un N° de dossier.');
+  document.getElementById('comat-status').style.display = 'block';
+  document.getElementById('comat-status-txt').textContent = 'COMAT Solo : ' + num + ' en cours...';
+  toast('COMAT Solo : ' + num + ' envoyé à AutoIt...');
+  await apiCall('action', { action: 'COMAT_SOLO', file: num });
+  document.getElementById('comat-status').style.display = 'none';
+  toast('COMAT Solo : ' + num + ' terminé.');
+};
+
+document.getElementById('btn-comat-stop').onclick = async (e) => {
+  e.stopPropagation();
+  await apiCall('action', { action: 'COMAT_STOP' });
+  _comatRunning = false;
+  _batchHideBar();
+  toast('Signal STOP envoyé à AutoIt.');
+};
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  NTO — MOTEUR DE TARIFICATION                                            ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+// ── Tranches DGS (bornes supérieures, 13 tranches)
+const NTO_DGS_TRANCHES = [9,19,29,39,49,59,69,79,89,99,499,999,3000];
+const NTO_DGS_FRAIS    = 2.0;
+
+// ── Grille DGS : [num_dept, nom, t1..t13]
+const NTO_DGS = [
+[1,"Ain",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[2,"Aisne",22.34565,23.8671,25.45065,26.8479,29.3112,30.7188,33.19245,36.31815,37.7568,40.779,37.9431,29.61135,27.58275],
+[3,"Allier",23.91885,26.1234,29.03175,31.53645,35.0865,37.84995,42.3522,45.3744,48.5208,51.24285,47.80665,41.22405,38.26395],
+[4,"Alpes-de-Haute-Provence",37.4877,41.7933,51.3774,58.57065,63.49725,68.11335,74.8926,81.1233,89.24805,93.34665,88.97895,77.92515,71.9325],
+[5,"Hautes-Alpes",37.4877,41.7933,51.3774,58.57065,63.49725,68.11335,74.8926,81.1233,89.24805,93.34665,88.97895,77.92515,71.9325],
+[6,"Alpes-Maritimes",34.4448,37.35315,45.59175,47.20635,52.0605,58.1877,66.4056,70.8561,77.1282,81.11295,76.9419,76.31055,73.97145],
+[7,"Ardèche",29.2077,34.0515,38.1915,42.13485,48.5415,53.16795,56.8008,64.0044,67.96845,71.6013,67.9167,66.5712,62.7624],
+[8,"Ardennes",22.34565,23.8671,25.45065,26.8479,29.3112,30.7188,33.19245,36.31815,37.7568,40.779,37.9431,29.61135,27.58275],
+[9,"Ariège",34.4448,37.35315,45.59175,47.20635,52.0605,58.1877,66.4056,70.8561,77.1282,81.11295,76.9419,76.31055,73.97145],
+[10,"Aube",21.7971,23.0184,25.0677,26.1441,28.6281,29.6631,31.88835,34.60005,35.86275,38.6262,35.80065,27.6345,24.9642],
+[11,"Aude",34.4448,37.35315,45.59175,47.20635,52.0605,58.1877,66.4056,70.8561,77.1282,81.11295,76.9419,76.31055,73.97145],
+[12,"Aveyron",29.2077,34.0515,38.1915,42.13485,48.5415,53.16795,56.8008,64.0044,67.96845,71.6013,67.9167,66.5712,62.7624],
+[13,"Bouches-du-Rhône",29.2077,34.0515,38.1915,42.13485,48.5415,53.16795,56.8008,64.0044,67.96845,71.6013,67.9167,66.5712,62.7624],
+[14,"Calvados",22.34565,23.8671,25.45065,26.8479,29.3112,30.7188,33.19245,36.31815,37.7568,40.779,37.9431,29.61135,27.58275],
+[15,"Cantal",27.87255,31.7745,36.17325,37.80855,42.8283,46.37835,52.89885,56.3868,58.4568,65.0601,61.24095,57.546,54.7308],
+[16,"Charente",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[17,"Charente-Maritime",27.87255,31.7745,36.17325,37.80855,42.8283,46.37835,52.89885,56.3868,58.4568,65.0601,61.24095,57.546,54.7308],
+[18,"Cher",22.34565,23.8671,25.45065,26.8479,29.3112,30.7188,33.19245,36.31815,37.7568,40.779,37.9431,29.61135,27.58275],
+[19,"Corrèze",27.87255,31.7745,36.17325,37.80855,42.8283,46.37835,52.89885,56.3868,58.4568,65.0601,61.24095,57.546,54.7308],
+[20,"Corse",85.9257,95.1786,102.53745,109.9791,119.6253,123.42375,127.2222,130.95855,134.757,142.3332,142.3332,133.27695,125.3385],
+[21,"Côte-d'Or",23.8464,25.5231,27.25155,28.8351,31.70205,33.2856,36.17325,39.3921,41.24475,44.298,41.2137,33.5754,30.9258],
+[22,"Côtes-d'Armor",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[23,"Creuse",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[24,"Dordogne",27.87255,31.7745,36.17325,37.80855,42.8283,46.37835,52.89885,56.3868,58.4568,65.0601,61.24095,57.546,54.7308],
+[25,"Doubs",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[26,"Drôme",29.2077,34.0515,38.1915,42.13485,48.5415,53.16795,56.8008,64.0044,67.96845,71.6013,67.9167,66.5712,62.7624],
+[27,"Eure",21.7971,23.0184,25.0677,26.1441,28.6281,29.6631,31.88835,34.60005,35.86275,38.6262,35.80065,27.6345,24.9642],
+[28,"Eure-et-Loir",21.7971,23.0184,25.0677,26.1441,28.6281,29.6631,31.88835,34.60005,35.86275,38.6262,35.80065,27.6345,24.9642],
+[29,"Finistère",27.87255,31.7745,36.17325,37.80855,42.8283,46.37835,52.89885,56.3868,58.4568,65.0601,61.24095,57.546,54.7308],
+[30,"Gard",29.96325,35.30385,39.5163,45.59175,50.6115,56.29365,63.74565,67.94775,72.27405,75.6792,72.1809,71.23905,68.2065],
+[31,"Haute-Garonne",27.87255,31.7745,36.17325,37.80855,42.8283,46.37835,52.89885,56.3868,58.4568,65.0601,61.24095,57.546,54.7308],
+[32,"Gers",29.96325,35.30385,39.5163,45.59175,50.6115,56.29365,63.74565,67.94775,72.27405,75.6792,72.1809,71.23905,68.2065],
+[33,"Gironde",27.87255,31.7745,36.17325,37.80855,42.8283,46.37835,52.89885,56.3868,58.4568,65.0601,61.24095,57.546,54.7308],
+[34,"Hérault",29.96325,35.30385,39.5163,45.59175,50.6115,56.29365,63.74565,67.94775,72.27405,75.6792,72.1809,71.23905,68.2065],
+[35,"Ille-et-Vilaine",23.91885,26.1234,29.03175,31.53645,35.0865,37.84995,42.3522,45.3744,48.5208,51.24285,47.80665,41.22405,38.26395],
+[36,"Indre",23.8464,25.5231,27.25155,28.8351,31.70205,33.2856,36.17325,39.3921,41.24475,44.298,41.2137,33.5754,30.9258],
+[37,"Indre-et-Loire",22.34565,23.8671,25.45065,26.8479,29.3112,30.7188,33.19245,36.31815,37.7568,40.779,37.9431,29.61135,27.58275],
+[38,"Isère",27.87255,31.7745,36.17325,37.80855,42.8283,46.37835,52.89885,56.3868,58.4568,65.0601,61.24095,57.546,54.7308],
+[39,"Jura",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[40,"Landes",29.96325,35.30385,39.5163,45.59175,50.6115,56.29365,63.74565,67.94775,72.27405,75.6792,72.1809,71.23905,68.2065],
+[41,"Loir-et-Cher",23.8464,25.5231,27.25155,28.8351,31.70205,33.2856,36.17325,39.3921,41.24475,44.298,41.2137,33.5754,30.9258],
+[42,"Loire",27.87255,31.7745,36.17325,37.80855,42.8283,46.37835,52.89885,56.3868,58.4568,65.0601,61.24095,57.546,54.7308],
+[43,"Haute-Loire",29.2077,34.0515,38.1915,42.13485,48.5415,53.16795,56.8008,64.0044,67.96845,71.6013,67.9167,66.5712,62.7624],
+[44,"Loire-Atlantique",23.91885,26.1234,29.03175,31.53645,35.0865,37.84995,42.3522,45.3744,48.5208,51.24285,47.80665,41.22405,38.26395],
+[45,"Loiret",21.7971,23.0184,25.0677,26.1441,28.6281,29.6631,31.88835,34.60005,35.86275,38.6262,35.80065,27.6345,24.9642],
+[46,"Lot",29.2077,34.0515,38.1915,42.13485,48.5415,53.16795,56.8008,64.0044,67.96845,71.6013,67.9167,66.5712,62.7624],
+[47,"Lot-et-Garonne",29.2077,34.0515,38.1915,42.13485,48.5415,53.16795,56.8008,64.0044,67.96845,71.6013,67.9167,66.5712,62.7624],
+[48,"Lozère",29.2077,34.0515,38.1915,42.13485,48.5415,53.16795,56.8008,64.0044,67.96845,71.6013,67.9167,66.5712,62.7624],
+[49,"Maine-et-Loire",23.8464,25.5231,27.25155,28.8351,31.70205,33.2856,36.17325,39.3921,41.24475,44.298,41.2137,33.5754,30.9258],
+[50,"Manche",23.8464,25.5231,27.25155,28.8351,31.70205,33.2856,36.17325,39.3921,41.24475,44.298,41.2137,33.5754,30.9258],
+[51,"Marne",21.7971,23.0184,25.0677,26.1441,28.6281,29.6631,31.88835,34.60005,35.86275,38.6262,35.80065,27.6345,24.9642],
+[52,"Haute-Marne",22.34565,23.8671,25.45065,26.8479,29.3112,30.7188,33.19245,36.31815,37.7568,40.779,37.9431,29.61135,27.58275],
+[53,"Mayenne",23.91885,26.1234,29.03175,31.53645,35.0865,37.84995,42.3522,45.3744,48.5208,51.24285,47.80665,41.22405,38.26395],
+[54,"Meurthe-et-Moselle",23.8464,25.5231,27.25155,28.8351,31.70205,33.2856,36.17325,39.3921,41.24475,44.298,41.2137,33.5754,30.9258],
+[55,"Meuse",23.91885,26.1234,29.03175,31.53645,35.0865,37.84995,42.3522,45.3744,48.5208,51.24285,47.80665,41.22405,38.26395],
+[56,"Morbihan",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[57,"Moselle",23.91885,26.1234,29.03175,31.53645,35.0865,37.84995,42.3522,45.3744,48.5208,51.24285,47.80665,41.22405,38.26395],
+[58,"Nièvre",22.34565,23.8671,25.45065,26.8479,29.3112,30.7188,33.19245,36.31815,37.7568,40.779,37.9431,29.61135,27.58275],
+[59,"Nord",23.8464,25.5231,27.25155,28.8351,31.70205,33.2856,36.17325,39.3921,41.24475,44.298,41.2137,33.5754,30.9258],
+[60,"Oise",21.7971,23.0184,25.0677,26.1441,28.6281,29.6631,31.88835,34.60005,35.86275,38.6262,35.80065,27.6345,24.9642],
+[61,"Orne",22.34565,23.8671,25.45065,26.8479,29.3112,30.7188,33.19245,36.31815,37.7568,40.779,37.9431,29.61135,27.58275],
+[62,"Pas-de-Calais",22.34565,23.8671,25.45065,26.8479,29.3112,30.7188,33.19245,36.31815,37.7568,40.779,37.9431,29.61135,27.58275],
+[63,"Puy-de-Dôme",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[64,"Pyrénées-Atlantiques",34.4448,37.35315,45.59175,47.20635,52.0605,58.1877,66.4056,70.8561,77.1282,81.11295,76.9419,76.31055,73.97145],
+[65,"Hautes-Pyrénées",34.4448,37.35315,45.59175,47.20635,52.0605,58.1877,66.4056,70.8561,77.1282,81.11295,76.9419,76.31055,73.97145],
+[66,"Pyrénées-Orientales",34.4448,37.35315,45.59175,47.20635,52.0605,58.1877,66.4056,70.8561,77.1282,81.11295,76.9419,76.31055,73.97145],
+[67,"Bas-Rhin",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[68,"Haut-Rhin",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[69,"Rhône",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[70,"Haute-Saône",23.91885,26.1234,29.03175,31.53645,35.0865,37.84995,42.3522,45.3744,48.5208,51.24285,47.80665,41.22405,38.26395],
+[71,"Saône-et-Loire",23.91885,26.1234,29.03175,31.53645,35.0865,37.84995,42.3522,45.3744,48.5208,51.24285,47.80665,41.22405,38.26395],
+[72,"Sarthe",23.8464,25.5231,27.25155,28.8351,31.70205,33.2856,36.17325,39.3921,41.24475,44.298,41.2137,33.5754,30.9258],
+[73,"Savoie",29.2077,34.0515,38.1915,42.13485,48.5415,53.16795,56.8008,64.0044,67.96845,71.6013,67.9167,66.5712,62.7624],
+[74,"Haute-Savoie",29.96325,35.30385,39.5163,45.59175,50.6115,56.29365,63.74565,67.94775,72.27405,75.6792,72.1809,71.23905,68.2065],
+[75,"Paris",29.13525,29.42505,29.5803,29.85975,30.9258,31.2777,31.72275,35.0451,35.28315,38.2536,35.03475,24.37425,20.9898],
+[76,"Seine-Maritime",22.34565,23.8671,25.45065,26.8479,29.3112,30.7188,33.19245,36.31815,37.7568,40.779,37.9431,29.61135,27.58275],
+[77,"Seine-et-Marne",29.13525,29.42505,29.5803,29.85975,30.9258,31.2777,31.72275,35.0451,35.28315,38.2536,35.03475,24.37425,20.9898],
+[78,"Yvelines",27.9864,28.51425,28.8972,29.17665,30.5946,31.45365,32.34375,33.58575,34.70355,36.27675,33.12,26.91,20.5137],
+[79,"Deux-Sèvres",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[80,"Somme",22.34565,23.8671,25.45065,26.8479,29.3112,30.7188,33.19245,36.31815,37.7568,40.779,37.9431,29.61135,27.58275],
+[81,"Tarn",29.96325,35.30385,39.5163,45.59175,50.6115,56.29365,63.74565,67.94775,72.27405,75.6792,72.1809,71.23905,68.2065],
+[82,"Tarn-et-Garonne",29.96325,35.30385,39.5163,45.59175,50.6115,56.29365,63.74565,67.94775,72.27405,75.6792,72.1809,71.23905,68.2065],
+[83,"Var",29.96325,35.30385,39.5163,45.59175,50.6115,56.29365,63.74565,67.94775,72.27405,75.6792,72.1809,71.23905,68.2065],
+[84,"Vaucluse",29.2077,34.0515,38.1915,42.13485,48.5415,53.16795,56.8008,64.0044,67.96845,71.6013,67.9167,66.5712,62.7624],
+[85,"Vendée",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[86,"Vienne",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[87,"Haute-Vienne",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[88,"Vosges",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[89,"Yonne",21.7971,23.0184,25.0677,26.1441,28.6281,29.6631,31.88835,34.60005,35.86275,38.6262,35.80065,27.6345,24.9642],
+[90,"Territoire de Belfort",23.93955,26.9514,31.41225,33.02685,37.4256,40.20975,44.05995,50.4252,53.2404,57.6288,53.7579,46.48185,44.298],
+[91,"Essonne",27.9864,28.51425,28.8972,29.17665,30.5946,31.45365,32.34375,33.58575,34.70355,36.27675,33.12,26.91,20.5137],
+[92,"Hauts-de-Seine",27.9864,28.51425,28.8972,29.17665,30.5946,31.45365,32.34375,33.58575,34.70355,36.27675,33.12,26.91,20.5137],
+[93,"Seine-Saint-Denis",27.9864,28.51425,28.8972,29.17665,30.5946,31.45365,32.34375,33.58575,34.70355,36.27675,33.12,26.91,20.5137],
+[94,"Val-de-Marne",27.9864,28.51425,28.8972,29.17665,30.5946,31.45365,32.34375,33.58575,34.70355,36.27675,33.12,26.91,20.5137],
+[95,"Val-d'Oise",29.13525,29.42505,29.5803,29.85975,30.9258,31.2777,31.72275,35.0451,35.28315,38.2536,35.03475,24.37425,20.9898],
+[98,"Monaco",41.3379,44.80515,54.69975,56.64555,62.46225,69.8211,79.6743,85.0149,92.58075,97.3107,92.322,91.56645,88.7616]
+];
+
+// ── Tranches UTE Cartage IDF (bornes supérieures à partir de l'index 1)
+const NTO_UTE_TRANCHES = [0,45,100,200,300,400,500,1000,1500,2000,2500,3000,15000];
+// ── Grille UTE : dept -> {rates[13], min}
+const NTO_UTE = {
+  "60":{rates:[0.32,0.321,0.321,0.321,0.321,0.321,0.1605,0.0749,0.0642,0.0642,0.0535,0.0428,0.0428],min:32.1},
+  "75":{rates:[0.16,0.1605,0.1605,0.1605,0.1605,0.1605,0.1177,0.0749,0.0642,0.0642,0.0535,0.0428,0.0428],min:20.33},
+  "77":{rates:[0.27,0.2675,0.2675,0.2675,0.2675,0.2675,0.1605,0.0749,0.0642,0.0642,0.0535,0.0428,0.0428],min:24.61},
+  "78":{rates:[0.32,0.321,0.321,0.321,0.321,0.321,0.1605,0.0749,0.0642,0.0642,0.0535,0.0428,0.0428],min:32.1},
+  "91":{rates:[0.32,0.321,0.321,0.321,0.321,0.321,0.1605,0.0749,0.0642,0.0642,0.0535,0.0428,0.0428],min:32.1},
+  "92":{rates:[0.16,0.1605,0.1605,0.1605,0.1605,0.1605,0.107,0.0749,0.0642,0.0642,0.0535,0.0428,0.0428],min:20.33},
+  "93":{rates:[0.16,0.1605,0.1605,0.1605,0.1605,0.1605,0.107,0.0749,0.0642,0.0642,0.0535,0.0428,0.0428],min:20.33},
+  "94":{rates:[0.16,0.1605,0.1605,0.1605,0.1605,0.1605,0.107,0.0749,0.0642,0.0642,0.0535,0.0428,0.0428],min:20.33},
+  "95":{rates:[0.21,0.214,0.214,0.214,0.214,0.214,0.1284,0.0749,0.0642,0.0642,0.0535,0.0428,0.0428],min:21.4}
+};
+
+// ── Fuel par mois
+const NTO_FUEL = {
+"2023-01":0.08,"2023-02":0.08,"2023-03":0.08,"2023-04":0.075,"2023-05":0.07,"2023-06":0.06,
+"2023-07":0.06,"2023-08":0.065,"2023-09":0.075,"2023-10":0.085,"2023-11":0.085,"2023-12":0.08,
+"2024-01":0.07,"2024-02":0.07,"2024-03":0.075,"2024-04":0.075,"2024-05":0.075,"2024-06":0.07,
+"2024-07":0.065,"2024-08":0.065,"2024-09":0.06,"2024-10":0.055,"2024-11":0.055,"2024-12":0.06,
+"2025-01":0.06,"2025-02":0.065,"2025-03":0.07,"2025-04":0.065,"2025-05":0.06,"2025-06":0.055,
+"2025-07":0.055,"2025-08":0.06,"2025-09":0.06,"2025-10":0.06,"2025-11":0.055,"2025-12":0.065,
+"2026-01":0.06,"2026-02":0.165
+};
+
+// ── Utilitaires
+const IDF_DEPTS = new Set(["60","75","77","78","91","92","93","94","95"]);
+
+function ntoGetFuel(transpType) {
+  // Override par transporteur (Options → NTO)
+  if (transpType === 'UTE' || transpType === 'Flex') {
+    const flexVal = parseFloat(localStorage.getItem('nto_fuel_flex') || '');
+    if (!isNaN(flexVal) && flexVal > 0) return flexVal / 100;
+  }
+  if (transpType === 'DGS') {
+    const dgsVal = parseFloat(localStorage.getItem('nto_fuel_dgs') || '');
+    if (!isNaN(dgsVal) && dgsVal > 0) return dgsVal / 100;
+  }
+  // Override global
+  const override = parseFloat(localStorage.getItem('nto_fuel_override') || '');
+  if (!isNaN(override) && override > 0) return override / 100;
+  // Tableau automatique mensuel
+  const now = new Date();
+  const key = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  return NTO_FUEL[key] !== undefined ? NTO_FUEL[key] : 0.165;
+}
+
+function ntoDetectTransp(dept) {
+  return IDF_DEPTS.has(String(dept)) ? 'UTE' : 'DGS';
+}
+
+// ── Calcul DGS
+function ntoCalcDGS(dept, taxable) {
+  const deptNum = parseInt(dept);
+  const row = NTO_DGS.find(r => r[0] === deptNum);
+  if (!row) return null;
+  let col = NTO_DGS_TRANCHES.length - 1;
+  for (let i = 0; i < NTO_DGS_TRANCHES.length; i++) {
+    if (taxable <= NTO_DGS_TRANCHES[i]) { col = i; break; }
+  }
+  const base      = row[2 + col];
+  const avecFrais = base + NTO_DGS_FRAIS;
+  const fuel      = ntoGetFuel('DGS');
+  const fuelMt    = avecFrais * fuel;
+  const total     = avecFrais + fuelMt;
+  return { type:'DGS', nom:row[1], dept:deptNum, taxable, tranche:NTO_DGS_TRANCHES[col],
+           base, frais:NTO_DGS_FRAIS, avecFrais, fuelRate:fuel, fuelMt, total };
+}
+
+// ── Calcul UTE Cartage
+function ntoCalcUTE(dept, taxable) {
+  const d = NTO_UTE[String(dept)];
+  if (!d) return null;
+  // tranche : trouver premier i (1..12) où taxable <= TRANCHES[i]
+  let rateIdx = 12;
+  for (let i = 1; i <= 12; i++) {
+    if (taxable <= NTO_UTE_TRANCHES[i]) { rateIdx = i - 1; break; }
+  }
+  const rate       = d.rates[rateIdx];
+  const calculated = taxable * rate;
+  const base       = Math.max(d.min, calculated);
+  const fuel       = ntoGetFuel('UTE');
+  const fuelMt     = base * fuel;
+  const total      = base + fuelMt;
+  return { type:'UTE', nom:'IDF Dept '+dept, dept, taxable, tranche:NTO_UTE_TRANCHES[rateIdx+1],
+           rate, calculated, minimum:d.min, base, isMin:(calculated < d.min),
+           fuelRate:fuel, fuelMt, total };
+}
+
+// ── Affichage résultat
+function ntoAfficher(res) {
+  document.getElementById('nto-empty').style.display   = 'none';
+  document.getElementById('nto-result').style.display  = 'flex';
+  const fmt = v => v.toFixed(2) + ' €';
+  const fuelPct = (res.fuelRate * 100).toFixed(1) + '%';
+  document.getElementById('nto-res-total').textContent    = fmt(res.total);
+  document.getElementById('nto-res-transp-lbl').textContent = res.type === 'DGS' ? 'DGS (13) — National' : 'Cartage / Flex IDF (7)';
+  document.getElementById('nto-res-dept-lbl').textContent  = 'Dept ' + res.dept + ' — ' + res.nom + ' · ' + res.taxable + ' kg taxable';
+
+  let rows = '';
+  const line = (lbl, val, bold, color) =>
+    '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border)">' +
+    '<span style="color:var(--text2)">' + lbl + '</span>' +
+    '<span style="font-family:var(--mono);font-weight:' + (bold?'700':'400') + ';color:' + (color||'var(--text)') + '">' + val + '</span></div>';
+
+  if (res.type === 'DGS') {
+    rows += line('Poids taxable', res.taxable + ' kg');
+    rows += line('Tranche DGS', '≤ ' + res.tranche + ' kg');
+    rows += line('Prix de base', fmt(res.base));
+    rows += line('Frais de dossier', '+ ' + fmt(res.frais), false, 'var(--orange)');
+    rows += line('Sous-total', fmt(res.avecFrais));
+    rows += line('Fuel (' + fuelPct + ')', '+ ' + fmt(res.fuelMt), false, 'var(--orange)');
+    rows += line('TOTAL TTC', fmt(res.total), true, 'var(--purple)');
+  } else {
+    rows += line('Poids taxable', res.taxable + ' kg');
+    rows += line('Tranche Cartage', '≤ ' + res.tranche + ' kg');
+    rows += line('Tarif/kg', res.rate + ' €/kg');
+    rows += line('Calculé (' + res.taxable + ' × ' + res.rate + ')', fmt(res.calculated), false, res.isMin ? 'var(--text3)' : 'var(--text)');
+    if (res.isMin) rows += line('Minimum garanti', fmt(res.minimum), false, 'var(--orange)');
+    rows += line('Base retenue', fmt(res.base));
+    rows += line('Fuel (' + fuelPct + ')', '+ ' + fmt(res.fuelMt), false, 'var(--orange)');
+    rows += line('TOTAL TTC', fmt(res.total), true, 'var(--purple)');
+  }
+  document.getElementById('nto-res-detail').innerHTML = rows;
+
+  // Stocker pour copier
+  window._ntoLastResult = res;
+}
+
+// ── Mode toggle
+function ntoSetMode(mode) {
+  document.getElementById('nto-panel-j').style.display   = mode === 'j' ? '' : 'none';
+  document.getElementById('nto-panel-m').style.display   = mode === 'm' ? '' : 'none';
+  document.getElementById('nto-btn-mode-j').className    = 'btn btn-sm ' + (mode === 'j' ? 'btn-purple-out' : 'btn-ghost');
+  document.getElementById('nto-btn-mode-m').className    = 'btn btn-sm ' + (mode === 'm' ? 'btn-purple-out' : 'btn-ghost');
+  document.getElementById('nto-detected').style.display  = 'none';
+  document.getElementById('nto-empty').style.display     = 'flex';
+  document.getElementById('nto-result').style.display    = 'none';
+}
+
+// ── Charger depuis g_master
+function ntoLoadDossier() {
+  const j = document.getElementById('nto-inp-j').value.trim();
+  if (!j) return toast('Saisir un N° de dossier.');
+  const row = g_master.find(r => r.file === j || r.file.includes(j));
+  if (!row) return toast('Dossier introuvable dans Dispatch. Vérifiez le N° ou importez d\'abord.');
+  const dept    = String(row.dept || '').trim().replace(/^0/, '');
+  const poids   = parseFloat(row.poids) || 0;
+  const vol     = parseFloat(row.vol)   || 0;
+  const taxable = calcTaxable(poids, vol);
+  const transp  = ntoDetectTransp(dept);
+  // Pré-remplir les inputs éditables
+  document.getElementById('nto-det-poids').value = poids.toFixed(2);
+  document.getElementById('nto-det-vol').value   = vol.toFixed(3);
+  document.getElementById('nto-det-dept').textContent    = dept || '?';
+  document.getElementById('nto-det-taxable').textContent = taxable.toFixed(2);
+  document.getElementById('nto-det-transp').textContent  = transp === 'UTE' ? 'Cartage / Flex (IDF)' : 'DGS (National)';
+  document.getElementById('nto-detected').style.display  = 'block';
+  window._ntoAutoData = { dept, taxable, transp };
+  toast('Dossier ' + j + ' chargé — ' + poids.toFixed(2) + ' kg brut / ' + vol.toFixed(3) + ' m³ · ' + taxable.toFixed(2) + ' kg taxable');
+}
+
+function ntoRecalcFromJ() {
+  const dept   = document.getElementById('nto-det-dept').textContent;
+  const poids  = parseFloat(document.getElementById('nto-det-poids').value) || 0;
+  const vol    = parseFloat(document.getElementById('nto-det-vol').value)   || 0;
+  const tax    = calcTaxable(poids, vol);
+  const transp = ntoDetectTransp(dept);
+  document.getElementById('nto-det-taxable').textContent = tax.toFixed(2);
+  window._ntoAutoData = { dept, taxable: tax, transp };
+}
+
+// ── Calculer
+function ntoCalculer() {
+  const modeJ = document.getElementById('nto-panel-j').style.display !== 'none';
+  let dept, taxable, forcedTransp;
+
+  if (modeJ) {
+    if (!window._ntoAutoData) return toast('Charger d\'abord un dossier.');
+    dept         = window._ntoAutoData.dept;
+    taxable      = window._ntoAutoData.taxable;
+    forcedTransp = window._ntoAutoData.transp;
+  } else {
+    dept         = document.getElementById('nto-inp-dept').value.trim().replace(/^0/, '');
+    taxable      = parseFloat(document.getElementById('nto-inp-taxable').value) || 0;
+    forcedTransp = document.getElementById('nto-inp-transp').value;
+    if (forcedTransp === 'auto') forcedTransp = ntoDetectTransp(dept);
+    if (!dept) return toast('Saisir un département.');
+    if (!taxable) return toast('Saisir un poids taxable.');
+  }
+
+  const res = forcedTransp === 'UTE' ? ntoCalcUTE(dept, taxable) : ntoCalcDGS(dept, taxable);
+  if (!res) return toast('Département ' + dept + ' non trouvé dans la grille. Vérifier le numéro.');
+  ntoAfficher(res);
+}
+
+// ── Copier
+function ntoCopier() {
+  const res = window._ntoLastResult;
+  if (!res) return;
+  const fuelPct = (res.fuelRate * 100).toFixed(1) + '%';
+  let txt = '';
+  if (res.type === 'DGS') {
+    txt = 'NTO DGS — Dept ' + res.dept + ' (' + res.nom + ')\n'
+        + 'Poids taxable : ' + res.taxable + ' kg (tranche ≤' + res.tranche + ' kg)\n'
+        + 'Prix de base  : ' + res.base.toFixed(2) + ' €\n'
+        + 'Frais dossier : +' + res.frais.toFixed(2) + ' €\n'
+        + 'Fuel (' + fuelPct + ')  : +' + res.fuelMt.toFixed(2) + ' €\n'
+        + '─────────────────────────\n'
+        + 'TOTAL         : ' + res.total.toFixed(2) + ' €';
+  } else {
+    txt = 'NTO Cartage IDF — Dept ' + res.dept + '\n'
+        + 'Poids taxable : ' + res.taxable + ' kg (tranche ≤' + res.tranche + ' kg)\n'
+        + 'Tarif/kg      : ' + res.rate + ' €/kg\n'
+        + 'Calculé       : ' + res.calculated.toFixed(2) + ' €'
+        + (res.isMin ? ' → minimum ' + res.minimum.toFixed(2) + ' € appliqué' : '') + '\n'
+        + 'Fuel (' + fuelPct + ')  : +' + res.fuelMt.toFixed(2) + ' €\n'
+        + '─────────────────────────\n'
+        + 'TOTAL         : ' + res.total.toFixed(2) + ' €';
+  }
+  navigator.clipboard.writeText(txt).then(() => toast('Résultat copié dans le presse-papiers ✓'))
+    .catch(() => { const t = document.createElement('textarea'); t.value = txt;
+      document.body.appendChild(t); t.select(); document.execCommand('copy');
+      document.body.removeChild(t); toast('Résultat copié ✓'); });
+}
+
+// ── Init fuel display
+function ntoInitFuel() {
+  const now  = new Date();
+  const key  = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const tableRate = NTO_FUEL[key] !== undefined ? NTO_FUEL[key] : 0.065;
+  const stored = localStorage.getItem('nto_fuel_override');
+  const rate   = stored !== null ? parseFloat(stored) / 100 : tableRate;
+  document.getElementById('nto-fuel-month').textContent = key;
+  const inp = document.getElementById('nto-fuel-rate');
+  if (inp) inp.value = (rate * 100).toFixed(1);
+}
+
+function ntoSaveFuelOverride() {
+  const inp = document.getElementById('nto-fuel-rate');
+  if (!inp) return;
+  const v = parseFloat(inp.value);
+  if (isNaN(v) || v < 0 || v > 30) { toast('Taux fuel invalide (0-30 %).'); return; }
+  localStorage.setItem('nto_fuel_override', v.toFixed(1));
+  toast('⛽ Fuel mise à jour : ' + v.toFixed(1) + '%');
+}
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  NTO BATCH — Kanban col 7                                                ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+let _ntoBatchAffected = []; // dossiers en attente de validation statut 8
+
+function ntoBatchLancer(affected) {
+  _ntoBatchAffected = affected;
+
+  const body  = document.getElementById('nto-batch-body');
+  const IDF   = new Set(['60','75','77','78','91','92','93','94','95']);
+  const EFDS  = s => /efds|groussard/i.test(s||'');
+  const isUPS = s => /ups/i.test(s||'');
+
+  let rows = '', totalCalc = 0, skipped = 0, counted = 0;
+  let lines = []; // pour copier
+
+  affected.forEach(r => {
+    // Extraire les dossiers individuels si groupe
+    const files = r.file.includes(' + ')
+      ? r.file.split(' + ').map(s => s.trim())
+      : [r.file.trim()];
+
+    files.forEach((f, fIdx) => {
+      const transp  = (r.transp || '').trim();
+      const dept    = String(r.dept || '').replace(/^0/,'');
+      const taxable = parseFloat(r.taxable) || 0;
+      const isGroup = files.length > 1;
+      const rawF    = g_rawData[f] || {};
+      const suppl   = +(rawF.supplement || 0);
+
+      // EFDS / Groussard → skip
+      if (EFDS(transp)) {
+        skipped++;
+        rows += _ntoBatchRow(f, transp, '<span style="color:var(--text3);font-style:italic">Sur cotation — ignoré</span>', '—', '#FAFBFC');
+        return;
+      }
+
+      // Groupe : seul le 1er fichier porte la NTO, le reste = frais camion individuels
+      if (isGroup && fIdx > 0) {
+        const supplStr = suppl ? suppl.toFixed(2) : '0';
+        const supplDetail = suppl
+          ? 'Groupe — frais camion import ' + suppl.toFixed(2) + ' €'
+          : 'Groupe — inclus dans ' + files[0];
+        totalCalc += suppl;
+        if (suppl) counted++;
+        rows += _ntoBatchRow(f, 'NTO', supplDetail, supplStr, '#F8F9FA');
+        lines.push({ file: f, prix: supplStr });
+        return;
+      }
+
+      let prix, detail, color = '';
+
+      if (isUPS(transp)) {
+        // UPS = forfait 25 fixe
+        prix   = 25;
+        detail = 'UPS — forfait fixe';
+        color  = 'var(--green-bg)';
+      } else if (IDF.has(dept)) {
+        // Cartage IDF
+        const res = ntoCalcUTE(dept, taxable);
+        if (!res) {
+          skipped++;
+          rows += _ntoBatchRow(f, transp, '<span style="color:var(--red)">Dept IDF inconnu : ' + (dept||'').replace(/[<>&"]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'})[c]) + '</span>', '—', 'var(--red-bg)');
+          return;
+        }
+        prix   = Math.round(res.total * 100) / 100;
+        detail = 'Cartage Dept ' + dept + ' · ' + taxable + ' kg · fuel ' + (res.fuelRate*100).toFixed(1) + '% · min=' + res.minimum.toFixed(2);
+        color  = 'var(--blue-bg)';
+      } else {
+        // DGS national
+        const res = ntoCalcDGS(dept, taxable);
+        if (!res) {
+          skipped++;
+          rows += _ntoBatchRow(f, transp, '<span style="color:var(--red)">Dept inconnu : ' + (dept||'').replace(/[<>&"]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'})[c]) + '</span>', '—', 'var(--red-bg)');
+          return;
+        }
+        prix   = Math.round(res.total * 100) / 100;
+        detail = 'DGS Dept ' + dept + ' (' + res.nom + ') · ' + taxable + ' kg · base ' + res.base.toFixed(2) + ' + ' + NTO_DGS_FRAIS + '€ frais · fuel ' + (res.fuelRate*100).toFixed(1) + '%';
+        color  = 'var(--purple-bg)';
+      }
+
+      // Ajouter le supplément camion import au prix NTO
+      if (suppl) {
+        detail += ' + camion ' + suppl.toFixed(2) + ' €';
+        prix += suppl;
+        prix = Math.round(prix * 100) / 100;
+      }
+
+      totalCalc += prix;
+      counted++;
+      const prixStr = isUPS(transp) ? (25 + suppl).toFixed(2) : prix.toFixed(2);
+      rows += _ntoBatchRow(f, 'NTO', detail, prixStr, color);
+      lines.push({ file: f, prix: prixStr });
+    });
+  });
+
+  body.innerHTML = rows;
+  document.getElementById('nto-batch-title').textContent = 'NTO Batch — ' + affected.length + ' dossier(s) colonne 7';
+  document.getElementById('nto-batch-count').textContent = counted;
+  document.getElementById('nto-batch-skip').textContent  = skipped ? skipped + ' ignoré(s) EFDS' : '';
+  document.getElementById('nto-batch-total').textContent = counted ? totalCalc.toFixed(2) + ' €' : '—';
+
+  // Stocker les lignes pour copie
+  window._ntoBatchLines = lines;
+
+  // Afficher
+  document.getElementById('nto-empty').style.display  = 'none';
+  document.getElementById('nto-result').style.display = 'none';
+  document.getElementById('nto-batch').style.display  = 'flex';
+}
+
+function _ntoBatchRow(file, event, detail, prix, bg) {
+  return '<div style="display:grid;grid-template-columns:150px 55px 1fr 90px;border-bottom:1px solid var(--border);background:' + (bg||'') + '">'
+    + '<div style="padding:6px 8px;font-family:var(--mono);font-size:11px;font-weight:500;border-right:1px solid var(--border)">' + file + '</div>'
+    + '<div style="padding:6px 8px;font-size:11px;border-right:1px solid var(--border);color:var(--k7-c);font-weight:600">' + event + '</div>'
+    + '<div style="padding:6px 8px;font-size:11px;color:var(--text2);border-right:1px solid var(--border)">' + detail + '</div>'
+    + '<div style="padding:6px 8px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--purple);text-align:right">' + prix + '</div>'
+    + '</div>';
+}
+
+// Copier format TSV : File TAB NTO TAB TAB TAB TAB TAB TAB Prix
+// Colonnes : B=File, C=Event, D=Date, E=Time, F=From, G=To, H=Voy/FLT, I=Remark
+function ntoBatchCopier() {
+  const lines = window._ntoBatchLines || [];
+  if (!lines.length) return toast('Aucune ligne à copier.');
+  const tsv = lines.map(l => l.file + '\tNTO\t\t\t\t\t\t' + l.prix).join('\n');
+  navigator.clipboard.writeText(tsv)
+    .then(() => toast('✓ ' + lines.length + ' ligne(s) copiées — colle en B dans ton outil.'))
+    .catch(() => {
+      const t = document.createElement('textarea');
+      t.value = tsv;
+      document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t);
+      toast('✓ ' + lines.length + ' ligne(s) copiées — colle en B dans ton outil.');
+    });
+}
+
+// Passer les dossiers au statut 8
+function ntoBatchValider() {
+  if (!_ntoBatchAffected.length) return;
+  if (!confirm('Passer ' + _ntoBatchAffected.length + ' dossier(s) au statut 8 (Terminé) ?')) return;
+  _ntoBatchAffected.forEach(r => { r.statut = '8'; });
+  renderMaster(); renderKanban(); updateStats(); markDirty();
+  toast(_ntoBatchAffected.length + ' dossier(s) passés au statut 8.');
+  ntoBatchFermer();
+}
+
+function ntoBatchFermer() {
+  document.getElementById('nto-batch').style.display = 'none';
+  document.getElementById('nto-empty').style.display = 'flex';
+  _ntoBatchAffected = [];
+  window._ntoBatchLines = [];
+}
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  VÉRIFICATION PDF MANQUANTS                                               ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+async function checkMissingPDF() {
+  // Collecter tous les fichiers individuels des dossiers actifs (pas terminés/archivés)
+  const allFiles = [];
+  g_master.forEach(r => {
+    if (r.statut === '8') return;
+    const files = (r.file || '').split(' + ').map(s => s.trim()).filter(Boolean);
+    files.forEach(f => { if (!allFiles.includes(f)) allFiles.push(f); });
+  });
+  if (!allFiles.length) return toast('Aucun dossier actif.');
+  toast('Vérification de ' + allFiles.length + ' PDF en cours...');
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    const resp = await fetch(`${API_URL}/action`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'CHECK_PDF', data: allFiles.join('|') }),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    const result = await resp.json();
+
+    if (!result || result.error) return toast('Erreur : ' + (result?.error || 'réponse vide du serveur'));
+    const missing = (result.missing || '').split('|').filter(Boolean);
+
+    // PDF présent = CC : marquer automatiquement les dossiers dont le PDF existe
+    const missingSet = new Set(missing);
+    const presentFiles = allFiles.filter(f => !missingSet.has(f));
+    let ccCount = 0;
+    presentFiles.forEach(f => {
+      g_master.forEach(r => {
+        if (r.cc === 'Cc') return; // déjà CC
+        const subs = (r.file || '').split(' + ').map(s => s.trim()).filter(Boolean);
+        if (!subs.includes(f)) return;
+        // Dossier solo dont le PDF est présent → passer en CC
+        if (subs.length === 1) {
+          r.cc = 'Cc';
+          if (r.statut === '1') r.statut = transpTarget(r.svct, r.client);
+          if (isCP(r.client)) addOrUpdateCP(r.client, r.file, r.poids, r.vol, r.taxable, r.operator);
+          ccCount++;
+        }
+      });
+    });
+    if (ccCount) {
+      renderMaster(); renderKanban(); updateStats();
+    }
+
+    if (!missing.length) return toast('✓ Tous les PDF présents (' + allFiles.length + '/' + allFiles.length + ') — ' + ccCount + ' dossier(s) passé(s) en CC.');
+    const txt = missing.join('\n');
+    navigator.clipboard.writeText(txt)
+      .then(() => toast('⚠ ' + missing.length + ' PDF manquant(s) sur ' + allFiles.length + (ccCount ? ' — ' + ccCount + ' passé(s) en CC' : '') + ' — liste copiée.'))
+      .catch(() => {
+        const t = document.createElement('textarea');
+        t.value = txt;
+        document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t);
+        toast('⚠ ' + missing.length + ' PDF manquant(s)' + (ccCount ? ' — ' + ccCount + ' passé(s) en CC' : '') + ' — liste copiée.');
+      });
+  } catch(e) {
+    if (e.name === 'AbortError') {
+      toast('⏱ Timeout — le serveur AutoIt n\'a pas répondu (15s). Vérifiez que Dispatch.au3 tourne.');
+    } else {
+      toast('Erreur vérification PDF : ' + e.message);
+    }
+    console.error('checkMissingPDF error:', e);
+  }
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  OPÉRATEUR / FILTRE PERSONNE                                             ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+function populateOperatorFilter() {
+  const sel = document.getElementById('operator-filter');
+  if (!sel) return;
+  const names = [...new Set(g_master.map(r => r.operator || '').filter(Boolean))].sort();
+  const saved = localStorage.getItem('dispatch_operator') || '';
+  sel.innerHTML = '<option value="">Tous</option>'
+    + names.map(n => '<option value="' + n + '"' + (n===saved?' selected':'') + '>' + n + '</option>').join('');
+  // Toujours restaurer le filtre depuis localStorage — même si le nom n'est pas dans g_master
+  if (saved) {
+    sel.value = saved;
+    g_operatorFilter = saved;
+  }
+}
+
+function applyOperatorFilter() {
+  const sel = document.getElementById('operator-filter');
+  g_operatorFilter = sel ? sel.value : '';
+  localStorage.setItem('dispatch_operator', g_operatorFilter);
+  const nameInput = document.getElementById('opts-my-name');
+  if (nameInput) nameInput.value = g_operatorFilter;
+  renderMaster(); renderKanban(); updateStats();
+}
+
+function optsUpdateMyName() {
+  const v = (document.getElementById('opts-my-name').value || '').trim();
+  g_operatorFilter = v;
+  localStorage.setItem('dispatch_operator', v);
+  const sel = document.getElementById('operator-filter');
+  if (sel) sel.value = v;
+  renderMaster(); renderKanban(); updateStats();
+}
+
+// Démarrage : afficher popup si pas de nom mémorisé
+function showIdentityModal() {
+  const saved = localStorage.getItem('dispatch_operator') || '';
+  const names = [...new Set(g_master.map(r => r.operator || '').filter(Boolean))].sort();
+  if (!names.length) return; // pas de noms dans le CSV
+  const sel = document.getElementById('identity-select');
+  if (sel) {
+    sel.innerHTML = '<option value="">— Voir tous les dossiers —</option>'
+      + names.map(n => '<option value="' + n + '"' + (n===saved?' selected':'') + '>' + n + '</option>').join('');
+  }
+  const inp = document.getElementById('identity-input');
+  if (inp && saved) inp.value = saved;
+  // Afficher seulement si aucun nom encore choisi
+  if (!saved) {
+    document.getElementById('modal-identity').style.display = 'flex';
+  } else {
+    g_operatorFilter = saved;
+    const filterSel = document.getElementById('operator-filter');
+    if (filterSel) filterSel.value = saved;
+  }
+}
+
+function identityConfirm() {
+  const sel = document.getElementById('identity-select').value;
+  const inp = (document.getElementById('identity-input').value || '').trim();
+  const name = inp || sel || '';
+  localStorage.setItem('dispatch_operator', name);
+  g_operatorFilter = name;
+  const filterSel = document.getElementById('operator-filter');
+  if (filterSel) filterSel.value = name;
+  const nameOpts = document.getElementById('opts-my-name');
+  if (nameOpts) nameOpts.value = name;
+  document.getElementById('modal-identity').style.display = 'none';
+  renderMaster(); renderKanban(); updateStats();
+}
+
+function identitySkip() {
+  localStorage.setItem('dispatch_operator', '');
+  g_operatorFilter = '';
+  document.getElementById('modal-identity').style.display = 'none';
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  OPTIONS — NAVIGATION SOUS-PANELS                                        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function optsShowPanel(panel) {
+  ['cp','pj','reseau','nto','diag','stockage'].forEach(p => {
+    const el = document.getElementById('opts-panel-' + p);
+    const btn = document.getElementById('otab-' + p);
+    if (el) el.style.display = p === panel ? '' : 'none';
+    if (btn) {
+      btn.className = p === panel
+        ? 'btn btn-sm btn-purple-out'
+        : 'btn btn-sm btn-ghost';
+    }
+  });
+}
+
+async function runDiagnostic() {
+  const st = document.getElementById('diag-status');
+  if (st) st.textContent = 'Lancement du diagnostic...';
+  try {
+    await apiCall('action', { action: 'DIAG' });
+    if (st) st.textContent = '✓ Diagnostic lancé — regarde la fenêtre AutoIt';
+  } catch (e) {
+    if (st) st.textContent = '✗ Erreur : ' + e.message;
+  }
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  OPTIONS — STOCKAGE + NETTOYAGE CONTACTS                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+async function loadStorageInfo() {
+  const st = document.getElementById('storage-status');
+  if (st) st.textContent = 'Analyse en cours...';
+  try {
+    const info = await apiCall('action', { action: 'STORAGE_INFO' });
+    const el = document.getElementById('storage-info');
+    if (info && info.files) {
+      el.innerHTML = info.files.map(f => {
+        const kb = (f.size / 1024).toFixed(1);
+        const color = f.size > 500000 ? 'var(--red)' : f.size > 100000 ? 'var(--orange)' : 'var(--green)';
+        return `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
+          <span style="font-family:var(--mono)">${f.name}</span>
+          <span style="color:${color};font-weight:600;font-family:var(--mono)">${kb} KB</span>
+        </div>`;
+      }).join('') +
+        `<div style="margin-top:8px;font-weight:700;font-size:13px">Total : ${info.totalKB} KB (${info.totalMB} MB)</div>`;
+    }
+    if (st) st.textContent = '✓ Analyse terminée';
+  } catch(e) {
+    if (st) st.textContent = '✗ Erreur : ' + (e.message || 'Serveur hors ligne');
+  }
+  // Mémoire locale
+  const fmtSize = (obj) => { const s = JSON.stringify(obj).length; return (s/1024).toFixed(1) + ' KB'; };
+  const m = document.getElementById('mem-master');
+  const c = document.getElementById('mem-contacts');
+  const r = document.getElementById('mem-rawdata');
+  const p = document.getElementById('mem-cpdata');
+  if (m) m.textContent = g_master.length + ' dossiers (' + fmtSize(g_master) + ')';
+  if (c) c.textContent = g_contacts.length + ' contacts (' + fmtSize(g_contacts) + ')';
+  if (r) r.textContent = Object.keys(g_rawData).length + ' entrées (' + fmtSize(g_rawData) + ')';
+  if (p) p.textContent = g_cpData.length + ' entrées (' + fmtSize(g_cpData) + ')';
+}
+
+async function cleanContacts() {
+  const st = document.getElementById('storage-status');
+  if (st) st.textContent = 'Nettoyage en cours...';
+  try {
+    await apiCall('action', { action: 'CLEAN_CONTACTS' });
+    if (st) st.textContent = '✓ Contacts nettoyés — vérifiez les TrayTip';
+    toast('Nettoyage contacts terminé.');
+  } catch(e) {
+    if (st) st.textContent = '✗ Erreur nettoyage';
+  }
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  OPTIONS — SAUVEGARDE PJ + RÉSEAU                                        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function optsSavePJ() {
+  const cfg = {
+    path:         (document.getElementById('opts-pj-path')?.value || '').trim(),
+    rdvExt:       (document.getElementById('opts-pj-rdv-ext')?.value || 'pdf').trim(),
+    prealertExt:  (document.getElementById('opts-pj-prealerte-ext')?.value || 'pdf').trim(),
+    upsFolder:    (document.getElementById('opts-pj-ups-folder')?.value || 'UPS').trim(),
+    dgsFolder:    (document.getElementById('opts-pj-dgs-folder')?.value || 'DGS').trim()
+  };
+  localStorage.setItem('dispatch_pj_cfg', JSON.stringify(cfg));
+  // Envoyer à AutoIt pour mise à jour dans l'INI
+  apiCall('save-pj-config', cfg).catch(() => {});
+  const st = document.getElementById('opts-pj-status');
+  if (st) { st.textContent = '✓ Enregistré'; setTimeout(() => st.textContent = '', 2000); }
+}
+
+function optsLoadPJ() {
+  try {
+    const cfg = JSON.parse(localStorage.getItem('dispatch_pj_cfg') || '{}');
+    const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+    set('opts-pj-path', cfg.path);
+    set('opts-pj-rdv-ext', cfg.rdvExt);
+    set('opts-pj-prealerte-ext', cfg.prealertExt);
+    set('opts-pj-ups-folder', cfg.upsFolder);
+    set('opts-pj-dgs-folder', cfg.dgsFolder);
+  } catch(e) {}
+}
+
+function optsSaveReseau() {
+  const path = (document.getElementById('opts-state-path')?.value || '').trim();
+  const name = (document.getElementById('opts-my-name')?.value || '').trim();
+  localStorage.setItem('dispatch_state_path', path);
+  if (name) { localStorage.setItem('dispatch_operator', name); g_operatorFilter = name; }
+  apiCall('save-config', { statePath: path, operatorName: name }).catch(() => {});
+  const st = document.getElementById('opts-reseau-status');
+  if (st) st.textContent = '✓ Configuration enregistrée — ' + new Date().toLocaleTimeString();
+}
+
+function optsLoadReseau() {
+  const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
+  const name = localStorage.getItem('dispatch_operator') || '';
+  const el1 = document.getElementById('opts-state-path');
+  const el2 = document.getElementById('opts-my-name');
+  if (el1 && path) el1.value = path;
+  if (el2 && name) el2.value = name;
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  RÉSEAU — SAVE / LOAD SUR F:\                                            ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+async function reseauForceSave() {
+  const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
+  const myName = localStorage.getItem('dispatch_operator') || '';
+  if (!path) return toast('Chemin réseau non configuré. Aller dans Options → Réseau partagé.');
+  if (!myName) return toast('Nom opérateur non configuré. Aller dans Options → Réseau partagé.');
+  try {
+    await smartNetSave(path);
+    const st = document.getElementById('opts-reseau-status');
+    if (st) st.textContent = '✓ Sauvegardé → ' + _opPath(path, myName).split('\\').pop() + ' — ' + new Date().toLocaleTimeString();
+    toast('État sauvegardé : ' + _opPath(path, myName).split('\\').pop());
+  } catch(e) { toast('Erreur sauvegarde réseau : ' + e.message); }
+}
+
+async function reseauForceLoad() {
+  const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
+  if (!path) return toast('Chemin réseau non configuré.');
+  try {
+    // 1. Lister tous les fichiers opérateur
+    const pattern = _opPattern(path);
+    const files = await netListFiles(pattern);
+
+    if (!files.length) {
+      // Fallback : charger le fichier de base (somme des opérateurs)
+      const oldData = await netLoad(path);
+      if (oldData) {
+        applyLoadedState(Array.isArray(oldData) ? oldData : (oldData.board || oldData.master || []));
+        toast('Réseau : chargé depuis le fichier de base.');
+        return;
+      }
+      return toast('Aucun fichier opérateur trouvé.');
+    }
+
+    // 2. Charger tous les fichiers et fusionner
+    const allDossiers = [];
+    const operatorFiles = [];
+    for (const f of files) {
+      const fNorm = f.replace(/\\\\/g, '\\');
+      const data = await netLoad(fNorm);
+      if (Array.isArray(data)) {
+        allDossiers.push(...data);
+        // Extraire le nom d'opérateur du fichier
+        const match = fNorm.match(/dispatch_state_(.+)\.json$/i);
+        if (match) operatorFiles.push(match[1]);
+      }
+    }
+
+    // 3. Dédupliquer par file (garder le plus récent _ts)
+    const merged = new Map();
+    allDossiers.forEach(r => {
+      const existing = merged.get(r.file);
+      if (!existing || (r._ts || 0) >= (existing._ts || 0)) {
+        merged.set(r.file, r);
+      }
+    });
+
+    applyLoadedState([...merged.values()]);
+    toast(`Réseau : ${merged.size} dossier(s) chargés depuis ${files.length} opérateur(s) (${operatorFiles.join(', ')}).`);
+  } catch(e) { toast('Erreur chargement réseau : ' + e.message); }
+}
+
+// Sauvegarde par opérateur : chaque opérateur écrit SON fichier uniquement
+// dispatch_state_Jason.json, dispatch_state_Abderrahamn.json, etc.
+async function smartNetSave(path) {
+  const myName = localStorage.getItem('dispatch_operator') || '';
+  if (!myName) return; // pas de nom = pas de sauvegarde réseau
+
+  try {
+    // 1. Assigner l'opérateur aux dossiers sans propriétaire (en mémoire, pas juste la copie)
+    g_master.forEach(r => { if (!r.operator && myName) r.operator = myName; });
+
+    // 2. Construire l'état local (seulement MES dossiers)
+    const myBoard = g_master
+      .filter(r => (r.operator || '') === myName)
+      .map(r => ({
+        file: r.file, client: r.client || '', rdl: r.rdl || '',
+        svct: r.svct || '', transp: r.transp || '',
+        poids: r.poids || 0, vol: r.vol || 0, taxable: r.taxable || 0,
+        dept: r.dept || '', contact: r.contact || '', tel: r.tel || '', email: r.email || '',
+        cc: r.cc || '', comment: r.comment || '',
+        statut: r.statut, operator: r.operator || myName,
+        _dateCreated: r._dateCreated || '',
+        _ts: r._ts || Date.now(), _by: myName,
+        fcDate: r.fcDate || '', fcHoraire: r.fcHoraire || '',
+        fcDly: r.fcDly || '', fcDlyNotes: r.fcDlyNotes || ''
+      }));
+
+    // 2. Sauvegarder dans mon fichier opérateur
+    const myPath = _opPath(path, myName);
+    await netSave(myPath, myBoard);
+
+    // 3. Charger les fichiers des AUTRES opérateurs pour syncer l'interface
+    const pattern = _opPattern(path);
+    const files = await netListFiles(pattern);
+    let synced = 0;
+    for (const f of files) {
+      // Normaliser les backslashes pour comparer
+      const fNorm = f.replace(/\\\\/g, '\\');
+      const myNorm = myPath.replace(/\\\\/g, '\\');
+      if (fNorm === myNorm) continue; // c'est mon propre fichier
+      const remote = await netLoad(fNorm);
+      if (!Array.isArray(remote)) continue;
+      remote.forEach(rd => {
+        const local = g_master.find(r => r.file === rd.file);
+        if (local && rd.operator && rd.operator !== myName) {
+          // Dossier d'un autre opérateur — syncer si plus récent
+          if ((rd._ts || 0) > (local._ts || 0)) {
+            local.statut = rd.statut;
+            local.operator = rd.operator;
+            local._ts = rd._ts;
+            ['client','rdl','svct','transp','poids','vol','taxable','dept',
+             'contact','tel','email','cc','comment','_dateCreated',
+             'fcDate','fcHoraire','fcDly','fcDlyNotes'].forEach(k => {
+              if (rd[k] !== undefined && rd[k] !== '') local[k] = rd[k];
+            });
+            synced++;
+          }
+        }
+      });
+    }
+
+    if (synced > 0) {
+      markDirty();  // → déclenche autoSave → écrit dispatch_status + dispatch_data
+      renderMaster(); renderKanban(); updateStats();
+      toast(`Sync réseau : ${synced} dossier(s) mis à jour depuis un autre opérateur.`);
+    }
+
+    // 4. Reconstruire le fichier de base = somme de tous les opérateurs
+    try {
+      const allOps = [...myBoard]; // commencer avec mes propres données (toujours disponibles)
+      for (const f of files) {
+        // Normaliser : retirer les doubles backslash éventuels
+        const fNorm = f.replace(/\\\\/g, '\\').toLowerCase();
+        const myNorm = myPath.replace(/\\\\/g, '\\').toLowerCase();
+        if (fNorm === myNorm) continue; // déjà inclus via myBoard
+        const data = await netLoad(f); // utiliser le chemin original (pas normalisé)
+        if (Array.isArray(data)) allOps.push(...data);
+      }
+      // Dédupliquer par file (garder le plus récent _ts)
+      const merged = new Map();
+      allOps.forEach(r => {
+        const existing = merged.get(r.file);
+        if (!existing || (r._ts || 0) >= (existing._ts || 0)) {
+          merged.set(r.file, r);
+        }
+      });
+      console.log(`smartNetSave base rebuild: ${files.length} fichiers, ${allOps.length} dossiers, ${merged.size} uniques`);
+      await netSave(path, [...merged.values()]);
+    } catch(e2) { console.warn('smartNetSave base rebuild:', e2); }
+
+  } catch(e) {
+    console.warn('smartNetSave error:', e);
+  }
+}
+
+// Au load : on écrase le statut local avec celui du réseau (si le dossier existe)
+function applyLoadedState(state) {
+  const board = Array.isArray(state) ? state : (state.board || state.master || []);
+  let synced = 0;
+  board.forEach(remote => {
+    const local = g_master.find(r => r.file === remote.file);
+    if (!local) return;
+    // Syncer UNIQUEMENT si le remote est STRICTEMENT plus récent (pas >=, sinon on régresse)
+    const remoteNewer = (remote._ts || 0) > (local._ts || 0);
+    const changed = local.statut !== remote.statut || (remote.operator && local.operator !== remote.operator);
+    if (changed && remoteNewer) {
+      local.statut = remote.statut;
+      if (remote.operator) local.operator = remote.operator;
+      local._ts = remote._ts;
+      ['client','rdl','svct','transp','poids','vol','taxable','dept',
+       'contact','tel','email','cc','comment','_dateCreated',
+       'fcDate','fcHoraire','fcDly','fcDlyNotes'].forEach(k => {
+        if (remote[k] !== undefined && remote[k] !== '') local[k] = remote[k];
+      });
+      synced++;
+    }
+  });
+  if (synced > 0) {
+    markDirty();  // → déclenche autoSave → écrit dispatch_status + dispatch_data
+    renderMaster(); renderKanban(); updateStats();
+    console.log(`Réseau : ${synced} dossier(s) synchronisés.`);
+  }
+}
+
+// Init au chargement
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    optsLoadPJ();
+    optsLoadReseau();
+    optsLoadFuel();
+    cpCfgLoad();
+    populateOperatorFilter();
+    showIdentityModal();
+    // Charger l'état réseau au démarrage (contacts inclus dans le même fichier)
+    const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
+    if (path) reseauForceLoad();
+  }, 800); // après que g_master soit peuplé depuis AutoIt
+});
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  OPTIONS — NTO FUEL                                                       ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function optsSaveFuel() {
+  const vGlobal = parseFloat(document.getElementById('opts-fuel-val').value || '0');
+  const vFlex   = parseFloat(document.getElementById('opts-fuel-flex').value || '0');
+  const vDgs    = parseFloat(document.getElementById('opts-fuel-dgs').value || '0');
+  // Si global est renseigné, il écrase les deux
+  if (vGlobal > 0) {
+    localStorage.setItem('nto_fuel_override', String(vGlobal));
+    localStorage.setItem('nto_fuel_flex', String(vGlobal));
+    localStorage.setItem('nto_fuel_dgs', String(vGlobal));
+  } else {
+    localStorage.setItem('nto_fuel_override', '0');
+    if (vFlex > 0) localStorage.setItem('nto_fuel_flex', String(vFlex));
+    else localStorage.removeItem('nto_fuel_flex');
+    if (vDgs > 0) localStorage.setItem('nto_fuel_dgs', String(vDgs));
+    else localStorage.removeItem('nto_fuel_dgs');
+  }
+  const st = document.getElementById('opts-fuel-status');
+  if (st) {
+    if (vGlobal > 0) st.textContent = '✓ Fuel global ' + vGlobal.toFixed(1) + '%';
+    else if (vFlex > 0 || vDgs > 0) st.textContent = '✓ Flex=' + (vFlex||'auto') + '% DGS=' + (vDgs||'auto') + '%';
+    else st.textContent = '✓ Mode auto activé';
+    setTimeout(() => st.textContent = '', 3000);
+  }
+  if (typeof ntoInitFuel === 'function') ntoInitFuel();
+}
+
+function optsResetFuel() {
+  localStorage.removeItem('nto_fuel_override');
+  localStorage.removeItem('nto_fuel_flex');
+  localStorage.removeItem('nto_fuel_dgs');
+  document.getElementById('opts-fuel-val').value = '0';
+  document.getElementById('opts-fuel-flex').value = '0';
+  document.getElementById('opts-fuel-dgs').value = '0';
+  const st = document.getElementById('opts-fuel-status');
+  if (st) { st.textContent = '✓ Mode auto — tableau mensuel'; setTimeout(() => st.textContent = '', 2500); }
+  if (typeof ntoInitFuel === 'function') ntoInitFuel();
+}
+
+function optsLoadFuel() {
+  const v = localStorage.getItem('nto_fuel_override') || '';
+  const el = document.getElementById('opts-fuel-val');
+  if (el) el.value = v || '0';
+  const elFlex = document.getElementById('opts-fuel-flex');
+  const elDgs  = document.getElementById('opts-fuel-dgs');
+  if (elFlex) elFlex.value = localStorage.getItem('nto_fuel_flex') || '0';
+  if (elDgs)  elDgs.value  = localStorage.getItem('nto_fuel_dgs')  || '0';
+  // Remplir le tableau historique
+  const tbl = document.getElementById('opts-fuel-table');
+  if (tbl && typeof NTO_FUEL !== 'undefined') {
+    const now = new Date();
+    const curKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+    tbl.innerHTML = Object.entries(NTO_FUEL).reverse().map(([k, r]) => {
+      const isCur = k === curKey;
+      return '<div style="padding:4px 6px;border-radius:3px;' + (isCur ? 'background:var(--purple-bg);border:1px solid var(--purple);' : '') + '">'
+        + '<span style="color:var(--text3)">' + k + '</span> '
+        + '<strong style="color:' + (isCur ? 'var(--purple)' : 'var(--text)') + '">' + (r*100).toFixed(1) + '%</strong>'
+        + (isCur ? ' ◀' : '') + '</div>';
+    }).join('');
+  }
+}
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  OPTIONS — CHANNEL PARTNERS CONFIG                                       ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+let g_cpConfig = [
+  { nom: 'Arrow',          emailTo: 'arrow.fr@arrow.com',          emailCc: '' },
+  { nom: 'SCC',            emailTo: 'dispatch@scc.com',             emailCc: '' },
+  { nom: 'Computacenter',  emailTo: 'logistics@computacenter.com',  emailCc: '' },
+  { nom: 'Also',           emailTo: '',                             emailCc: '' },
+  { nom: 'MC3 LOGISTIQUE', emailTo: '',                             emailCc: '' },
+  { nom: 'Dexxon',         emailTo: '',                             emailCc: '' }
+];
+// Note : les noms sont des mots-clés partiels.
+// "Arrow" reconnaît "Arrow ECS SAS", "MC3 LOGISTIQUE" reconnaît "MC3 LOGISTIQUE SAS",
+// "Dexxon" reconnaît "DEXXON GROUPE SAS" etc.
+
+function cpCfgRender() {
+  const tbody = document.getElementById('cp-cfg-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = g_cpConfig.map((cp, i) => `
+    <tr>
+      <td><input class="inline-inp" value="${cp.nom}" oninput="g_cpConfig[${i}].nom=this.value"></td>
+      <td><input class="inline-inp" value="${cp.emailTo}" oninput="g_cpConfig[${i}].emailTo=this.value"></td>
+      <td><input class="inline-inp" value="${cp.emailCc}" oninput="g_cpConfig[${i}].emailCc=this.value"></td>
+      <td><button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="cpCfgDelete(${i})">✕</button></td>
+    </tr>`).join('');
+  // Sync le select dans la modal contact
+  const sel = document.getElementById('con-cp');
+  if (sel) {
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Non</option>'
+      + g_cpConfig.map(cp => `<option value="${cp.nom}"${cp.nom===cur?' selected':''}>${cp.nom}</option>`).join('');
+  }
+}
+
+function cpCfgAdd() {
+  g_cpConfig.push({ nom: '', emailTo: '', emailCc: '' });
+  cpCfgRender();
+  // Focus sur le nouveau champ nom
+  const tbody = document.getElementById('cp-cfg-tbody');
+  if (tbody) {
+    const lastRow = tbody.querySelectorAll('tr');
+    const lastInput = lastRow[lastRow.length-1]?.querySelector('input');
+    if (lastInput) lastInput.focus();
+  }
+}
+
+function cpCfgDelete(i) {
+  if (!confirm(`Supprimer "${g_cpConfig[i].nom || 'ce CP'}" ?`)) return;
+  g_cpConfig.splice(i, 1);
+  cpCfgRender();
+}
+
+function cpCfgSave() {
+  localStorage.setItem('dispatch_cp_config', JSON.stringify(g_cpConfig));
+  apiCall('save-cp-config', { cpConfig: g_cpConfig }).catch(() => {});
+  const st = document.getElementById('cp-cfg-status');
+  if (st) { st.textContent = '✓ Enregistré'; setTimeout(() => st.textContent = '', 2000); }
+  // Mettre à jour isCP() dynamiquement
+  _cpNames = g_cpConfig.map(c => c.nom.toLowerCase()).filter(Boolean);
+  toast('Channel Partners mis à jour.');
+}
+
+function cpCfgLoad() {
+  try {
+    const stored = localStorage.getItem('dispatch_cp_config');
+    if (stored) g_cpConfig = JSON.parse(stored);
+  } catch(e) {}
+  cpCfgRender();
+  // Mettre à jour _cpNames pour que isCP() utilise la config sauvegardée
+  _cpNames = g_cpConfig.map(c => (c.nom||'').toLowerCase()).filter(Boolean);
+}
+
+// Noms CP pour isCP() — mis à jour à chaque save
+let _cpNames = g_cpConfig.map(c => c.nom.toLowerCase());
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  GROUPE MANUEL                                                           ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function openGroupManual() {
+  // Pré-remplir avec les dossiers sélectionnés dans le dispatch si des lignes sont cochées
+  const checked = [...document.querySelectorAll('#master-tbody tr')]
+    .filter(tr => tr.querySelector('input[type=checkbox]')?.checked)
+    .map(tr => {
+      const fileCell = tr.querySelector('td:nth-child(2)');
+      return fileCell ? fileCell.title || fileCell.textContent.trim() : '';
+    }).filter(Boolean);
+
+  document.getElementById('grpm-files').value = checked.join('\n');
+  document.getElementById('grpm-preview').style.display = 'none';
+
+  // Si un seul client dans la sélection, pré-remplir
+  if (checked.length) {
+    const rows = g_master.filter(r => checked.includes(r.file));
+    if (rows.length) {
+      document.getElementById('grpm-client').value = rows[0].client || '';
+      document.getElementById('grpm-rdl').value    = rows[0].rdl    || '';
+      document.getElementById('grpm-svct').value   = rows[0].svct   || '';
+      document.getElementById('grpm-dept').value   = rows[0].dept   || '';
+      document.getElementById('grpm-transp').value = rows[0].transp || '';
+    }
+  } else {
+    ['grpm-client','grpm-rdl','grpm-svct','grpm-dept','grpm-transp'].forEach(id =>
+      document.getElementById(id).value = '');
+  }
+  openModal('modal-group-manual');
+}
+
+function grpmParseFiles() {
+  const raw = document.getElementById('grpm-files').value;
+  return raw.split(/[\n\r,;\t ]+/).map(s => s.trim()).filter(Boolean);
+}
+
+function grpmPreview() {
+  const files = grpmParseFiles();
+  if (!files.length) return toast('Saisir au moins un N° de dossier.');
+  const prev = document.getElementById('grpm-preview');
+  let html = '<div style="font-weight:600;margin-bottom:6px;color:var(--text)">'
+    + files.length + ' dossier(s) dans le groupe :</div>';
+  let totP = 0, totV = 0;
+  files.forEach(f => {
+    const r = g_master.find(x => x.file === f);
+    if (r) {
+      totP += r.poids || 0; totV += r.vol || 0;
+      html += '<div style="display:flex;gap:12px;padding:3px 0;border-bottom:1px solid var(--border)">'
+        + '<span style="font-family:var(--mono);color:var(--blue);min-width:130px">' + f + '</span>'
+        + '<span style="color:var(--text2)">' + (r.client||'—') + '</span>'
+        + '<span style="color:var(--orange);font-family:var(--mono);margin-left:auto">' + fmt(r.taxable) + ' kg tx</span>'
+        + '</div>';
+    } else {
+      html += '<div style="display:flex;gap:12px;padding:3px 0;border-bottom:1px solid var(--border)">'
+        + '<span style="font-family:var(--mono);color:var(--text3);min-width:130px">' + f + '</span>'
+        + '<span style="color:var(--text3);font-style:italic">→ sera créé vide</span>'
+        + '</div>';
+    }
+  });
+  const tax = calcTaxable(totP, totV);
+  html += '<div style="margin-top:8px;font-size:12px;font-weight:600;color:var(--purple)">'
+    + 'Total groupe : ' + fmt(totP) + ' kg brut · ' + fmt(totV,3) + ' m³ · '
+    + '<span style="color:var(--orange)">' + fmt(tax) + ' kg taxable</span></div>';
+  prev.innerHTML = html;
+  prev.style.display = 'block';
+  // Auto-remplir poids/transp si vides
+  const svct   = document.getElementById('grpm-svct').value;
+  const dept   = document.getElementById('grpm-dept').value;
+  const client = document.getElementById('grpm-client').value;
+  if (!document.getElementById('grpm-transp').value && dept) {
+    document.getElementById('grpm-transp').value = calcTransp(svct, tax, dept, isCP(client));
+  }
+}
+
+function grpmAutoTransp() {
+  const files  = grpmParseFiles();
+  const svct   = document.getElementById('grpm-svct').value;
+  const dept   = document.getElementById('grpm-dept').value;
+  const client = document.getElementById('grpm-client').value;
+  let totP = 0, totV = 0;
+  files.forEach(f => {
+    const r = g_rawData[f] || g_master.find(x => x.file === f) || {};
+    totP += r.poids || 0; totV += r.vol || 0;
+  });
+  const tax = calcTaxable(totP, totV);
+  document.getElementById('grpm-transp').value = calcTransp(svct, tax, dept, isCP(client));
+}
+
+function grpmSave() {
+  const files  = grpmParseFiles();
+  if (files.length < 2) return toast('Un groupe nécessite au moins 2 dossiers.');
+  const client = document.getElementById('grpm-client').value.trim();
+  const rdl    = document.getElementById('grpm-rdl').value.trim();
+  const svct   = document.getElementById('grpm-svct').value.trim();
+  const dept   = document.getElementById('grpm-dept').value.trim();
+  const statut = document.getElementById('grpm-statut').value;
+  const today  = new Date().toISOString().slice(0,10);
+
+  // Stocker les raws et supprimer les existants
+  let totP = 0, totV = 0;
+  files.forEach(f => {
+    const existing = g_master.find(r => r.file === f);
+    if (existing) {
+      totP += existing.poids || 0;
+      totV += existing.vol   || 0;
+      storeRaw(f, existing.client||client, existing.svct||svct,
+        existing.poids||0, existing.vol||0, existing.taxable||0,
+        existing.dept||dept, existing.rdl||rdl);
+      // Supprimer le dossier solo
+      const idx = g_master.indexOf(existing);
+      if (idx >= 0) g_master.splice(idx, 1);
+    }
+  });
+
+  const tax    = calcTaxable(totP, totV);
+  let   transp = document.getElementById('grpm-transp').value.trim()
+              || calcTransp(svct, tax, dept, isCP(client));
+  const fileStr = files.join(' + ');
+
+  // Vérifier que le groupe n'existe pas déjà
+  if (g_master.find(r => r.file === fileStr)) return toast('Ce groupe existe déjà.');
+
+  g_master.push({
+    file: fileStr, client, rdl, svct, transp,
+    poids: +totP.toFixed(2), vol: +totV.toFixed(3), taxable: +tax.toFixed(2),
+    dept, contact: '', tel: '', email: '', cc: 'Non',
+    comment: '[Groupe Manuel]', statut, _dateCreated: today
+  });
+
+  closeModal('modal-group-manual');
+  renderMaster(); renderKanban(); updateStats(); markDirty();
+  toast(`Groupe créé : ${files.length} dossiers → ${fileStr}`);
+}
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  FC PARAMS MODAL                                                         ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+let _fcAffected = []; // dossiers en attente FC
+
+// Calcul de la date de garantie FC en JS
+// Règle métier :
+// - Flex : J+1 jour ouvré avant 14h30, sinon J+2 jours ouvrés
+// - Autres transporteurs : J+2 jours ouvrés avant 14h30, sinon J+3 jours ouvrés
+function fcIsFlex(transp) {
+  const t = String(transp || '').toLowerCase();
+  return t.includes('flex') || t.includes('(7)') || /^\s*7\s*$/.test(t);
+}
+
+function fcIsWorkingDay(date) {
+  const day = date.getDay(); // 0=dimanche, 6=samedi
+  return day !== 0 && day !== 6;
+}
+
+function fcAddWorkingDays(date, n) {
+  const d = new Date(date);
+  let count = 0;
+  while (count < n) {
+    d.setDate(d.getDate() + 1);
+    if (fcIsWorkingDay(d)) count++;
+  }
+  return d;
+}
+
+function fcFormatDate(d) {
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(2);
+  return `${dd}.${mm}.${yy}`;
+}
+
+function fcCalcWorkingDaysToAdd(transp, refDate) {
+  const now = refDate ? new Date(refDate) : new Date();
+  const mins = now.getHours() * 60 + now.getMinutes();
+  const before1430 = mins < (14 * 60 + 30);
+  if (fcIsFlex(transp)) return before1430 ? 1 : 2;
+  return before1430 ? 2 : 3;
+}
+
+function fcCalcDateG(transp, refDate) {
+  const now = refDate ? new Date(refDate) : new Date();
+  return fcFormatDate(fcAddWorkingDays(now, fcCalcWorkingDaysToAdd(transp, now)));
+}
+
+function fcRuleLabel(transp) {
+  return fcIsFlex(transp)
+    ? 'Flex : J+1 ouvré avant 14h30, sinon J+2'
+    : 'Autres : J+2 ouvrés avant 14h30, sinon J+3';
+}
+
+function fcEnsureAutoDate(r, force) {
+  if (!r) return '';
+  if (force || !r.fcDate || !r._fcDateManual) {
+    r.fcDate = fcCalcDateG(r.transp);
+    r._fcDateManual = false;
+  }
+  if (!r.fcHoraire) r.fcHoraire = '09h et 12h';
+  return r.fcDate;
+}
+
+// ── Comparaison date livraison vs RDL ─────────────────────────────────────
+function fcParseDate(str) {
+  // Accepte dd.mm.aa ou dd.mm.yyyy ou dd/mm/aa
+  if (!str) return null;
+  const s = str.replace(/\//g,'.');
+  const p = s.split('.');
+  if (p.length < 3) return null;
+  let y = parseInt(p[2]);
+  if (y < 100) y += 2000;
+  return new Date(y, parseInt(p[1])-1, parseInt(p[0]));
+}
+
+function fcDateAfterRdl(dateGStr, rdlStr) {
+  const dg = fcParseDate(dateGStr);
+  const dr = fcParseDate(rdlStr);
+  if (!dg || !dr) return false;
+  return dg > dr;
+}
+
+function fcCheckDly(i) {
+  const r = _fcAffected[i];
+  if (!r) return;
+  const dateVal = document.getElementById(`fc-date-${i}`)?.value || '';
+  const isDly = fcDateAfterRdl(dateVal, r.rdl);
+  const row = document.getElementById(`fc-dly-row-${i}`);
+  const chk = document.getElementById(`fc-dly-chk-${i}`);
+  if (row) row.style.display = isDly ? '' : 'none';
+  if (chk) chk.checked = isDly;
+}
+
+function fcToggleDly(i, checked) {
+  const row = document.getElementById(`fc-dly-row-${i}`);
+  if (row) row.style.display = checked ? '' : 'none';
+}
+
+// Mise à jour inline depuis la carte kanban
+function kabFcUpdate(file, field, val) {
+  const r = g_master.find(x => x.file === file);
+  if (!r) return;
+
+  if (field === 'date') {
+    r.fcDate = val.trim();
+    r._fcDateManual = true;
+  }
+
+  if (field === 'transp') {
+    r.transp = val.trim();
+    // Recalcule selon le transporteur uniquement si la date n'a pas été forcée à la main.
+    if (!r._fcDateManual) r.fcDate = fcCalcDateG(r.transp);
+  }
+
+  markDirty();
+  renderKanban();
+}
+
+
+function fcOpenModal(affected) {
+  _fcAffected = affected || [];
+  _fcAffected.forEach(r => fcEnsureAutoDate(r, true));
+  affected = _fcAffected;
+  const list = document.getElementById('fc-dossier-list');
+  list.innerHTML = affected.map((r, i) => {
+    const dateG = r.fcDate || fcEnsureAutoDate(r, true);
+    const autoDateG = fcCalcDateG(r.transp);
+    const isUPS = (r.transp||'').toLowerCase().includes('ups');
+    // DLY auto : comparer date livraison avec RDL
+    const hasDLY = r.fcDly === 'Y' || (!isUPS && fcDateAfterRdl(dateG, r.rdl));
+    const dlyNotes = r.fcDlyNotes || '';
+    return `<div style="padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-family:var(--mono);font-size:12px;font-weight:600">${r.file.length>20?r.file.substring(0,20)+'…':r.file}</span>
+        <span style="font-size:10px;color:var(--text3)">${r.client||''}</span>
+        ${r.rdl ? `<span style="font-size:10px;color:var(--orange);margin-left:auto">RDL: ${r.rdl}</span>` : ''}
+        <span style="font-size:10px;color:var(--purple)${r.rdl?'':';margin-left:auto'}">${r.transp||'?'}</span>
+      </div>
+      ${isUPS ? '<div style="font-size:11px;color:var(--teal);font-style:italic">UPS — FC simplifié (N° dossier + DEF uniquement)</div>' : `
+      <div style="font-size:10px;color:var(--text3);margin-bottom:6px">${fcRuleLabel(r.transp)}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div>
+          <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Date estimée livraison / Date garantie FC</label>
+          <div style="display:flex;gap:5px;align-items:center">
+            <input id="fc-date-${i}" type="text" value="${dateG}" maxlength="8"
+              style="flex:1;height:24px;font-family:var(--mono);font-size:11px;
+                     border:1px solid var(--border2);border-radius:3px;
+                     background:var(--surface);color:var(--text);padding:0 6px"
+              oninput="_fcAffected[${i}]._fcDateManual=true;fcCheckDly(${i});fcUpdateDeliveryPillInline(${i})">
+            <button class="btn btn-green-out btn-sm" type="button" onclick="fcRecalcDeliveryDateInline(${i})" style="height:24px;font-size:10px;padding:0 6px;font-weight:800">↺ Auto transporteur</button>
+          </div>
+          <div id="fc-delivery-pill-${i}" style="margin-top:4px;font-family:var(--mono);font-size:10px;font-weight:800;background:var(--green-bg);color:var(--green);border:1px solid currentColor;border-radius:999px;padding:3px 7px;display:inline-block">Date livraison AUTO transporteur : ${dateG}</div>
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Horaire</label>
+          <input id="fc-horaire-${i}" type="text" value="${r.fcHoraire || '09h et 12h'}" placeholder="09h et 12h"
+            style="width:100%;height:24px;font-size:11px;
+                   border:1px solid var(--border2);border-radius:3px;
+                   background:var(--surface);color:var(--text);padding:0 6px">
+        </div>
+      </div>
+      <div style="margin-top:8px;padding:9px;background:var(--purple-bg);border:2px solid var(--purple);border-radius:6px;display:flex;flex-direction:column;gap:7px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div style="font-size:10px;font-weight:800;color:var(--purple);text-transform:uppercase;letter-spacing:.4px">BKD de ce dossier — séparé de la livraison</div>
+          <span id="fc-bkd-pill-${i}" style="font-family:var(--mono);font-size:10px;font-weight:800;background:var(--surface);color:var(--purple);border:1px solid var(--purple);border-radius:999px;padding:3px 8px">BKD sélectionné : ${typeof getBKDValueInline==='function'?getBKDValueInline():dateG}</span>
+        </div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">
+          <button class="btn btn-green-out btn-sm" type="button" onclick="fcSetLineBKDInline(${i},'today')" style="height:24px;font-size:10px;font-weight:800">✅ Aujourd'hui</button>
+          <button class="btn btn-orange-out btn-sm" type="button" onclick="fcSetLineBKDInline(${i},'tomorrow')" style="height:24px;font-size:10px;font-weight:800">➡ J+1</button>
+          <button class="btn btn-purple-out btn-sm" type="button" onclick="fcSetLineBKDInline(${i},'custom')" style="height:24px;font-size:10px;font-weight:800">📅 Date</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="fcSetLineBKDInline(${i},'global')" style="height:24px;font-size:10px">🌐 Global</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="fcSetLineBKDInline(${i},'auto')" style="height:24px;font-size:10px">🕒 Auto</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr .8fr 1fr auto;gap:6px;align-items:end">
+          <div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Mode</label><select id="fc-bkd-mode-${i}" onchange="fcApplyLineBKDInline(${i},true)" style="width:100%;height:24px;font-size:10px;border:1px solid var(--border2);border-radius:3px;background:var(--surface);color:var(--text);padding:0 4px;font-weight:700"><option value="global">🌐 Global</option><option value="auto">🕒 Auto</option><option value="today">✅ Aujourd'hui</option><option value="tomorrow">➡ J+1</option><option value="custom">📅 Date</option></select></div>
+          <div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Cutoff</label><input id="fc-bkd-cutoff-${i}" type="time" value="${(typeof getBKDConfigInline==='function'?getBKDConfigInline().cutoff:'14:30')}" onchange="fcApplyLineBKDInline(${i},true)" style="width:100%;height:24px;font-size:10px;border:1px solid var(--border2);border-radius:3px;background:var(--surface);color:var(--text);padding:0 4px;font-family:var(--mono)"></div>
+          <div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Date si manuel</label><input id="fc-bkd-custom-${i}" type="date" onchange="fcApplyLineBKDInline(${i},true)" style="width:100%;height:24px;font-size:10px;border:1px solid var(--border2);border-radius:3px;background:var(--surface);color:var(--text);padding:0 4px;font-family:var(--mono)"></div>
+          <button class="btn btn-purple-out btn-sm" type="button" onclick="fcApplyLineBKDInline(${i},true)" style="height:24px;font-size:10px;padding:0 6px;font-weight:800">OK</button>
+        </div>
+      </div>
+      <div id="fc-dly-row-${i}" style="margin-top:7px;padding:7px;background:var(--red-bg,#2a1a1a);border:1px solid var(--red,#e74c3c);border-radius:4px;${hasDLY?'':'display:none'}">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-size:11px;font-weight:700;color:var(--red,#e74c3c)">⚠ DLY</span>
+          <label style="font-size:10px;color:var(--text3)">Date livraison après RDL — retard à justifier</label>
+          <input type="checkbox" id="fc-dly-chk-${i}" ${hasDLY?'checked':''} onchange="fcToggleDly(${i},this.checked)"
+            style="margin-left:auto;width:14px;height:14px;accent-color:var(--red,#e74c3c)">
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <label style="font-size:10px;color:var(--text3);white-space:nowrap">Code DLY</label>
+          <input id="fc-dly-notes-${i}" type="text" value="${dlyNotes}" placeholder="Code interne DLY..."
+            style="flex:1;height:24px;font-size:11px;font-family:var(--mono);
+                   border:1px solid var(--border2);border-radius:3px;
+                   background:var(--surface);color:var(--text);padding:0 6px">
+        </div>
+      </div>`}
+    </div>`;
+  }).join('');
+  // Vider les globaux
+  document.getElementById('fc-global-date').value = ''; // ne pas injecter BKD/aujourd'hui dans date garantie
+  document.getElementById('fc-global-horaire').value = '09h et 12h';
+  openModal('modal-fc-params');
+  if (typeof bkdFcOnModalOpenInline === 'function') bkdFcOnModalOpenInline();
+}
+
+function fcApplyGlobal() {
+  const gDate = document.getElementById('fc-global-date').value.trim();
+  const gHor  = document.getElementById('fc-global-horaire').value;
+  _fcAffected.forEach((r, i) => {
+    const isUPS = (r.transp||'').toLowerCase().includes('ups');
+    if (!isUPS) {
+      if (gDate) {
+        document.getElementById(`fc-date-${i}`).value = gDate;
+        r.fcDate = gDate;
+        r._fcDateManual = true;
+      }
+      document.getElementById(`fc-horaire-${i}`).value = gHor;
+      r.fcHoraire = gHor;
+    }
+  });
+}
+
+
+function fcRecalcDates() {
+  _fcAffected.forEach((r, i) => {
+    const isUPS = (r.transp||'').toLowerCase().includes('ups');
+    if (!isUPS) {
+      r.fcDate = fcCalcDateG(r.transp);
+      r._fcDateManual = false;
+      const inp = document.getElementById(`fc-date-${i}`);
+      if (inp) inp.value = r.fcDate;
+      fcCheckDly(i);
+    }
+  });
+  renderKanban();
+  markDirty();
+  toast('Dates FC recalculées selon transporteur + cutoff 14h30.');
+}
+
+
+// ── FC : envoi séquentiel un par un (pause/stop via hotkeys F9/Echap dans au3) ──
+let _fcRunning = false;
+
+async function fcLancer() {
+  closeModal('modal-fc-params');
+  const jobs = [];
+  _fcAffected.forEach((r, i) => {
+    const contactStr = `${r.contact||''} ${r.tel||''}`.trim();
+    const isUPS = (r.transp||'').toLowerCase().includes('ups');
+    const dateG   = isUPS ? '' : (document.getElementById(`fc-date-${i}`)?.value || r.fcDate || '');
+    const horaire = isUPS ? '' : (document.getElementById(`fc-horaire-${i}`)?.value || r.fcHoraire || '09h et 12h');
+    const dlyChk  = document.getElementById(`fc-dly-chk-${i}`);
+    const dly     = (!isUPS && dlyChk && dlyChk.checked) ? 'Y' : '';
+    const dlyNotes = dly ? (document.getElementById(`fc-dly-notes-${i}`)?.value || '') : '';
+    if (!isUPS) { r.fcDate = dateG; r.fcHoraire = horaire; r.fcDly = dly; r.fcDlyNotes = dlyNotes; r._fcDateManual = true; }
+    const subFiles = (r.file||'').split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean);
+    subFiles.forEach(sf => {
+      const row = `${sf};${r.email||''};${r.client||''};${r.transp||''};${contactStr};${dateG};${horaire};${dly};${dlyNotes}`;
+      jobs.push({ row, masterRef: r, file: sf });
+    });
+  });
+  if (!jobs.length) return toast('Aucun dossier à traiter.');
+  _fcRunning = true;
+  const total = jobs.length;
+  _batchShowBar('FC', 0, total);
+  toast(`FC : ${total} dossier(s) — l'interface reste utilisable pendant le traitement.`);
+  let done = 0;
+  // Traitement non-bloquant : yield au event loop entre chaque dossier
+  async function _fcProcessNext() {
+    if (done >= jobs.length || !_fcRunning) {
+      _fcRunning = false; _batchHideBar();
+      toast(`FC terminé — ${done}/${total} dossier(s) traité(s).`);
+      return;
+    }
+    const job = jobs[done];
+    _batchShowBar('FC', done, total, job.file);
+    try {
+      await apiCall('action', { action: 'KANBAN_5', data: job.row });
+    } catch(e) { console.warn('FC error:', e); }
+    done++;
+    const parentSubs = (job.masterRef.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean);
+    const allDone = parentSubs.every(sf => !jobs.slice(done).some(q => q.masterRef === job.masterRef));
+    if (allDone) job.masterRef.statut = '6';
+    renderMaster(); renderKanban(); updateStats(); markDirty();
+    _batchShowBar('FC', done, total);
+    // Yield : laisse le navigateur respirer entre chaque requête
+    setTimeout(_fcProcessNext, 50);
+  }
+  _fcProcessNext();
+}
+
+// ── Barre de progression FC / COMAT (affichage seulement — contrôles dans la fenêtre AU3) ──
+function _batchShowBar(label, done, total, currentFile) {
+  let bar = document.getElementById('batch-progress-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'batch-progress-bar';
+    bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9999;background:var(--surface2);border-top:2px solid var(--blue);padding:8px 16px;display:flex;align-items:center;gap:12px;font-size:12px;color:var(--text)';
+    document.body.appendChild(bar);
+  }
+  const pct = total ? Math.round(done/total*100) : 0;
+  const cur = currentFile ? ` — <b>${currentFile}</b>` : '';
+  bar.innerHTML = `
+    <div style="flex:1;display:flex;align-items:center;gap:10px">
+      <span style="font-weight:700;color:var(--blue)">${label}</span>
+      <div style="flex:1;height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:var(--blue);border-radius:4px;transition:width .3s"></div>
+      </div>
+      <span style="font-family:var(--mono);font-weight:600;min-width:90px">${done} / ${total}${cur}</span>
+      <span style="color:var(--text3);font-size:10px;white-space:nowrap">⏸ F9 = Pause &nbsp;|&nbsp; ⏭ Passer &nbsp;|&nbsp; ⏹ Echap = Stop &nbsp;— fenêtre AutoIt</span>
+    </div>`;
+  bar.style.display = 'flex';
+}
+
+function _batchHideBar() {
+  const bar = document.getElementById('batch-progress-bar');
+  if (bar) bar.remove();
+}
+
+// ── COMAT : envoi séquentiel un par un (pause/stop via hotkeys F9/Echap dans au3) ──
+let _comatRunning = false;
+
+async function comatStartBatch(affected, toStatus) {
+  const jobs = [];
+  affected.forEach(r => {
+    (r.file||'').split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean).forEach(n => {
+      jobs.push({ num: n, masterRef: r });
+    });
+  });
+  if (!jobs.length) return toast('Aucun dossier à traiter.');
+  _comatRunning = true;
+  const total = jobs.length;
+  _batchShowBar('COMAT', 0, total);
+  toast(`COMAT : ${total} dossier(s) — l'interface reste utilisable pendant le traitement.`);
+  let done = 0;
+  // Traitement non-bloquant
+  async function _comatProcessNext() {
+    if (done >= jobs.length || !_comatRunning) {
+      _comatRunning = false; _batchHideBar();
+      toast(`COMAT terminé — ${done}/${total} dossier(s) traité(s).`);
+      return;
+    }
+    const job = jobs[done];
+    _batchShowBar('COMAT', done, total, job.num);
+    try {
+      await apiCall('action', { action: 'COMAT_MULTI', data: job.num + ';;;' });
+    } catch(e) { console.warn('COMAT error:', e); }
+    done++;
+    if (job.masterRef) {
+      const parentSubs = (job.masterRef.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean);
+      const allDone = parentSubs.every(sf => !jobs.slice(done).some(q => q.masterRef === job.masterRef));
+      if (allDone) job.masterRef.statut = String(toStatus);
+    }
+    renderMaster(); renderKanban(); updateStats(); markDirty();
+    _batchShowBar('COMAT', done, total);
+    setTimeout(_comatProcessNext, 50);
+  }
+  _comatProcessNext();
+}
+
+
+const STATUT_LABELS = {'1':'Import','2':'CC','3':'Attente','4':'Pré-alerte','5':'Prêt FC','6':'COMAT','7':'NTO','8':'Terminé','9':'En attente'};
+const STATUT_COLORS = {'1':'var(--text3)','2':'var(--blue)','3':'var(--orange)','4':'var(--purple)','5':'#00c08b','6':'#ff6b35','7':'var(--teal)','8':'var(--green)','9':'#d4a017'};
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  UNDO — historique de 5 actions                                          ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+const _undoStack = [];
+const UNDO_MAX = 5;
+function pushUndo(label) {
+  _undoStack.push({ label, master: JSON.parse(JSON.stringify(g_master)), cpData: JSON.parse(JSON.stringify(g_cpData)) });
+  if (_undoStack.length > UNDO_MAX) _undoStack.shift();
+}
+function undoLast() {
+  if (!_undoStack.length) return toast('Rien à annuler.');
+  const snap = _undoStack.pop();
+  g_master = snap.master;
+  g_cpData = snap.cpData;
+  renderMaster(); renderKanban(); renderCP(); updateStats(); markDirty();
+  toast('Annulé : ' + snap.label);
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  OFFLINE INDICATOR — polling serveur AU3                                 ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+let _serverOnline = true;
+function _checkServerStatus() {
+  fetch(API_URL + '/ping', { method: 'POST', body: '{}' })
+    .then(r => { if (!_serverOnline) { _serverOnline = true; _updateOnlineIndicator(); } })
+    .catch(() => { if (_serverOnline) { _serverOnline = false; _updateOnlineIndicator(); } });
+}
+function _updateOnlineIndicator() {
+  let el = document.getElementById('offline-banner');
+  if (!_serverOnline) {
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'offline-banner';
+      el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10000;background:var(--red);color:#fff;text-align:center;padding:5px 0;font-size:12px;font-weight:600;letter-spacing:.5px';
+      el.textContent = 'HORS LIGNE — Serveur AutoIt non joignable';
+      document.body.appendChild(el);
+    }
+  } else {
+    if (el) el.remove();
+  }
+}
+setInterval(_checkServerStatus, 30000);
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  RDL OVERDUE ALERT                                                       ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function isRdlOverdue(rdl) {
+  if (!rdl) return false;
+  const parts = rdl.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (!parts) return false;
+  let y = +parts[3]; if (y < 100) y += 2000;
+  const d = new Date(y, +parts[2]-1, +parts[1]); d.setHours(0,0,0,0);
+  return d < TODAY;
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  DARK MODE                                                               ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function toggleDarkMode() {
+  const isDark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('dispatch_dark', isDark ? '1' : '0');
+  toast(isDark ? 'Mode sombre activé' : 'Mode clair activé');
+}
+// Restaurer au chargement
+if (localStorage.getItem('dispatch_dark') === '1') document.documentElement.classList.add('dark');

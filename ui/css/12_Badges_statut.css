@@ -1,0 +1,26 @@
+/* Badges statut */
+/* Badges statut */
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 2px 7px; border-radius: 20px;
+  font-size: 10px; font-weight: 600; white-space: nowrap;
+}
+.b1 { background: var(--k1-bg); color: var(--k1-c); }
+.b2 { background: var(--k2-bg); color: var(--k2-c); }
+.b3 { background: var(--k3-bg); color: var(--k3-c); }
+.b4 { background: var(--k4-bg); color: var(--k4-c); }
+.b5 { background: var(--k5-bg); color: var(--k5-c); }
+.b6 { background: var(--k6-bg); color: var(--k6-c); }
+.b7 { background: var(--k7-bg); color: var(--k7-c); }
+.b8 { background: #E6FAF5; color: #0D7A5A; }
+
+.cc-yes { color: var(--green); font-weight: 600; }
+.cc-no  { color: var(--text3); }
+
+.tag-group {
+  display: inline-block; font-size: 9px; font-weight: 600;
+  background: var(--orange-bg); color: var(--orange);
+  border: 1px solid #F0A878; border-radius: 3px;
+  padding: 0 4px; margin-left: 4px; vertical-align: middle;
+}
+

@@ -1,0 +1,15 @@
+/* CONTACTS */
+/* ── CONTACTS ── */
+.contacts-wrap { flex: 1; overflow: auto; }
+table.t-contacts {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+}
+table.t-contacts thead tr { background: var(--surface2); position: sticky; top: 0; z-index: 5; }
+table.t-contacts thead th {
+  padding: 7px 10px; font-size: 11px; font-weight: 600; color: var(--text2);
+  border-bottom: 2px solid var(--border); border-right: 1px solid var(--border);
+}
+table.t-contacts tbody tr { background: var(--surface); border-bottom: 1px solid var(--border); }
+table.t-contacts tbody tr:hover { background: var(--blue-bg); }
+table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--border); }
+

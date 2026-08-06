@@ -1,0 +1,9 @@
+// ║  DARK MODE                                                               ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function toggleDarkMode() {
+  const isDark = document.documentElement.classList.toggle('dark');
+  localStorage.setItem('dispatch_dark', isDark ? '1' : '0');
+  toast(isDark ? 'Mode sombre activé' : 'Mode clair activé');
+}
+// Restaurer au chargement
+if (localStorage.getItem('dispatch_dark') === '1') document.documentElement.classList.add('dark');

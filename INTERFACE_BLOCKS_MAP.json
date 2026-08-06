@@ -1,0 +1,398 @@
+[
+  {
+    "file": "action_blocks/html/01_HEAD_IMPORTS_BEFORE_MAIN_STYLE.html",
+    "title": "HEAD_IMPORTS_BEFORE_MAIN_STYLE",
+    "lines": "1-14",
+    "bytes": 626
+  },
+  {
+    "file": "action_blocks/css/02_MAIN_STYLE_FULL.html",
+    "title": "MAIN_STYLE_FULL",
+    "lines": "15-544",
+    "bytes": 20610
+  },
+  {
+    "file": "action_blocks/html/03_HTML_HEADER.html",
+    "title": "HTML_HEADER",
+    "lines": "545-626",
+    "bytes": 5148
+  },
+  {
+    "file": "action_blocks/html/04_HTML_TABS.html",
+    "title": "HTML_TABS",
+    "lines": "627-638",
+    "bytes": 432
+  },
+  {
+    "file": "action_blocks/html/05_HTML_CONTENT_DISPATCH_WORKFLOW_CP_CONTACTS.html",
+    "title": "HTML_CONTENT_DISPATCH_WORKFLOW_CP_CONTACTS",
+    "lines": "639-750",
+    "bytes": 5761
+  },
+  {
+    "file": "action_blocks/html/06_HTML_COMAT.html",
+    "title": "HTML_COMAT",
+    "lines": "751-806",
+    "bytes": 3753
+  },
+  {
+    "file": "action_blocks/html/07_HTML_NTO.html",
+    "title": "HTML_NTO",
+    "lines": "807-960",
+    "bytes": 9817
+  },
+  {
+    "file": "action_blocks/html/08_HTML_OPTIONS.html",
+    "title": "HTML_OPTIONS",
+    "lines": "961-1161",
+    "bytes": 13884
+  },
+  {
+    "file": "action_blocks/html/09_HTML_MODAL_EDIT.html",
+    "title": "HTML_MODAL_EDIT",
+    "lines": "1162-1245",
+    "bytes": 4942
+  },
+  {
+    "file": "action_blocks/html/10_HTML_MODAL_GROUPE.html",
+    "title": "HTML_MODAL_GROUPE",
+    "lines": "1246-1262",
+    "bytes": 812
+  },
+  {
+    "file": "action_blocks/html/11_HTML_MODAL_AJOUT_MANUEL.html",
+    "title": "HTML_MODAL_AJOUT_MANUEL",
+    "lines": "1263-1289",
+    "bytes": 1418
+  },
+  {
+    "file": "action_blocks/html/12_HTML_MODAL_CONTACT.html",
+    "title": "HTML_MODAL_CONTACT",
+    "lines": "1290-1321",
+    "bytes": 1347
+  },
+  {
+    "file": "action_blocks/html/13_HTML_SPINNER_ETMS.html",
+    "title": "HTML_SPINNER_ETMS",
+    "lines": "1322-1331",
+    "bytes": 767
+  },
+  {
+    "file": "action_blocks/html/14_HTML_KANBAN_ACTION_BAR.html",
+    "title": "HTML_KANBAN_ACTION_BAR",
+    "lines": "1332-1367",
+    "bytes": 1795
+  },
+  {
+    "file": "action_blocks/html/15_HTML_MODAL_KANBAN_MULTI_EDIT.html",
+    "title": "HTML_MODAL_KANBAN_MULTI_EDIT",
+    "lines": "1368-1401",
+    "bytes": 1406
+  },
+  {
+    "file": "action_blocks/html/16_HTML_MODAL_GROUPE_MANUEL.html",
+    "title": "HTML_MODAL_GROUPE_MANUEL",
+    "lines": "1402-1451",
+    "bytes": 2695
+  },
+  {
+    "file": "action_blocks/html/17_HTML_MODAL_KANBAN_CHANGE_STATUT.html",
+    "title": "HTML_MODAL_KANBAN_CHANGE_STATUT",
+    "lines": "1452-1481",
+    "bytes": 1247
+  },
+  {
+    "file": "action_blocks/js/18_SCRIPT_OPEN_AND_JS_PREFACE.html",
+    "title": "SCRIPT_OPEN_AND_JS_PREFACE",
+    "lines": "1482-1485",
+    "bytes": 256
+  },
+  {
+    "file": "action_blocks/js/19_JS_STATE.html",
+    "title": "JS_STATE",
+    "lines": "1486-1509",
+    "bytes": 1469
+  },
+  {
+    "file": "action_blocks/js/20_JS_METIER.html",
+    "title": "JS_MÉTIER",
+    "lines": "1510-1597",
+    "bytes": 4242
+  },
+  {
+    "file": "action_blocks/js/21_JS_RENDER_MASTER.html",
+    "title": "JS_RENDER MASTER",
+    "lines": "1598-1819",
+    "bytes": 10621
+  },
+  {
+    "file": "action_blocks/js/22_JS_KANBAN.html",
+    "title": "JS_KANBAN",
+    "lines": "1820-2198",
+    "bytes": 17102
+  },
+  {
+    "file": "action_blocks/js/23_JS_CC_PROCESSING.html",
+    "title": "JS_CC PROCESSING",
+    "lines": "2199-2277",
+    "bytes": 3879
+  },
+  {
+    "file": "action_blocks/js/24_JS_IMPORT_EXCEL.html",
+    "title": "JS_IMPORT EXCEL",
+    "lines": "2278-2444",
+    "bytes": 7827
+  },
+  {
+    "file": "action_blocks/js/25_JS_CP.html",
+    "title": "JS_CP",
+    "lines": "2445-2524",
+    "bytes": 4611
+  },
+  {
+    "file": "action_blocks/js/26_JS_CONTACTS.html",
+    "title": "JS_CONTACTS",
+    "lines": "2525-2630",
+    "bytes": 4527
+  },
+  {
+    "file": "action_blocks/js/27_JS_EDIT_MODAL.html",
+    "title": "JS_EDIT MODAL",
+    "lines": "2631-2721",
+    "bytes": 4411
+  },
+  {
+    "file": "action_blocks/js/28_JS_GROUP_MODAL.html",
+    "title": "JS_GROUP MODAL",
+    "lines": "2722-2953",
+    "bytes": 15882
+  },
+  {
+    "file": "action_blocks/js/29_JS_ADD_MANUAL.html",
+    "title": "JS_ADD MANUAL",
+    "lines": "2954-2993",
+    "bytes": 2355
+  },
+  {
+    "file": "action_blocks/js/30_JS_CLEAR_DONE.html",
+    "title": "JS_CLEAR DONE",
+    "lines": "2994-3012",
+    "bytes": 1323
+  },
+  {
+    "file": "action_blocks/js/31_JS_SAVE_LOAD_JSON.html",
+    "title": "JS_SAVE / LOAD JSON",
+    "lines": "3013-3021",
+    "bytes": 857
+  },
+  {
+    "file": "action_blocks/js/32_JS_EXPORT_EXCEL_Tableau_Dispatch_complet.html",
+    "title": "JS_EXPORT EXCEL — Tableau Dispatch complet",
+    "lines": "3022-3081",
+    "bytes": 2754
+  },
+  {
+    "file": "action_blocks/js/33_JS_EXPORT_IMPORT_WORKFLOW_dossiers_actifs_uniquement.html",
+    "title": "JS_EXPORT / IMPORT WORKFLOW — dossiers actifs uniquement",
+    "lines": "3082-3185",
+    "bytes": 4444
+  },
+  {
+    "file": "action_blocks/js/34_JS_STATS.html",
+    "title": "JS_STATS",
+    "lines": "3186-3205",
+    "bytes": 1098
+  },
+  {
+    "file": "action_blocks/js/35_JS_TABS.html",
+    "title": "JS_TABS",
+    "lines": "3206-3219",
+    "bytes": 1034
+  },
+  {
+    "file": "action_blocks/js/36_JS_MODALS.html",
+    "title": "JS_MODALS",
+    "lines": "3220-3238",
+    "bytes": 1129
+  },
+  {
+    "file": "action_blocks/js/37_JS_TOAST.html",
+    "title": "JS_TOAST",
+    "lines": "3239-3249",
+    "bytes": 781
+  },
+  {
+    "file": "action_blocks/js/38_JS_INIT.html",
+    "title": "JS_INIT",
+    "lines": "3250-3256",
+    "bytes": 612
+  },
+  {
+    "file": "action_blocks/js/39_JS_PONT_API_AUTOIT_Serveur_Local.html",
+    "title": "JS_PONT API AUTOIT (Serveur Local)",
+    "lines": "3257-3308",
+    "bytes": 2347
+  },
+  {
+    "file": "action_blocks/js/40_JS_INDEXEDDB_Stockage_local_haute_capacite_remplace_JSON_localStorage.html",
+    "title": "JS_INDEXEDDB — Stockage local haute capacité (remplace JSON/localStorage)",
+    "lines": "3309-3356",
+    "bytes": 2243
+  },
+  {
+    "file": "action_blocks/js/41_JS_AUTO_SAVE_dirty_flag_debounce_ne_sauvegarde_que_si_changement.html",
+    "title": "JS_AUTO-SAVE — dirty flag + debounce (ne sauvegarde que si changement)",
+    "lines": "3357-3437",
+    "bytes": 3712
+  },
+  {
+    "file": "action_blocks/js/42_JS_REFRESH_SYNC_DEPUIS_SERVEUR_sans_recharger_la_page.html",
+    "title": "JS_REFRESH / SYNC DEPUIS SERVEUR (sans recharger la page)",
+    "lines": "3438-3651",
+    "bytes": 8249
+  },
+  {
+    "file": "action_blocks/js/43_JS_ENVOI_DES_ACTIONS_VERS_AUTOIT.html",
+    "title": "JS_ENVOI DES ACTIONS VERS AUTOIT",
+    "lines": "3652-3746",
+    "bytes": 3352
+  },
+  {
+    "file": "action_blocks/js/44_JS_2_ACTION_BATCH_POUR_LES_CHANNEL_PARTNERS_Onglet_CP.html",
+    "title": "JS_2. ACTION BATCH POUR LES CHANNEL PARTNERS (Onglet CP)",
+    "lines": "3747-3794",
+    "bytes": 2675
+  },
+  {
+    "file": "action_blocks/js/45_JS_COMAT.html",
+    "title": "JS_COMAT",
+    "lines": "3795-3848",
+    "bytes": 2646
+  },
+  {
+    "file": "action_blocks/js/46_JS_NTO_MOTEUR_DE_TARIFICATION.html",
+    "title": "JS_NTO — MOTEUR DE TARIFICATION",
+    "lines": "3849-4205",
+    "bytes": 25730
+  },
+  {
+    "file": "action_blocks/js/47_JS_NTO_BATCH_Kanban_col_7.html",
+    "title": "JS_NTO BATCH — Kanban col 7",
+    "lines": "4206-4359",
+    "bytes": 7198
+  },
+  {
+    "file": "action_blocks/js/48_JS_VERIFICATION_PDF_MANQUANTS.html",
+    "title": "JS_VÉRIFICATION PDF MANQUANTS",
+    "lines": "4360-4430",
+    "bytes": 3608
+  },
+  {
+    "file": "action_blocks/js/49_JS_OPERATEUR_FILTRE_PERSONNE.html",
+    "title": "JS_OPÉRATEUR / FILTRE PERSONNE",
+    "lines": "4431-4508",
+    "bytes": 3566
+  },
+  {
+    "file": "action_blocks/js/50_JS_OPTIONS_NAVIGATION_SOUS_PANELS.html",
+    "title": "JS_OPTIONS — NAVIGATION SOUS-PANELS",
+    "lines": "4509-4535",
+    "bytes": 1317
+  },
+  {
+    "file": "action_blocks/js/51_JS_OPTIONS_STOCKAGE_NETTOYAGE_CONTACTS.html",
+    "title": "JS_OPTIONS — STOCKAGE + NETTOYAGE CONTACTS",
+    "lines": "4536-4583",
+    "bytes": 2761
+  },
+  {
+    "file": "action_blocks/js/52_JS_OPTIONS_SAUVEGARDE_PJ_RESEAU.html",
+    "title": "JS_OPTIONS — SAUVEGARDE PJ + RÉSEAU",
+    "lines": "4584-4632",
+    "bytes": 2741
+  },
+  {
+    "file": "action_blocks/js/53_JS_RESEAU_SAVE_LOAD_SUR_F.html",
+    "title": "JS_RÉSEAU — SAVE / LOAD SUR F:\\",
+    "lines": "4633-4834",
+    "bytes": 8991
+  },
+  {
+    "file": "action_blocks/js/54_JS_OPTIONS_NTO_FUEL.html",
+    "title": "JS_OPTIONS — NTO FUEL",
+    "lines": "4835-4899",
+    "bytes": 3602
+  },
+  {
+    "file": "action_blocks/js/55_JS_OPTIONS_CHANNEL_PARTNERS_CONFIG.html",
+    "title": "JS_OPTIONS — CHANNEL PARTNERS CONFIG",
+    "lines": "4900-4974",
+    "bytes": 3623
+  },
+  {
+    "file": "action_blocks/js/56_JS_GROUPE_MANUEL.html",
+    "title": "JS_GROUPE MANUEL",
+    "lines": "4975-5110",
+    "bytes": 6437
+  },
+  {
+    "file": "action_blocks/js/57_JS_FC_PARAMS_MODAL.html",
+    "title": "JS_FC PARAMS MODAL",
+    "lines": "5111-5476",
+    "bytes": 19164
+  },
+  {
+    "file": "action_blocks/js/58_JS_UNDO_historique_de_5_actions.html",
+    "title": "JS_UNDO — historique de 5 actions",
+    "lines": "5477-5494",
+    "bytes": 1080
+  },
+  {
+    "file": "action_blocks/js/59_JS_OFFLINE_INDICATOR_polling_serveur_AU3.html",
+    "title": "JS_OFFLINE INDICATOR — polling serveur AU3",
+    "lines": "5495-5519",
+    "bytes": 1449
+  },
+  {
+    "file": "action_blocks/js/60_JS_RDL_OVERDUE_ALERT.html",
+    "title": "JS_RDL OVERDUE ALERT",
+    "lines": "5520-5531",
+    "bytes": 841
+  },
+  {
+    "file": "action_blocks/js/61_JS_DARK_MODE.html",
+    "title": "JS_DARK MODE",
+    "lines": "5532-5542",
+    "bytes": 676
+  },
+  {
+    "file": "action_blocks/patches/62_HTML_MODAL_IDENTITE_FC_PARAMS.html",
+    "title": "HTML_MODAL_IDENTITE_FC_PARAMS",
+    "lines": "5543-5639",
+    "bytes": 7836
+  },
+  {
+    "file": "action_blocks/patches/63_PATCH_CLEAN_RESTART_DASHBOARD_FILTERS.html",
+    "title": "PATCH_CLEAN_RESTART_DASHBOARD_FILTERS",
+    "lines": "5640-5815",
+    "bytes": 26875
+  },
+  {
+    "file": "action_blocks/patches/64_PATCH_WORKFLOW_TRANSPORT_CHIPS.html",
+    "title": "PATCH_WORKFLOW_TRANSPORT_CHIPS",
+    "lines": "5816-5933",
+    "bytes": 5784
+  },
+  {
+    "file": "action_blocks/patches/65_PATCH_EDOC_HTML_FULL.html",
+    "title": "PATCH_EDOC_HTML_FULL",
+    "lines": "5934-6004",
+    "bytes": 14412
+  },
+  {
+    "file": "action_blocks/patches/66_PATCH_CMR_FULL_UI.html",
+    "title": "PATCH_CMR_FULL_UI",
+    "lines": "6005-6065",
+    "bytes": 14020
+  }
+]

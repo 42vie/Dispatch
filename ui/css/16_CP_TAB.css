@@ -1,0 +1,22 @@
+/* CP TAB */
+/* ── CP TAB ── */
+.cp-wrap { flex: 1; overflow: auto; }
+table.t-cp {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+}
+table.t-cp thead tr { background: var(--surface2); position: sticky; top: 0; z-index: 5; }
+table.t-cp thead th {
+  padding: 7px 8px; text-align: left; font-size: 11px; font-weight: 600;
+  color: var(--text2); border-bottom: 2px solid var(--border); border-right: 1px solid var(--border);
+}
+table.t-cp tbody tr { background: var(--surface); border-bottom: 1px solid var(--border); }
+table.t-cp tbody tr:hover { background: var(--blue-bg); }
+table.t-cp tbody td { padding: 6px 8px; border-right: 1px solid var(--border); }
+
+.inline-inp {
+  width: 100%; background: transparent; border: none; font-family: var(--mono);
+  font-size: 11px; color: var(--text); outline: none; padding: 2px 4px;
+  border-radius: 3px; transition: background .1s;
+}
+.inline-inp:focus { background: var(--blue-bg); }
+

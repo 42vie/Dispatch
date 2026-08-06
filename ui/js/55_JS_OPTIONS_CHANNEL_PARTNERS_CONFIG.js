@@ -1,0 +1,75 @@
+// ║  OPTIONS — CHANNEL PARTNERS CONFIG                                       ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+let g_cpConfig = [
+  { nom: 'Arrow',          emailTo: 'arrow.fr@arrow.com',          emailCc: '' },
+  { nom: 'SCC',            emailTo: 'dispatch@scc.com',             emailCc: '' },
+  { nom: 'Computacenter',  emailTo: 'logistics@computacenter.com',  emailCc: '' },
+  { nom: 'Also',           emailTo: '',                             emailCc: '' },
+  { nom: 'MC3 LOGISTIQUE', emailTo: '',                             emailCc: '' },
+  { nom: 'Dexxon',         emailTo: '',                             emailCc: '' }
+];
+// Note : les noms sont des mots-clés partiels.
+// "Arrow" reconnaît "Arrow ECS SAS", "MC3 LOGISTIQUE" reconnaît "MC3 LOGISTIQUE SAS",
+// "Dexxon" reconnaît "DEXXON GROUPE SAS" etc.
+
+function cpCfgRender() {
+  const tbody = document.getElementById('cp-cfg-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = g_cpConfig.map((cp, i) => `
+    <tr>
+      <td><input class="inline-inp" value="${cp.nom}" oninput="g_cpConfig[${i}].nom=this.value"></td>
+      <td><input class="inline-inp" value="${cp.emailTo}" oninput="g_cpConfig[${i}].emailTo=this.value"></td>
+      <td><input class="inline-inp" value="${cp.emailCc}" oninput="g_cpConfig[${i}].emailCc=this.value"></td>
+      <td><button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="cpCfgDelete(${i})">✕</button></td>
+    </tr>`).join('');
+  // Sync le select dans la modal contact
+  const sel = document.getElementById('con-cp');
+  if (sel) {
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Non</option>'
+      + g_cpConfig.map(cp => `<option value="${cp.nom}"${cp.nom===cur?' selected':''}>${cp.nom}</option>`).join('');
+  }
+}
+
+function cpCfgAdd() {
+  g_cpConfig.push({ nom: '', emailTo: '', emailCc: '' });
+  cpCfgRender();
+  // Focus sur le nouveau champ nom
+  const tbody = document.getElementById('cp-cfg-tbody');
+  if (tbody) {
+    const lastRow = tbody.querySelectorAll('tr');
+    const lastInput = lastRow[lastRow.length-1]?.querySelector('input');
+    if (lastInput) lastInput.focus();
+  }
+}
+
+function cpCfgDelete(i) {
+  if (!confirm(`Supprimer "${g_cpConfig[i].nom || 'ce CP'}" ?`)) return;
+  g_cpConfig.splice(i, 1);
+  cpCfgRender();
+}
+
+function cpCfgSave() {
+  localStorage.setItem('dispatch_cp_config', JSON.stringify(g_cpConfig));
+  apiCall('save-cp-config', { cpConfig: g_cpConfig }).catch(() => {});
+  const st = document.getElementById('cp-cfg-status');
+  if (st) { st.textContent = '✓ Enregistré'; setTimeout(() => st.textContent = '', 2000); }
+  // Mettre à jour isCP() dynamiquement
+  _cpNames = g_cpConfig.map(c => c.nom.toLowerCase()).filter(Boolean);
+  toast('Channel Partners mis à jour.');
+}
+
+function cpCfgLoad() {
+  try {
+    const stored = localStorage.getItem('dispatch_cp_config');
+    if (stored) g_cpConfig = JSON.parse(stored);
+  } catch(e) {}
+  cpCfgRender();
+  // Mettre à jour _cpNames pour que isCP() utilise la config sauvegardée
+  _cpNames = g_cpConfig.map(c => (c.nom||'').toLowerCase()).filter(Boolean);
+}
+
+// Noms CP pour isCP() — mis à jour à chaque save
+let _cpNames = g_cpConfig.map(c => c.nom.toLowerCase());
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

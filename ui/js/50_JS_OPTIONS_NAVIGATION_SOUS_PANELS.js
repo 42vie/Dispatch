@@ -1,0 +1,27 @@
+// ║  OPTIONS — NAVIGATION SOUS-PANELS                                        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function optsShowPanel(panel) {
+  ['cp','pj','reseau','nto','diag','stockage'].forEach(p => {
+    const el = document.getElementById('opts-panel-' + p);
+    const btn = document.getElementById('otab-' + p);
+    if (el) el.style.display = p === panel ? '' : 'none';
+    if (btn) {
+      btn.className = p === panel
+        ? 'btn btn-sm btn-purple-out'
+        : 'btn btn-sm btn-ghost';
+    }
+  });
+}
+
+async function runDiagnostic() {
+  const st = document.getElementById('diag-status');
+  if (st) st.textContent = 'Lancement du diagnostic...';
+  try {
+    await apiCall('action', { action: 'DIAG' });
+    if (st) st.textContent = '✓ Diagnostic lancé — regarde la fenêtre AutoIt';
+  } catch (e) {
+    if (st) st.textContent = '✗ Erreur : ' + e.message;
+  }
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

@@ -1,0 +1,95 @@
+// ║  ENVOI DES ACTIONS VERS AUTOIT                                           ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+// Spinner ETMS — affiché pendant les actions longues
+function showSpinner(msg, sub) {
+  const el = document.getElementById('etms-spinner');
+  document.getElementById('etms-spinner-msg').textContent = msg || 'Action en cours...';
+  document.getElementById('etms-spinner-sub').textContent = sub || 'Ne touchez pas à E.TMS pendant l\'exécution';
+  el.classList.add('active');
+}
+function hideSpinner() {
+  document.getElementById('etms-spinner').classList.remove('active');
+}
+
+async function sendAction(actionType, cmd = '') {
+  // Récupération des données depuis la fenêtre d'édition (Modal Edit)
+  const file = document.getElementById('ed-file').value.trim();
+  const client = document.getElementById('ed-client').value.trim();
+  const email = document.getElementById('ed-email').value.trim();
+
+  if (!file) {
+    toast('Erreur : Aucun N° de dossier détecté.');
+    return;
+  }
+
+  const payload = {
+    action: actionType,
+    cmd: cmd,
+    file: file,
+    client: client,
+    email: email
+  };
+
+  // ETMS_CMD : fire-and-forget, pas de spinner, réponse instantanée
+  if (actionType === 'ETMS_CMD') {
+    toast(`→ ${cmd} ${file}`);
+    apiCall('action', payload).catch(e => toast(`Erreur : ${e.message || 'Action échouée'}`));
+    return;
+  }
+
+  if (actionType === 'MAIL_RDV') {
+    showSpinner(`Outlook : Mail RDV pour ${client}`, 'Préparation du mail en cours...');
+  }
+
+  try {
+    await apiCall('action', payload);
+    if (actionType === 'MAIL_RDV') toast(`✓ Mail RDV envoyé pour ${client}`);
+  } catch(e) {
+    toast(`Erreur : ${e.message || 'Action échouée'}`);
+  } finally {
+    hideSpinner();
+  }
+}
+
+// Fonction pour les boutons du header (lit le champ hdr-file)
+async function sendActionHeader(actionType, cmd = '') {
+  const file = document.getElementById('hdr-file').value.trim();
+
+  if (!file) {
+    toast('Saisir un N° de dossier dans le champ J… à gauche des boutons.');
+    document.getElementById('hdr-file').focus();
+    return;
+  }
+
+  // Cherche le client/email dans g_master si le dossier existe
+  const row = g_master.find(r => r.file === file);
+  const client = row ? (row.client || '') : '';
+  const email  = row ? (row.email  || '') : '';
+
+  const payload = {
+    action: actionType,
+    cmd: cmd,
+    file: file,
+    client: client,
+    email: email
+  };
+
+  // ETMS_CMD : fire-and-forget, pas de spinner, réponse instantanée
+  if (actionType === 'ETMS_CMD') {
+    toast(`→ ${cmd} ${file}`);
+    apiCall('action', payload).catch(e => toast(`Erreur : ${e.message || 'Action échouée'}`));
+    return;
+  }
+
+  if (actionType === 'MAIL_RDV') showSpinner(`Mail RDV pour ${client || file}...`);
+
+  try {
+    await apiCall('action', payload);
+  } catch(e) {
+    toast(`Erreur : ${e.message || 'Action échouée'}`);
+  } finally {
+    hideSpinner();
+  }
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

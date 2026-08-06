@@ -1,0 +1,20 @@
+// ║  STATS                                                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function updateStats() {
+  const visible = g_operatorFilter
+    ? g_master.filter(r => (r.operator||'') === g_operatorFilter)
+    : g_master;
+  let total=visible.length, cc=0, fc=0, nto=0;
+  visible.forEach(r=>{
+    const sn=parseInt(statutNum(r.statut));
+    if (sn>=2&&sn<=7) cc++;
+    if (sn===5) fc++;
+    if (sn===7) nto++;
+  });
+  document.getElementById('st-total').textContent=total;
+  document.getElementById('st-cc').textContent=cc;
+  document.getElementById('st-fc').textContent=fc;
+  document.getElementById('st-nto').textContent=nto;
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

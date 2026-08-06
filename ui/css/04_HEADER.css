@@ -1,0 +1,14 @@
+/* HEADER */
+/* ── HEADER ── */
+#header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  z-index: 50;
+}
+

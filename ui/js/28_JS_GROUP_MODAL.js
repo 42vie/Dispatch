@@ -1,0 +1,232 @@
+// ║  GROUP MODAL                                                             ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function openGroup(idx) {
+  g_groupIdx=idx;
+  const r=g_master[idx];
+  const subs=r.file.split(' + ').map(s=>s.trim()).filter(Boolean);
+  document.getElementById('mgrp-title').textContent=
+    `Gestion Groupe : ${r.client} — ${subs.length} dossiers`;
+  let totP=0, totV=0;
+  const rows=subs.map((sf,i)=>{
+    const raw=g_rawData[sf]||{};
+    const p=raw.poids||0,v=raw.vol||0,t=calcTaxable(p,v);
+    const sv=raw.svct||r.svct,d=raw.dept||r.dept;
+    const suppl=raw.supplement||0;
+    totP+=p; totV+=v;
+    return `<tr>
+      <td style="text-align:center"><input type="checkbox" id="grpchk${i}" style="accent-color:var(--green)"></td>
+      <td style="font-family:var(--mono);font-weight:500;color:var(--blue)">${sf}</td>
+      <td style="text-align:right">${fmt(p)} kg</td>
+      <td style="text-align:right">${fmt(v,3)} m³</td>
+      <td style="text-align:right;color:var(--orange)">${fmt(t)} kg</td>
+      <td>${calcTransp(sv,t,d,isCP(r.client),p)}</td>
+      <td style="color:var(--text2)">${sv}</td>
+      <td><input type="number" step="0.01" min="0" value="${suppl}" style="width:70px;text-align:right;font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:3px;padding:2px 4px" onchange="grpSupplUpdate('${sf}',this.value)"></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('mgrp-body').innerHTML=`
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:var(--surface2)">
+        <th style="width:28px;padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)"></th>
+        <th style="padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">File J</th>
+        <th style="padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">Poids brut</th>
+        <th style="padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">Vol</th>
+        <th style="padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">Taxable</th>
+        <th style="padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">Transporteur</th>
+        <th style="padding:5px 6px;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border)">SVCT</th>
+        <th style="padding:5px 6px;font-size:11px;color:var(--teal);border-bottom:1px solid var(--border)">Camion €</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="margin-top:10px;padding:9px 12px;background:var(--blue-bg);border-radius:5px;
+      border:1px solid var(--blue);font-size:12px;color:var(--blue)">
+      <strong>Totaux groupe :</strong> ${fmt(totP)} kg brut &nbsp;·&nbsp;
+      ${fmt(totV,3)} m³ &nbsp;·&nbsp;
+      <span style="color:var(--orange);font-weight:600">${fmt(calcTaxable(totP,totV))} kg taxable</span>
+    </div>
+    <div style="margin-top:12px;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><div style="font-size:11px;font-weight:700;color:var(--purple);text-transform:uppercase;letter-spacing:.5px">Modifier le groupe</div><button class="btn btn-ghost btn-sm" onclick="grpAutoFillContact()" title="Chercher un contact enregistré pour ce client">👤 Auto contact</button></div>
+      <div style="display:grid;grid-template-columns:1fr 90px 90px;gap:8px;margin-bottom:10px"><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Transporteur</label><input id="grp-transp" type="text" value="${r.transp||''}" style="width:100%;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Poids kg</label><input id="grp-poids" type="number" step="0.01" value="${r.poids||0}" style="width:100%;font-size:12px;font-family:var(--mono);border:1px solid var(--border);border-radius:4px;padding:5px 6px;text-align:right;background:var(--surface);color:var(--text)"></div><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Vol m³</label><input id="grp-vol" type="number" step="0.001" value="${r.vol||0}" style="width:100%;font-size:12px;font-family:var(--mono);border:1px solid var(--border);border-radius:4px;padding:5px 6px;text-align:right;background:var(--surface);color:var(--text)"></div></div>
+      <div style="display:grid;grid-template-columns:1.1fr .85fr 1.35fr;gap:8px;margin-bottom:10px"><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Contact groupe</label><input id="grp-contact" type="text" value="${r.contact||''}" placeholder="Nom contact" style="width:100%;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Téléphone</label><input id="grp-tel" type="text" value="${r.tel||''}" placeholder="Téléphone" style="width:100%;font-size:12px;font-family:var(--mono);border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Email</label><input id="grp-email" type="email" value="${r.email||''}" placeholder="email@client.com" style="width:100%;font-size:12px;font-family:var(--mono);border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div></div>
+      <div style="display:grid;grid-template-columns:1fr 120px 120px;gap:8px;align-items:end"><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Commentaire groupe</label><input id="grp-comment" type="text" value="${r.comment||''}" placeholder="Commentaire visible sur le groupe" style="width:100%;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div><div><label style="font-size:10px;color:var(--text3);display:block;margin-bottom:2px">Opérateur</label><input id="grp-operator" type="text" value="${r.operator||''}" placeholder="Prénom" style="width:100%;font-size:12px;border:1px solid var(--border);border-radius:4px;padding:5px 6px;background:var(--surface);color:var(--text)"></div><button class="btn btn-purple-out btn-sm" onclick="grpSaveFields()" style="height:30px">💾 Appliquer</button></div>
+      <div style="font-size:10px;color:var(--text3);margin-top:8px">Ces infos restent sur le groupe et seront reprises quand tu éclates / retires des dossiers du groupe.</div>
+    </div>
+    <p style="margin-top:8px;font-size:11px;color:var(--text3)">
+      Cochez les fichiers avant d'utiliser les boutons.
+    </p>`;
+  openModal('modal-group');
+}
+
+function grpSupplUpdate(file, val) {
+  if (!g_rawData[file]) g_rawData[file] = {};
+  g_rawData[file].supplement = parseFloat(val) || 0;
+  markDirty();
+}
+
+// ── Copier numéro(s) de dossier ──────────────────────────────────────────
+function copyDossier() {
+  const v = document.getElementById('ed-file').value.trim();
+  if (!v) return;
+  navigator.clipboard.writeText(v).then(() => toast('Numéro copié : ' + v));
+}
+
+function copyGroupDossiers() {
+  if (g_groupIdx < 0) return;
+  const r = g_master[g_groupIdx];
+  const subs = (r.file || '').split(' + ').map(s => s.trim()).filter(Boolean);
+  const text = subs.join('\n');
+  navigator.clipboard.writeText(text).then(() => toast(subs.length + ' numéro(s) copié(s)'));
+}
+
+// ── Modifier transporteur / poids / vol du groupe ────────────────────────
+function grpSaveFields() {
+  if (g_groupIdx < 0) return;
+  const r = g_master[g_groupIdx];
+  r.transp = document.getElementById('grp-transp').value.trim();
+  r.poids = parseFloat(document.getElementById('grp-poids').value) || 0;
+  r.vol = parseFloat(document.getElementById('grp-vol').value) || 0;
+  r.taxable = calcTaxable(r.poids, r.vol);
+  r.contact = document.getElementById('grp-contact')?.value.trim() || '';
+  r.tel = document.getElementById('grp-tel')?.value.trim() || '';
+  r.email = document.getElementById('grp-email')?.value.trim() || '';
+  r.comment = document.getElementById('grp-comment')?.value.trim() || '';
+  r.operator = document.getElementById('grp-operator')?.value.trim() || r.operator || '';
+  stampRecord(r);
+  if (r.contact && r.email && Array.isArray(g_contacts)) {
+    const exists = g_contacts.find(c => (c.email||'').toLowerCase() === r.email.toLowerCase());
+    if (!exists) {
+      g_contacts.push({societe:r.client||'', nom:r.contact, tel:r.tel||'', email:r.email, cp:'', notes:'Ajouté depuis groupe'});
+      if (typeof renderContacts === 'function') renderContacts();
+      if (typeof saveContacts === 'function') saveContacts();
+    }
+  }
+  renderMaster(); renderKanban(); updateStats(); markDirty();
+  toast('Groupe mis à jour — contact, transporteur et infos logistiques sauvegardés.');
+}
+
+function grpAutoFillContact() {
+  if (g_groupIdx < 0) return;
+  const r = g_master[g_groupIdx];
+  const c = (g_contacts||[]).find(x => (x.societe||'').toLowerCase() === (r.client||'').toLowerCase())
+        || (g_contacts||[]).find(x => (r.client||'').toLowerCase().includes((x.societe||'').toLowerCase()) && (x.societe||'').length > 2);
+  if (!c) return toast('Aucun contact trouvé pour ce client.');
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+  set('grp-contact', c.nom || '');
+  set('grp-tel', c.tel || '');
+  set('grp-email', c.email || '');
+  toast('Contact groupe rempli depuis le carnet contacts.');
+}
+
+function retirerCochesGroupe() {
+  if (g_groupIdx<0) return;
+  const r=g_master[g_groupIdx];
+  const subs=r.file.split(' + ').map(s=>s.trim()).filter(Boolean);
+  const toRet=subs.filter((_,i)=>{ const el=document.getElementById(`grpchk${i}`); return el&&el.checked; });
+  if (!toRet.length) return toast('Cochez au moins un fichier.');
+  if (toRet.length===subs.length) return toast('Impossible de retirer tous les fichiers.');
+  const remain=subs.filter(f=>!toRet.includes(f));
+  let nP=0,nV=0;
+  remain.forEach(sf=>{const rw=g_rawData[sf]||{};nP+=rw.poids||0;nV+=rw.vol||0;});
+  const nT=calcTaxable(nP,nV);
+  r.file=remain.join(' + ');
+  r.poids=+nP.toFixed(2); r.vol=+nV.toFixed(3); r.taxable=nT;
+  r.transp=calcTransp(r.svct,nT,r.dept,isCP(r.client),nP);
+  const today=new Date().toISOString().slice(0,10);
+  toRet.forEach(sf=>{
+    const raw=g_rawData[sf]||{};
+    // Reprendre les données ORIGINALES du fichier (pas celles du groupe)
+    const origClient=raw.client||r.client;
+    const origRdl=raw.rdl||r.rdl;
+    const p=raw.poids||0,v=raw.vol||0,sv=raw.svct||r.svct,d=raw.dept||r.dept,t=calcTaxable(p,v);
+    const cp=isCP(origClient);
+    const st=r.cc==='Cc'?transpTarget(sv,origClient):'1';
+    // Retrouver le contact original pour ce client
+    const origContact=g_contacts.find(c=>(c.societe||'').toLowerCase()===(origClient||'').toLowerCase());
+    const dup=g_master.find(x=>x.file===sf);
+    if (dup) {
+      Object.assign(dup,{client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp,p),poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||dup.contact||'',tel:origContact?.tel||dup.tel||'',email:origContact?.email||dup.email||'',
+        cc:r.cc==='Cc'?'Cc':'Non',statut:st});
+    } else {
+      g_master.push({file:sf,client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp,p),poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||r.contact||'',tel:origContact?.tel||r.tel||'',email:origContact?.email||r.email||'',
+        cc:r.cc==='Cc'?'Cc':'Non',comment:'',statut:st,_dateCreated:today});
+    }
+  });
+  closeModal('modal-group');
+  renderMaster(); renderKanban(); updateStats();
+  toast(`${toRet.length} fichier(s) retiré(s) du groupe.`);
+}
+
+function validerCCPartiels() {
+  if (g_groupIdx<0) return;
+  const r=g_master[g_groupIdx];
+  const subs=r.file.split(' + ').map(s=>s.trim()).filter(Boolean);
+  const ccY=[],ccN=[];
+  subs.forEach((sf,i)=>{
+    const el=document.getElementById(`grpchk${i}`);
+    (el&&el.checked?ccY:ccN).push(sf);
+  });
+  if (!ccY.length) return toast('Cochez au moins un fichier.');
+  g_master.splice(g_groupIdx,1);
+  const today=new Date().toISOString().slice(0,10);
+  ccY.forEach(sf=>{
+    const raw=g_rawData[sf]||{};
+    const origClient=raw.client||r.client;
+    const origRdl=raw.rdl||r.rdl;
+    const p=raw.poids||0,v=raw.vol||0,sv=raw.svct||r.svct,d=raw.dept||r.dept,t=calcTaxable(p,v);
+    const cp=isCP(origClient);
+    const origContact=g_contacts.find(c=>(c.societe||'').toLowerCase()===(origClient||'').toLowerCase());
+    const dup=g_master.find(x=>x.file===sf);
+    if (dup) {
+      Object.assign(dup,{client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp,p),poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||dup.contact||'',tel:origContact?.tel||dup.tel||'',email:origContact?.email||dup.email||'',
+        cc:'Cc',statut:transpTarget(sv,origClient)});
+    } else {
+      g_master.push({file:sf,client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,cp,p),poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||'',tel:origContact?.tel||'',email:origContact?.email||'',
+        cc:'Cc',comment:'',
+        statut:transpTarget(sv,origClient),_dateCreated:today});
+    }
+    if (cp) addOrUpdateCP(origClient,sf,p,v,t,r.operator);
+  });
+  if (ccN.length){
+    if (ccN.length === 1) {
+      // Un seul fichier restant → remettre en solo avec ses infos originales
+      const sf=ccN[0], raw=g_rawData[sf]||{};
+      const origClient=raw.client||r.client;
+      const origRdl=raw.rdl||r.rdl;
+      const p=raw.poids||0,v=raw.vol||0,sv=raw.svct||r.svct,d=raw.dept||r.dept,t=calcTaxable(p,v);
+      const origContact=g_contacts.find(c=>(c.societe||'').toLowerCase()===(origClient||'').toLowerCase());
+      g_master.push({
+        file:sf,client:origClient,rdl:origRdl,svct:sv,
+        transp:calcTransp(sv,t,d,isCP(origClient),p),
+        poids:p,vol:v,taxable:t,dept:d,
+        contact:origContact?.nom||r.contact||'',tel:origContact?.tel||r.tel||'',email:origContact?.email||r.email||'',
+        cc:'Non',comment:'',statut:'1',_dateCreated:today
+      });
+    } else {
+      // Plusieurs fichiers restants → garder en groupe
+      let nP=0,nV=0;
+      ccN.forEach(sf=>{const rw=g_rawData[sf]||{};nP+=rw.poids||0;nV+=rw.vol||0;});
+      const nT=calcTaxable(nP,nV);
+      g_master.push({
+        file:ccN.join(' + '),client:r.client,rdl:r.rdl,svct:r.svct,
+        transp:calcTransp(r.svct,nT,r.dept,isCP(r.client),nP),
+        poids:+nP.toFixed(2),vol:+nV.toFixed(3),taxable:nT,dept:r.dept,
+        contact:r.contact||'',tel:r.tel||'',email:r.email||'',cc:'Non',
+        comment:'[Groupe - CC en attente]',
+        statut:'1',_dateCreated:today
+      });
+    }
+  }
+  closeModal('modal-group'); g_groupIdx=-1;
+  renderMaster(); renderKanban(); renderCP(); updateStats();
+  toast('CC partielle validée.');
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

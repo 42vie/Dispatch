@@ -1,0 +1,19 @@
+// ║  MODALS                                                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('open');
+  el.style.display = '';
+  if (id==='modal-edit') g_editIdx=-1;
+  if (id==='modal-group') g_groupIdx=-1;
+}
+document.querySelectorAll('.overlay').forEach(o => {
+  o.addEventListener('click', e=>{ if (e.target===o) closeModal(o.id); });
+});
+document.addEventListener('keydown', e => {
+  if (e.key==='Escape') document.querySelectorAll('.overlay.open').forEach(o=>closeModal(o.id));
+});
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

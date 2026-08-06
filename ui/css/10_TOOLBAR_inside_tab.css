@@ -1,0 +1,9 @@
+/* TOOLBAR inside tab */
+/* ── TOOLBAR inside tab ── */
+.tab-toolbar {
+  padding: 7px 12px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+}
+

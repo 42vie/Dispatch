@@ -1,0 +1,8 @@
+/* IMPORT ZONE */
+/* ── IMPORT ZONE ── */
+.import-info {
+  background: var(--blue-bg); border: 1px dashed var(--blue);
+  border-radius: 6px; padding: 10px 14px; font-size: 11px; color: var(--blue);
+  display: flex; align-items: center; gap: 8px;
+}
+.bkd-quick.active{outline:2px solid currentColor;box-shadow:0 0 0 2px rgba(107,63,160,.18);transform:translateY(-1px)}

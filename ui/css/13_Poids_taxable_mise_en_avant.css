@@ -1,0 +1,5 @@
+/* Poids taxable — mise en avant */
+/* Poids taxable — mise en avant */
+.taxable-val { font-family: var(--mono); font-weight: 500; color: var(--orange); }
+.poids-val   { font-family: var(--mono); color: var(--text2); }
+

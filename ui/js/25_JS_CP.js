@@ -1,0 +1,80 @@
+// ║  CP                                                                      ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function addOrUpdateCP(client, file, poids, vol, taxable, operator) {
+  const idx=g_cpData.findIndex(c=>c.client===client && (c.operator||'')===(operator||''));
+  if (idx>=0) {
+    if (!g_cpData[idx].files.includes(file)) {
+      g_cpData[idx].files.push(file);
+      if (!g_cpData[idx]._poidsManual) {
+        g_cpData[idx].poids+=+poids; g_cpData[idx].vol+=+vol;
+        g_cpData[idx].taxable=calcTaxable(g_cpData[idx].poids,g_cpData[idx].vol);
+      }
+    }
+  } else {
+    g_cpData.push({client,files:[file],palettes:'',colis:'',
+      poids:+poids,vol:+vol,taxable:+taxable,doc:'',operator:operator||''});
+  }
+  renderCP();
+}
+
+function renderCP() {
+  const tbody=document.getElementById('cp-tbody');
+  const visible = g_cpData
+    .map((cp,i) => ({cp,i}))
+    .filter(({cp}) => !g_operatorFilter || (cp.operator||'') === g_operatorFilter);
+  tbody.innerHTML=visible.map(({cp,i})=>`
+    <tr>
+      <td style="text-align:center"><input type="checkbox" id="chk-cp-${i}" style="accent-color:var(--green)"></td>
+      <td><input class="inline-inp" style="width:140px;font-weight:600;color:var(--k2-c)" value="${cp.client||''}" oninput="g_cpData[${i}].client=this.value"></td>
+      <td><input class="inline-inp" style="width:100%;font-family:var(--mono);font-size:11px" value="${cp.files.join(' + ')}" oninput="g_cpData[${i}].files=this.value.split(/\\s*\\+\\s*/).map(s=>s.trim()).filter(Boolean)"></td>
+      <td><input class="inline-inp" style="width:55px" value="${cp.palettes||''}" oninput="g_cpData[${i}].palettes=this.value"></td>
+      <td><input class="inline-inp" style="width:55px" value="${cp.colis||''}" oninput="g_cpData[${i}].colis=this.value"></td>
+      <td><input class="inline-inp" style="width:65px;text-align:right" type="number" step="0.01" value="${cp.poids||0}" oninput="g_cpData[${i}].poids=+this.value;g_cpData[${i}]._poidsManual=true;g_cpData[${i}].taxable=+calcTaxable(+this.value,g_cpData[${i}].vol).toFixed(2);_debouncedRenderCP()"></td>
+      <td><input class="inline-inp" style="width:60px;text-align:right" type="number" step="0.001" value="${cp.vol||0}" oninput="g_cpData[${i}].vol=+this.value;g_cpData[${i}]._poidsManual=true;g_cpData[${i}].taxable=+calcTaxable(g_cpData[${i}].poids,+this.value).toFixed(2);_debouncedRenderCP()"></td>
+      <td class="taxable-val" style="text-align:right;font-weight:600">${fmt(cp.taxable)}</td>
+      <td><input class="inline-inp" value="${cp.doc||''}" oninput="g_cpData[${i}].doc=this.value"></td>
+      <td style="text-align:center"><button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="cpDelete(${i})">✕</button></td>
+    </tr>`).join('');
+}
+const _debouncedRenderCP = debounce(renderCP, 300);
+
+// Nettoyer g_cpData : retirer les entrées dont tous les dossiers ont quitté le statut 2
+function cleanupCpData() {
+  const before = g_cpData.length;
+  g_cpData = g_cpData.filter(cp => {
+    // Garder le CP seulement si au moins un de ses fichiers est encore en statut 2
+    return cp.files.some(f => {
+      const r = g_master.find(m => m.file === f || (m.file||'').split(' + ').includes(f));
+      return r && String(r.statut) === '2';
+    });
+  });
+  if (g_cpData.length < before) {
+    console.log(`cleanupCpData: ${before - g_cpData.length} entrée(s) CP obsolète(s) retirée(s)`);
+    renderCP();
+  }
+}
+
+function cpAddManual() {
+  const client = prompt('Nom du client CP :');
+  if (!client) return;
+  const files = prompt('Numéro(s) de dossier (séparés par +) :');
+  if (!files) return;
+  const fileArr = files.split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean);
+  g_cpData.push({
+    client, files: fileArr, palettes: '', colis: '',
+    poids: 0, vol: 0, taxable: 0, doc: '', operator: g_operatorFilter || ''
+  });
+  renderCP(); markDirty();
+  toast('CP ajouté : ' + client + ' — ' + fileArr.length + ' dossier(s).');
+}
+
+function cpDelete(i) {
+  if (!confirm('Supprimer ce CP (' + (g_cpData[i]?.client||'') + ') ?')) return;
+  g_cpData.splice(i, 1);
+  renderCP(); markDirty();
+  toast('CP supprimé.');
+}
+
+// btn-rdv-cp géré par addEventListener ci-dessous
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

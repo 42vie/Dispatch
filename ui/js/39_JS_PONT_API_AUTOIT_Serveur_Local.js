@@ -1,0 +1,52 @@
+// ║  PONT API AUTOIT (Serveur Local)                                         ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+const API_URL = window.location.origin + '/api';
+
+// Fonction générique pour parler à AutoIt
+async function apiCall(endpoint, data = {}) {
+  try {
+    const response = await fetch(`${API_URL}/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return await response.json();
+  } catch (err) {
+    console.error("Erreur API AutoIt:", err);
+  }
+}
+
+// Raccourcis réseau — endpoints dédiés (le body EST le JSON, pas de parsing côté AutoIt)
+async function netSave(path, state) {
+  try {
+    const url = `${API_URL}/net-save?path=${encodeURIComponent(path)}`;
+    const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(state) });
+    return await resp.json();
+  } catch(e) { console.warn('netSave:', e); }
+}
+async function netLoad(path) {
+  try {
+    const url = `${API_URL}/net-load?path=${encodeURIComponent(path)}`;
+    const resp = await fetch(url, { method:'POST' });
+    return await resp.json();
+  } catch(e) { console.warn('netLoad:', e); return null; }
+}
+
+async function netListFiles(pattern) {
+  try {
+    const url = `${API_URL}/net-list?pattern=${encodeURIComponent(pattern)}`;
+    const resp = await fetch(url, { method:'POST' });
+    return await resp.json();
+  } catch(e) { console.warn('netListFiles:', e); return []; }
+}
+
+// Construire le chemin opérateur à partir du chemin de base
+// dispatch_state.json → dispatch_state_Jason.json
+function _opPath(basePath, operatorName) {
+  return basePath.replace(/\.json$/i, '_' + operatorName.replace(/[^a-zA-Z0-9àâäéèêëïîôùûüÿçæœÀÂÄÉÈÊËÏÎÔÙÛÜŸÇÆŒ_-]/g, '') + '.json');
+}
+function _opPattern(basePath) {
+  return basePath.replace(/\.json$/i, '_*.json');
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

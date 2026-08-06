@@ -1,0 +1,5 @@
+/* SPINNER ETMS */
+/* ── SPINNER ETMS ── */
+@keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+#etms-spinner.active { display:flex !important; }
+

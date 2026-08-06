@@ -1,0 +1,46 @@
+/* VARIABLES — thème clair professionnel */
+/* ════════════════════════════════════════════
+   VARIABLES — thème clair professionnel
+═══════════════════════════════════════════════ */
+:root {
+  --bg:       #F0F2F5;
+  --surface:  #FFFFFF;
+  --surface2: #F7F8FA;
+  --border:   #DDE1E8;
+  --border2:  #C8CDD8;
+  --text:     #1A1D23;
+  --text2:    #5A6070;
+  --text3:    #9198A8;
+
+  --blue:     #1A6EBF;
+  --blue-bg:  #EBF3FB;
+  --green:    #1A8C4E;
+  --green-bg: #E8F5EE;
+  --orange:   #C45F10;
+  --orange-bg:#FDF0E6;
+  --red:      #C0272D;
+  --red-bg:   #FDECEA;
+  --purple:   #6B3FA0;
+  --purple-bg:#F2EDF9;
+  --teal:     #0F7E8A;
+  --teal-bg:  #E5F5F6;
+  --gold:     #8A6800;
+  --gold-bg:  #FDF6E3;
+
+  --k1-c: #6B7489; --k1-bg: #F0F1F4;
+  --k9-c: #d4a017; --k9-bg: #FDF6E3;
+  --k2-c: #C0272D; --k2-bg: #FDECEA;
+  --k3-c: #C45F10; --k3-bg: #FDF0E6;
+  --k4-c: #8A6800; --k4-bg: #FDF6E3;
+  --k5-c: #1A8C4E; --k5-bg: #E8F5EE;
+  --k6-c: #1A6EBF; --k6-bg: #EBF3FB;
+  --k7-c: #6B3FA0; --k7-bg: #F2EDF9;
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow:    0 2px 8px rgba(0,0,0,0.10);
+  --shadow-lg: 0 4px 20px rgba(0,0,0,0.13);
+  --radius:    6px;
+  --font: 'DM Sans', sans-serif;
+  --mono: 'DM Mono', monospace;
+}
+

@@ -1,0 +1,49 @@
+// ║  OPTIONS — SAUVEGARDE PJ + RÉSEAU                                        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function optsSavePJ() {
+  const cfg = {
+    path:         (document.getElementById('opts-pj-path')?.value || '').trim(),
+    rdvExt:       (document.getElementById('opts-pj-rdv-ext')?.value || 'pdf').trim(),
+    prealertExt:  (document.getElementById('opts-pj-prealerte-ext')?.value || 'pdf').trim(),
+    upsFolder:    (document.getElementById('opts-pj-ups-folder')?.value || 'UPS').trim(),
+    dgsFolder:    (document.getElementById('opts-pj-dgs-folder')?.value || 'DGS').trim()
+  };
+  localStorage.setItem('dispatch_pj_cfg', JSON.stringify(cfg));
+  // Envoyer à AutoIt pour mise à jour dans l'INI
+  apiCall('save-pj-config', cfg).catch(() => {});
+  const st = document.getElementById('opts-pj-status');
+  if (st) { st.textContent = '✓ Enregistré'; setTimeout(() => st.textContent = '', 2000); }
+}
+
+function optsLoadPJ() {
+  try {
+    const cfg = JSON.parse(localStorage.getItem('dispatch_pj_cfg') || '{}');
+    const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+    set('opts-pj-path', cfg.path);
+    set('opts-pj-rdv-ext', cfg.rdvExt);
+    set('opts-pj-prealerte-ext', cfg.prealertExt);
+    set('opts-pj-ups-folder', cfg.upsFolder);
+    set('opts-pj-dgs-folder', cfg.dgsFolder);
+  } catch(e) {}
+}
+
+function optsSaveReseau() {
+  const path = (document.getElementById('opts-state-path')?.value || '').trim();
+  const name = (document.getElementById('opts-my-name')?.value || '').trim();
+  localStorage.setItem('dispatch_state_path', path);
+  if (name) { localStorage.setItem('dispatch_operator', name); g_operatorFilter = name; }
+  apiCall('save-config', { statePath: path, operatorName: name }).catch(() => {});
+  const st = document.getElementById('opts-reseau-status');
+  if (st) st.textContent = '✓ Configuration enregistrée — ' + new Date().toLocaleTimeString();
+}
+
+function optsLoadReseau() {
+  const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
+  const name = localStorage.getItem('dispatch_operator') || '';
+  const el1 = document.getElementById('opts-state-path');
+  const el2 = document.getElementById('opts-my-name');
+  if (el1 && path) el1.value = path;
+  if (el2 && name) el2.value = name;
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

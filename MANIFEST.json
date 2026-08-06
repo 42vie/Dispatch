@@ -1,467 +1,742 @@
 [
   {
-    "path": "BUILD_Dispatch.bat",
-    "size": 86,
-    "sha256_12": "1883645f54e0"
+    "path": "INTERFACE_BLOCKS_MAP.json",
+    "size": 10499,
+    "sha256_12": "98e902354af6"
   },
   {
-    "path": "Dispatch.exe.NOT_COMPILED.txt",
-    "size": 103,
-    "sha256_12": "1f5f03fe5dc4"
+    "path": "README_INTERFACE_ACTION_BLOCKS.txt",
+    "size": 667,
+    "sha256_12": "7d05cf6a8153"
   },
   {
-    "path": "MainDispatch.au3",
-    "size": 289641,
-    "sha256_12": "6b5b0149d524"
+    "path": "RECONSTRUCTION_CHECK.json",
+    "size": 139,
+    "sha256_12": "e93b23bd6745"
   },
   {
-    "path": "README_Dispatch.txt",
-    "size": 639,
-    "sha256_12": "8d1920f1e711"
+    "path": "action_blocks/css/02_MAIN_STYLE_FULL.html",
+    "size": 20873,
+    "sha256_12": "048072f23100"
   },
   {
-    "path": "audit.log",
-    "size": 0,
-    "sha256_12": "e3b0c44298fc"
+    "path": "action_blocks/html/01_HEAD_IMPORTS_BEFORE_MAIN_STYLE.html",
+    "size": 902,
+    "sha256_12": "0c0e01df877f"
   },
   {
-    "path": "config.ini",
-    "size": 104,
-    "sha256_12": "57eb24dc1a36"
+    "path": "action_blocks/html/03_HTML_HEADER.html",
+    "size": 5408,
+    "sha256_12": "4641aac8dcf9"
   },
   {
-    "path": "contacts.json",
-    "size": 3,
-    "sha256_12": "37517e5f3dc6"
+    "path": "action_blocks/html/04_HTML_TABS.html",
+    "size": 690,
+    "sha256_12": "6cdf8af49fe7"
   },
   {
-    "path": "contacts.tsv",
-    "size": 43,
-    "sha256_12": "59f1390e68b8"
+    "path": "action_blocks/html/05_HTML_CONTENT_DISPATCH_WORKFLOW_CP_CONTACTS.html",
+    "size": 6052,
+    "sha256_12": "dd7b8351d75e"
   },
   {
-    "path": "data.json",
-    "size": 3,
-    "sha256_12": "ca3d163bab05"
+    "path": "action_blocks/html/06_HTML_COMAT.html",
+    "size": 4012,
+    "sha256_12": "dd287cd82ed6"
   },
   {
-    "path": "dispatch.json",
-    "size": 3,
-    "sha256_12": "37517e5f3dc6"
+    "path": "action_blocks/html/07_HTML_NTO.html",
+    "size": 10074,
+    "sha256_12": "0ba278ab38dc"
   },
   {
-    "path": "src/api/ApiActions.au3",
-    "size": 542,
-    "sha256_12": "5936e60f57f5"
+    "path": "action_blocks/html/08_HTML_OPTIONS.html",
+    "size": 14146,
+    "sha256_12": "1a9adb74047d"
   },
   {
-    "path": "src/api/ApiConfig.au3",
-    "size": 546,
-    "sha256_12": "6bce6f453a81"
+    "path": "action_blocks/html/09_HTML_MODAL_EDIT.html",
+    "size": 5208,
+    "sha256_12": "824b80205210"
   },
   {
-    "path": "src/api/ApiContacts.au3",
-    "size": 542,
-    "sha256_12": "49375ba625d2"
+    "path": "action_blocks/html/10_HTML_MODAL_GROUPE.html",
+    "size": 1080,
+    "sha256_12": "806131d763c3"
   },
   {
-    "path": "src/api/ApiJobs.au3",
-    "size": 540,
-    "sha256_12": "b3c1fb1ee9a8"
+    "path": "action_blocks/html/11_HTML_MODAL_AJOUT_MANUEL.html",
+    "size": 1692,
+    "sha256_12": "a6824d17a038"
   },
   {
-    "path": "src/api/ApiNetwork.au3",
-    "size": 547,
-    "sha256_12": "5171b460533f"
+    "path": "action_blocks/html/12_HTML_MODAL_CONTACT.html",
+    "size": 1616,
+    "sha256_12": "bca0e339e2f7"
   },
   {
-    "path": "src/api/ApiPing.au3",
-    "size": 585,
-    "sha256_12": "a2a57ea17d7a"
+    "path": "action_blocks/html/13_HTML_SPINNER_ETMS.html",
+    "size": 1035,
+    "sha256_12": "d3db99f0b2f8"
   },
   {
-    "path": "src/api/ApiState.au3",
-    "size": 554,
-    "sha256_12": "c9220ee9ee0a"
+    "path": "action_blocks/html/14_HTML_KANBAN_ACTION_BAR.html",
+    "size": 2068,
+    "sha256_12": "fbb418017e21"
   },
   {
-    "path": "src/core/Audit.au3",
+    "path": "action_blocks/html/15_HTML_MODAL_KANBAN_MULTI_EDIT.html",
+    "size": 1685,
+    "sha256_12": "6523ae5daa74"
+  },
+  {
+    "path": "action_blocks/html/16_HTML_MODAL_GROUPE_MANUEL.html",
+    "size": 2970,
+    "sha256_12": "d1f0766c6c5e"
+  },
+  {
+    "path": "action_blocks/html/17_HTML_MODAL_KANBAN_CHANGE_STATUT.html",
+    "size": 1529,
+    "sha256_12": "908a76523c2e"
+  },
+  {
+    "path": "action_blocks/js/18_SCRIPT_OPEN_AND_JS_PREFACE.html",
+    "size": 533,
+    "sha256_12": "517ac0671441"
+  },
+  {
+    "path": "action_blocks/js/19_JS_STATE.html",
+    "size": 1728,
+    "sha256_12": "3b48be153b7b"
+  },
+  {
+    "path": "action_blocks/js/20_JS_METIER.html",
+    "size": 4503,
+    "sha256_12": "05b112ecbcbe"
+  },
+  {
+    "path": "action_blocks/js/21_JS_RENDER_MASTER.html",
+    "size": 10888,
+    "sha256_12": "8ec79cda884c"
+  },
+  {
+    "path": "action_blocks/js/22_JS_KANBAN.html",
+    "size": 17362,
+    "sha256_12": "8992de6bf99e"
+  },
+  {
+    "path": "action_blocks/js/23_JS_CC_PROCESSING.html",
+    "size": 4146,
+    "sha256_12": "d46e3ebb22b9"
+  },
+  {
+    "path": "action_blocks/js/24_JS_IMPORT_EXCEL.html",
+    "size": 8093,
+    "sha256_12": "8656c407b359"
+  },
+  {
+    "path": "action_blocks/js/25_JS_CP.html",
+    "size": 4867,
+    "sha256_12": "2183acf2bdb8"
+  },
+  {
+    "path": "action_blocks/js/26_JS_CONTACTS.html",
+    "size": 4789,
+    "sha256_12": "5968f4f4392d"
+  },
+  {
+    "path": "action_blocks/js/27_JS_EDIT_MODAL.html",
+    "size": 4675,
+    "sha256_12": "83191d19127e"
+  },
+  {
+    "path": "action_blocks/js/28_JS_GROUP_MODAL.html",
+    "size": 16147,
+    "sha256_12": "eb058573ffb9"
+  },
+  {
+    "path": "action_blocks/js/29_JS_ADD_MANUAL.html",
+    "size": 2619,
+    "sha256_12": "18ff8f0a7ec6"
+  },
+  {
+    "path": "action_blocks/js/30_JS_CLEAR_DONE.html",
+    "size": 1587,
+    "sha256_12": "23fc29afcb83"
+  },
+  {
+    "path": "action_blocks/js/31_JS_SAVE_LOAD_JSON.html",
+    "size": 1127,
+    "sha256_12": "166a6bed1c3e"
+  },
+  {
+    "path": "action_blocks/js/32_JS_EXPORT_EXCEL_Tableau_Dispatch_complet.html",
+    "size": 3049,
+    "sha256_12": "fbb0f52ff2e3"
+  },
+  {
+    "path": "action_blocks/js/33_JS_EXPORT_IMPORT_WORKFLOW_dossiers_actifs_uniquement.html",
+    "size": 4753,
+    "sha256_12": "436f5beaf4a7"
+  },
+  {
+    "path": "action_blocks/js/34_JS_STATS.html",
+    "size": 1357,
+    "sha256_12": "43c0f5447266"
+  },
+  {
+    "path": "action_blocks/js/35_JS_TABS.html",
+    "size": 1292,
+    "sha256_12": "6eca681662ff"
+  },
+  {
+    "path": "action_blocks/js/36_JS_MODALS.html",
+    "size": 1389,
+    "sha256_12": "5e11f4152dbc"
+  },
+  {
+    "path": "action_blocks/js/37_JS_TOAST.html",
+    "size": 1040,
+    "sha256_12": "90a6d1f615e3"
+  },
+  {
+    "path": "action_blocks/js/38_JS_INIT.html",
+    "size": 870,
+    "sha256_12": "7b5422b6370d"
+  },
+  {
+    "path": "action_blocks/js/39_JS_PONT_API_AUTOIT_Serveur_Local.html",
+    "size": 2632,
+    "sha256_12": "6a30af94b80a"
+  },
+  {
+    "path": "action_blocks/js/40_JS_INDEXEDDB_Stockage_local_haute_capacite_remplace_JSON_localStorage.html",
+    "size": 2570,
+    "sha256_12": "af2b87df3cdd"
+  },
+  {
+    "path": "action_blocks/js/41_JS_AUTO_SAVE_dirty_flag_debounce_ne_sauvegarde_que_si_changement.html",
+    "size": 4035,
+    "sha256_12": "2d2a51baa614"
+  },
+  {
+    "path": "action_blocks/js/42_JS_REFRESH_SYNC_DEPUIS_SERVEUR_sans_recharger_la_page.html",
+    "size": 8557,
+    "sha256_12": "061169cf6ee1"
+  },
+  {
+    "path": "action_blocks/js/43_JS_ENVOI_DES_ACTIONS_VERS_AUTOIT.html",
+    "size": 3635,
+    "sha256_12": "c4de00e965ad"
+  },
+  {
+    "path": "action_blocks/js/44_JS_2_ACTION_BATCH_POUR_LES_CHANNEL_PARTNERS_Onglet_CP.html",
+    "size": 2982,
+    "sha256_12": "c0bd4dc13d04"
+  },
+  {
+    "path": "action_blocks/js/45_JS_COMAT.html",
+    "size": 2905,
+    "sha256_12": "0b1025ef874d"
+  },
+  {
+    "path": "action_blocks/js/46_JS_NTO_MOTEUR_DE_TARIFICATION.html",
+    "size": 26014,
+    "sha256_12": "0a69d0169300"
+  },
+  {
+    "path": "action_blocks/js/47_JS_NTO_BATCH_Kanban_col_7.html",
+    "size": 7478,
+    "sha256_12": "e1f1767862f0"
+  },
+  {
+    "path": "action_blocks/js/48_JS_VERIFICATION_PDF_MANQUANTS.html",
+    "size": 3889,
+    "sha256_12": "5812a70a7eb0"
+  },
+  {
+    "path": "action_blocks/js/49_JS_OPERATEUR_FILTRE_PERSONNE.html",
+    "size": 3848,
+    "sha256_12": "c0eeec02345b"
+  },
+  {
+    "path": "action_blocks/js/50_JS_OPTIONS_NAVIGATION_SOUS_PANELS.html",
+    "size": 1605,
+    "sha256_12": "7823bbc37fe8"
+  },
+  {
+    "path": "action_blocks/js/51_JS_OPTIONS_STOCKAGE_NETTOYAGE_CONTACTS.html",
+    "size": 3056,
+    "sha256_12": "f904919cb5f4"
+  },
+  {
+    "path": "action_blocks/js/52_JS_OPTIONS_SAUVEGARDE_PJ_RESEAU.html",
+    "size": 3030,
+    "sha256_12": "18c8569e44dc"
+  },
+  {
+    "path": "action_blocks/js/53_JS_RESEAU_SAVE_LOAD_SUR_F.html",
+    "size": 9276,
+    "sha256_12": "2d07e41d7352"
+  },
+  {
+    "path": "action_blocks/js/54_JS_OPTIONS_NTO_FUEL.html",
+    "size": 3876,
+    "sha256_12": "e3083574c6ea"
+  },
+  {
+    "path": "action_blocks/js/55_JS_OPTIONS_CHANNEL_PARTNERS_CONFIG.html",
+    "size": 3912,
+    "sha256_12": "ed4bc3d90cf6"
+  },
+  {
+    "path": "action_blocks/js/56_JS_GROUPE_MANUEL.html",
+    "size": 6704,
+    "sha256_12": "7b628ceb3f98"
+  },
+  {
+    "path": "action_blocks/js/57_JS_FC_PARAMS_MODAL.html",
+    "size": 19433,
+    "sha256_12": "952d1b547eb7"
+  },
+  {
+    "path": "action_blocks/js/58_JS_UNDO_historique_de_5_actions.html",
+    "size": 1366,
+    "sha256_12": "729c066bc8bb"
+  },
+  {
+    "path": "action_blocks/js/59_JS_OFFLINE_INDICATOR_polling_serveur_AU3.html",
+    "size": 1744,
+    "sha256_12": "6f0591ba5209"
+  },
+  {
+    "path": "action_blocks/js/60_JS_RDL_OVERDUE_ALERT.html",
     "size": 1112,
-    "sha256_12": "35439a00ee0b"
+    "sha256_12": "8cea322cdbc9"
   },
   {
-    "path": "src/core/BackupUtils.au3",
-    "size": 1347,
-    "sha256_12": "92e4ee15ec85"
+    "path": "action_blocks/js/61_JS_DARK_MODE.html",
+    "size": 939,
+    "sha256_12": "1fe1272fa9b8"
   },
   {
-    "path": "src/core/Config.au3",
-    "size": 11249,
-    "sha256_12": "5718b62db6cd"
+    "path": "action_blocks/patches/62_HTML_MODAL_IDENTITE_FC_PARAMS.html",
+    "size": 8116,
+    "sha256_12": "5bd0a35c3bcc"
   },
   {
-    "path": "src/core/Constants.au3",
-    "size": 563,
-    "sha256_12": "39d0543fad18"
+    "path": "action_blocks/patches/63_PATCH_CLEAN_RESTART_DASHBOARD_FILTERS.html",
+    "size": 27163,
+    "sha256_12": "269ec3cf59a3"
   },
   {
-    "path": "src/core/DateUtils.au3",
-    "size": 10363,
-    "sha256_12": "5b7d651a1978"
+    "path": "action_blocks/patches/64_PATCH_WORKFLOW_TRANSPORT_CHIPS.html",
+    "size": 6065,
+    "sha256_12": "8889a41dad81"
   },
   {
-    "path": "src/core/FileUtils.au3",
-    "size": 12179,
-    "sha256_12": "057d7b717599"
+    "path": "action_blocks/patches/65_PATCH_EDOC_HTML_FULL.html",
+    "size": 14683,
+    "sha256_12": "0c39e5f3a72a"
   },
   {
-    "path": "src/core/Globals.au3",
-    "size": 6957,
-    "sha256_12": "3720feb7ab0b"
+    "path": "action_blocks/patches/66_PATCH_CMR_FULL_UI.html",
+    "size": 14288,
+    "sha256_12": "752b99d4000d"
   },
   {
-    "path": "src/core/HttpResponse.au3",
-    "size": 1827,
-    "sha256_12": "e7534f4309c0"
-  },
-  {
-    "path": "src/core/HttpRouter.au3",
-    "size": 22217,
-    "sha256_12": "24723d453951"
-  },
-  {
-    "path": "src/core/HttpServer.au3",
-    "size": 22219,
-    "sha256_12": "524154428fb8"
-  },
-  {
-    "path": "src/core/JsonUtils.au3",
-    "size": 7733,
-    "sha256_12": "41bce1cbd783"
-  },
-  {
-    "path": "src/core/Security.au3",
-    "size": 568,
-    "sha256_12": "0bf7848ea03a"
-  },
-  {
-    "path": "src/features/cmr/Action_CMR.au3",
-    "size": 544,
-    "sha256_12": "91a92064be45"
-  },
-  {
-    "path": "src/features/cmr/CMR_EDOC.au3",
-    "size": 1164,
-    "sha256_12": "9cc365a5bcb8"
-  },
-  {
-    "path": "src/features/cmr/CMR_Engine.au3",
-    "size": 2081,
-    "sha256_12": "2831ef43658d"
-  },
-  {
-    "path": "src/features/cmr/CMR_Mail.au3",
-    "size": 537,
-    "sha256_12": "52d9f57f9fda"
-  },
-  {
-    "path": "src/features/cmr/CMR_PDF.au3",
-    "size": 536,
-    "sha256_12": "0cedc67c9aca"
-  },
-  {
-    "path": "src/features/comat/Action_COMAT.au3",
-    "size": 4070,
-    "sha256_12": "9ee5185747de"
-  },
-  {
-    "path": "src/features/comat/Batch_COMAT.au3",
-    "size": 8239,
-    "sha256_12": "6fc250c7049b"
-  },
-  {
-    "path": "src/features/diagnostics/ContactsCleanup.au3",
-    "size": 549,
-    "sha256_12": "a729f4a412b0"
-  },
-  {
-    "path": "src/features/diagnostics/Diagnostic.au3",
-    "size": 25139,
-    "sha256_12": "18089dde1ad2"
-  },
-  {
-    "path": "src/features/diagnostics/StorageInfo.au3",
-    "size": 539,
-    "sha256_12": "ae6a44ea34bc"
-  },
-  {
-    "path": "src/features/edoc/Action_EDOC.au3",
-    "size": 11933,
-    "sha256_12": "f3baacba5e49"
-  },
-  {
-    "path": "src/features/edoc/EDOC_Master.au3",
-    "size": 4554,
-    "sha256_12": "ea7e868845b2"
-  },
-  {
-    "path": "src/features/edoc/EDOC_Web.au3",
-    "size": 9256,
-    "sha256_12": "39314dd4aee4"
-  },
-  {
-    "path": "src/features/etms/Action_ETMS.au3",
-    "size": 3495,
-    "sha256_12": "3473a26a8826"
-  },
-  {
-    "path": "src/features/fc/Action_FC.au3",
-    "size": 25572,
-    "sha256_12": "94fb2b512411"
-  },
-  {
-    "path": "src/features/fc/Audit_FC.au3",
-    "size": 5585,
-    "sha256_12": "8a004c99a6ce"
-  },
-  {
-    "path": "src/features/fc/Batch_FC.au3",
-    "size": 542,
-    "sha256_12": "57b5f18c80b5"
-  },
-  {
-    "path": "src/features/mail/Mail_Alertes.au3",
-    "size": 3420,
-    "sha256_12": "b324b1f34f78"
-  },
-  {
-    "path": "src/features/mail/Mail_CP.au3",
-    "size": 5342,
-    "sha256_12": "d1afb5da84df"
-  },
-  {
-    "path": "src/features/mail/Mail_Common.au3",
-    "size": 3687,
-    "sha256_12": "a4adbf8067f2"
-  },
-  {
-    "path": "src/features/mail/Mail_RDV.au3",
-    "size": 3615,
-    "sha256_12": "4d702e692fe8"
-  },
-  {
-    "path": "src/legacy/Dispatch_Legacy_Backup.au3",
-    "size": 289641,
-    "sha256_12": "6b5b0149d524"
-  },
-  {
-    "path": "src/services/ConfigService.au3",
-    "size": 543,
-    "sha256_12": "99e33aaeb2a3"
-  },
-  {
-    "path": "src/services/ContactsService.au3",
-    "size": 3511,
-    "sha256_12": "85c879f768ef"
-  },
-  {
-    "path": "src/services/JobService.au3",
-    "size": 5470,
-    "sha256_12": "30247e15f414"
-  },
-  {
-    "path": "src/services/NetworkStateService.au3",
-    "size": 644,
-    "sha256_12": "8aa5f10ecc78"
-  },
-  {
-    "path": "src/services/StateService.au3",
-    "size": 99255,
-    "sha256_12": "898cd313171a"
-  },
-  {
-    "path": "status.json",
-    "size": 27,
-    "sha256_12": "a0bb6e1403e9"
-  },
-  {
-    "path": "ui/css/00-reset.css",
-    "size": 19,
-    "sha256_12": "55ab92cb7f4e"
-  },
-  {
-    "path": "ui/css/01-variables.css",
-    "size": 23,
-    "sha256_12": "decfa509c50b"
-  },
-  {
-    "path": "ui/css/02-layout.css",
-    "size": 20,
-    "sha256_12": "2a7f92554c5b"
-  },
-  {
-    "path": "ui/css/03-components.css",
-    "size": 20601,
-    "sha256_12": "f055d89b8656"
-  },
-  {
-    "path": "ui/css/04-table.css",
-    "size": 19,
-    "sha256_12": "d0a76460218c"
-  },
-  {
-    "path": "ui/css/05-kanban.css",
-    "size": 20,
-    "sha256_12": "de9c4923dbb8"
-  },
-  {
-    "path": "ui/css/06-modals.css",
-    "size": 20,
-    "sha256_12": "d592466ecb19"
-  },
-  {
-    "path": "ui/css/07-options.css",
-    "size": 1147,
-    "sha256_12": "3fc3193f36be"
-  },
-  {
-    "path": "ui/css/08-dashboard.css",
-    "size": 3304,
-    "sha256_12": "1afd6ffc687c"
-  },
-  {
-    "path": "ui/css/09-cmr.css",
-    "size": 7219,
-    "sha256_12": "b7d63996e008"
-  },
-  {
-    "path": "ui/css/10-responsive.css",
-    "size": 24,
-    "sha256_12": "4e2540ad2668"
-  },
-  {
-    "path": "ui/index.html",
+    "path": "index.html",
     "size": 354609,
     "sha256_12": "f60f33e7be77"
   },
   {
-    "path": "ui/js/00-bootstrap.js",
-    "size": 19,
-    "sha256_12": "eb045a1b48c1"
+    "path": "ui/css/01_VARIABLES_theme_clair_professionnel.css",
+    "size": 1403,
+    "sha256_12": "4f5c55fe31c0"
   },
   {
-    "path": "ui/js/01-state.js",
-    "size": 15,
-    "sha256_12": "1058056326ec"
+    "path": "ui/css/02_DARK_MODE.css",
+    "size": 1365,
+    "sha256_12": "17ee8185e38b"
   },
   {
-    "path": "ui/js/02-utils.js",
-    "size": 15,
-    "sha256_12": "cd76a158a631"
+    "path": "ui/css/03_LAYOUT.css",
+    "size": 104,
+    "sha256_12": "81cf35133fe0"
   },
   {
-    "path": "ui/js/03-api.js",
-    "size": 13,
-    "sha256_12": "538e21203bfb"
+    "path": "ui/css/04_HEADER.css",
+    "size": 262,
+    "sha256_12": "c57fb663d4bd"
   },
   {
-    "path": "ui/js/04-storage.js",
-    "size": 17,
-    "sha256_12": "824cc404c96f"
+    "path": "ui/css/05_Ligne_1_logo_stats_actions_globales.css",
+    "size": 1785,
+    "sha256_12": "4fb88ce331b4"
   },
   {
-    "path": "ui/js/05-contacts.js",
-    "size": 18,
-    "sha256_12": "19b2993eddcc"
+    "path": "ui/css/06_BOUTONS.css",
+    "size": 1419,
+    "sha256_12": "a3d4bcf3bd57"
   },
   {
-    "path": "ui/js/06-dispatch-table.js",
-    "size": 24,
-    "sha256_12": "8c086de00634"
+    "path": "ui/css/07_Ligne_2_ETMS_shortcuts_import_save.css",
+    "size": 741,
+    "sha256_12": "ce27618c352b"
   },
   {
-    "path": "ui/js/07-kanban.js",
-    "size": 16,
-    "sha256_12": "e926ee10cb50"
+    "path": "ui/css/08_TABS.css",
+    "size": 582,
+    "sha256_12": "e50ec1ec66f6"
   },
   {
-    "path": "ui/js/08-groups.js",
-    "size": 16,
-    "sha256_12": "16db1437e430"
+    "path": "ui/css/09_CONTENT.css",
+    "size": 184,
+    "sha256_12": "f5da545d280e"
   },
   {
-    "path": "ui/js/09-workflow.js",
-    "size": 18,
-    "sha256_12": "b876559889bb"
+    "path": "ui/css/10_TOOLBAR_inside_tab.css",
+    "size": 240,
+    "sha256_12": "6cb5dcc7088d"
   },
   {
-    "path": "ui/js/10-actions-etms.js",
-    "size": 22,
-    "sha256_12": "a5031a42cca7"
+    "path": "ui/css/11_MASTER_TABLE.css",
+    "size": 2727,
+    "sha256_12": "d35b3e09dc7b"
   },
   {
-    "path": "ui/js/11-actions-comat.js",
-    "size": 23,
-    "sha256_12": "c70e7f7b9ebf"
+    "path": "ui/css/12_Badges_statut.css",
+    "size": 942,
+    "sha256_12": "fd9f60bae882"
   },
   {
-    "path": "ui/js/12-actions-fc.js",
-    "size": 20,
-    "sha256_12": "52768154146d"
+    "path": "ui/css/13_Poids_taxable_mise_en_avant.css",
+    "size": 224,
+    "sha256_12": "5fa5569d78cb"
   },
   {
-    "path": "ui/js/13-actions-cmr.js",
-    "size": 48258,
-    "sha256_12": "c65bf363cb71"
+    "path": "ui/css/14_KANBAN.css",
+    "size": 2622,
+    "sha256_12": "774c91269218"
   },
   {
-    "path": "ui/js/14-actions-edoc.js",
-    "size": 22,
-    "sha256_12": "ad3aeeb23626"
+    "path": "ui/css/15_Barre_d_actions_flottante.css",
+    "size": 915,
+    "sha256_12": "f0bd5488e77e"
   },
   {
-    "path": "ui/js/15-mail.js",
-    "size": 14,
-    "sha256_12": "945d52a32220"
+    "path": "ui/css/16_CP_TAB.css",
+    "size": 943,
+    "sha256_12": "9863cbf34c5d"
   },
   {
-    "path": "ui/js/16-nto.js",
-    "size": 13,
-    "sha256_12": "dee65d421e0c"
+    "path": "ui/css/17_CONTACTS.css",
+    "size": 704,
+    "sha256_12": "11c2b628cb68"
   },
   {
-    "path": "ui/js/17-options.js",
-    "size": 17,
-    "sha256_12": "dd9df5146f3c"
+    "path": "ui/css/18_PLACEHOLDER.css",
+    "size": 316,
+    "sha256_12": "d2a5ba42f817"
   },
   {
-    "path": "ui/js/18-dashboard.js",
-    "size": 19,
-    "sha256_12": "5b1f3ff13f26"
+    "path": "ui/css/19_MODALS.css",
+    "size": 1999,
+    "sha256_12": "5d2b0d25d70d"
   },
   {
-    "path": "ui/js/19-modals.js",
-    "size": 16,
-    "sha256_12": "89a36d908ae2"
+    "path": "ui/css/20_Badges_jours_sans_reponse.css",
+    "size": 458,
+    "sha256_12": "25c68c628bf3"
   },
   {
-    "path": "ui/js/20-undo.js",
-    "size": 14,
-    "sha256_12": "29a9d34f6745"
+    "path": "ui/css/21_SCROLLBARS.css",
+    "size": 291,
+    "sha256_12": "ccb3b26a211d"
   },
   {
-    "path": "ui/js/21-sync.js",
-    "size": 14,
-    "sha256_12": "254058bc23d2"
+    "path": "ui/css/22_TOAST.css",
+    "size": 348,
+    "sha256_12": "99b8c9a45fcb"
   },
   {
-    "path": "ui/js/22-events.js",
-    "size": 16,
-    "sha256_12": "15b553bf4cdf"
+    "path": "ui/css/23_SPINNER_ETMS.css",
+    "size": 178,
+    "sha256_12": "f67e88eeda66"
   },
   {
-    "path": "ui/js/99-init.js",
+    "path": "ui/css/24_IMPORT_ZONE.css",
+    "size": 374,
+    "sha256_12": "9cfe8f2da3f1"
+  },
+  {
+    "path": "ui/css/INLINE_STYLE_01.css",
+    "size": 20601,
+    "sha256_12": "f055d89b8656"
+  },
+  {
+    "path": "ui/css/INLINE_STYLE_02.css",
+    "size": 4827,
+    "sha256_12": "7231de741a01"
+  },
+  {
+    "path": "ui/css/INLINE_STYLE_03.css",
+    "size": 1105,
+    "sha256_12": "e037bc14c86f"
+  },
+  {
+    "path": "ui/css/INLINE_STYLE_04.css",
+    "size": 3260,
+    "sha256_12": "aeaf1647f039"
+  },
+  {
+    "path": "ui/css/INLINE_STYLE_05.css",
+    "size": 2333,
+    "sha256_12": "489887ca6025"
+  },
+  {
+    "path": "ui/js/18_SCRIPT_OPEN_AND_JS_PREFACE.js",
+    "size": 247,
+    "sha256_12": "3252cb175bdd"
+  },
+  {
+    "path": "ui/js/19_JS_STATE.js",
+    "size": 1469,
+    "sha256_12": "de77a8c8e738"
+  },
+  {
+    "path": "ui/js/20_JS_METIER.js",
+    "size": 4242,
+    "sha256_12": "13ef2b42e089"
+  },
+  {
+    "path": "ui/js/21_JS_RENDER_MASTER.js",
+    "size": 10621,
+    "sha256_12": "17f83de85cb0"
+  },
+  {
+    "path": "ui/js/22_JS_KANBAN.js",
+    "size": 17102,
+    "sha256_12": "a52197a4b1b8"
+  },
+  {
+    "path": "ui/js/23_JS_CC_PROCESSING.js",
+    "size": 3879,
+    "sha256_12": "bde64463c854"
+  },
+  {
+    "path": "ui/js/24_JS_IMPORT_EXCEL.js",
+    "size": 7827,
+    "sha256_12": "68f0953605f0"
+  },
+  {
+    "path": "ui/js/25_JS_CP.js",
+    "size": 4611,
+    "sha256_12": "11dea1478234"
+  },
+  {
+    "path": "ui/js/26_JS_CONTACTS.js",
+    "size": 4527,
+    "sha256_12": "5583218aca30"
+  },
+  {
+    "path": "ui/js/27_JS_EDIT_MODAL.js",
+    "size": 4411,
+    "sha256_12": "ef23e8bfeeaf"
+  },
+  {
+    "path": "ui/js/28_JS_GROUP_MODAL.js",
+    "size": 15882,
+    "sha256_12": "3e526e16ce36"
+  },
+  {
+    "path": "ui/js/29_JS_ADD_MANUAL.js",
+    "size": 2355,
+    "sha256_12": "cade5c63d2d5"
+  },
+  {
+    "path": "ui/js/30_JS_CLEAR_DONE.js",
+    "size": 1323,
+    "sha256_12": "a3d42a03a5db"
+  },
+  {
+    "path": "ui/js/31_JS_SAVE_LOAD_JSON.js",
+    "size": 857,
+    "sha256_12": "6956d8262b0e"
+  },
+  {
+    "path": "ui/js/32_JS_EXPORT_EXCEL_Tableau_Dispatch_complet.js",
+    "size": 2754,
+    "sha256_12": "f3fe5f6d7d63"
+  },
+  {
+    "path": "ui/js/33_JS_EXPORT_IMPORT_WORKFLOW_dossiers_actifs_uniquement.js",
+    "size": 4444,
+    "sha256_12": "bc7901bfafad"
+  },
+  {
+    "path": "ui/js/34_JS_STATS.js",
+    "size": 1098,
+    "sha256_12": "e59a391e76bf"
+  },
+  {
+    "path": "ui/js/35_JS_TABS.js",
+    "size": 1034,
+    "sha256_12": "bfce16d835f4"
+  },
+  {
+    "path": "ui/js/36_JS_MODALS.js",
+    "size": 1129,
+    "sha256_12": "d90ce44ba072"
+  },
+  {
+    "path": "ui/js/37_JS_TOAST.js",
+    "size": 781,
+    "sha256_12": "19dba9a503fc"
+  },
+  {
+    "path": "ui/js/38_JS_INIT.js",
+    "size": 612,
+    "sha256_12": "ad42b341b3d9"
+  },
+  {
+    "path": "ui/js/39_JS_PONT_API_AUTOIT_Serveur_Local.js",
+    "size": 2347,
+    "sha256_12": "31b2470f5065"
+  },
+  {
+    "path": "ui/js/40_JS_INDEXEDDB_Stockage_local_haute_capacite_remplace_JSON_localStorage.js",
+    "size": 2243,
+    "sha256_12": "61a981b291a2"
+  },
+  {
+    "path": "ui/js/41_JS_AUTO_SAVE_dirty_flag_debounce_ne_sauvegarde_que_si_changement.js",
+    "size": 3712,
+    "sha256_12": "08f254218f96"
+  },
+  {
+    "path": "ui/js/42_JS_REFRESH_SYNC_DEPUIS_SERVEUR_sans_recharger_la_page.js",
+    "size": 8249,
+    "sha256_12": "40522a6038b9"
+  },
+  {
+    "path": "ui/js/43_JS_ENVOI_DES_ACTIONS_VERS_AUTOIT.js",
+    "size": 3352,
+    "sha256_12": "4314dabdfa60"
+  },
+  {
+    "path": "ui/js/44_JS_2_ACTION_BATCH_POUR_LES_CHANNEL_PARTNERS_Onglet_CP.js",
+    "size": 2675,
+    "sha256_12": "f064faeb48dd"
+  },
+  {
+    "path": "ui/js/45_JS_COMAT.js",
+    "size": 2646,
+    "sha256_12": "6900298c885a"
+  },
+  {
+    "path": "ui/js/46_JS_NTO_MOTEUR_DE_TARIFICATION.js",
+    "size": 25730,
+    "sha256_12": "6db382c1f89b"
+  },
+  {
+    "path": "ui/js/47_JS_NTO_BATCH_Kanban_col_7.js",
+    "size": 7198,
+    "sha256_12": "37027a40fac7"
+  },
+  {
+    "path": "ui/js/48_JS_VERIFICATION_PDF_MANQUANTS.js",
+    "size": 3608,
+    "sha256_12": "b1383e510a16"
+  },
+  {
+    "path": "ui/js/49_JS_OPERATEUR_FILTRE_PERSONNE.js",
+    "size": 3566,
+    "sha256_12": "de35fa117867"
+  },
+  {
+    "path": "ui/js/50_JS_OPTIONS_NAVIGATION_SOUS_PANELS.js",
+    "size": 1317,
+    "sha256_12": "f5deb13b253f"
+  },
+  {
+    "path": "ui/js/51_JS_OPTIONS_STOCKAGE_NETTOYAGE_CONTACTS.js",
+    "size": 2761,
+    "sha256_12": "35449e0fe7ed"
+  },
+  {
+    "path": "ui/js/52_JS_OPTIONS_SAUVEGARDE_PJ_RESEAU.js",
+    "size": 2741,
+    "sha256_12": "0f5273a574e3"
+  },
+  {
+    "path": "ui/js/53_JS_RESEAU_SAVE_LOAD_SUR_F.js",
+    "size": 8991,
+    "sha256_12": "7639ca0ee484"
+  },
+  {
+    "path": "ui/js/54_JS_OPTIONS_NTO_FUEL.js",
+    "size": 3602,
+    "sha256_12": "23d6d27abe94"
+  },
+  {
+    "path": "ui/js/55_JS_OPTIONS_CHANNEL_PARTNERS_CONFIG.js",
+    "size": 3623,
+    "sha256_12": "3aa20a1f8afe"
+  },
+  {
+    "path": "ui/js/56_JS_GROUPE_MANUEL.js",
+    "size": 6437,
+    "sha256_12": "cc9a51ec8e20"
+  },
+  {
+    "path": "ui/js/57_JS_FC_PARAMS_MODAL.js",
+    "size": 19164,
+    "sha256_12": "26b2270063bc"
+  },
+  {
+    "path": "ui/js/58_JS_UNDO_historique_de_5_actions.js",
+    "size": 1080,
+    "sha256_12": "02be998a7a13"
+  },
+  {
+    "path": "ui/js/59_JS_OFFLINE_INDICATOR_polling_serveur_AU3.js",
+    "size": 1449,
+    "sha256_12": "69e79cb3d2b9"
+  },
+  {
+    "path": "ui/js/60_JS_RDL_OVERDUE_ALERT.js",
+    "size": 841,
+    "sha256_12": "73d89cc87288"
+  },
+  {
+    "path": "ui/js/61_JS_DARK_MODE.js",
+    "size": 664,
+    "sha256_12": "bd283107790c"
+  },
+  {
+    "path": "ui/js/INLINE_SCRIPT_01.js",
     "size": 209202,
     "sha256_12": "895dac48fbcb"
+  },
+  {
+    "path": "ui/js/INLINE_SCRIPT_02.js",
+    "size": 21559,
+    "sha256_12": "bbf24e709a99"
+  },
+  {
+    "path": "ui/js/INLINE_SCRIPT_03.js",
+    "size": 4364,
+    "sha256_12": "6d36d032cc3f"
+  },
+  {
+    "path": "ui/js/INLINE_SCRIPT_04.js",
+    "size": 10842,
+    "sha256_12": "3e3fb9b914a6"
+  },
+  {
+    "path": "ui/js/INLINE_SCRIPT_05.js",
+    "size": 11396,
+    "sha256_12": "a5295b01e55e"
   }
 ]

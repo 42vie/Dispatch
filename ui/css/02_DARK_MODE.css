@@ -1,0 +1,45 @@
+/* DARK MODE */
+/* ── DARK MODE ── */
+html.dark {
+  --bg:       #1A1D23;
+  --surface:  #23272E;
+  --surface2: #2A2E36;
+  --border:   #3A3F4A;
+  --border2:  #4A5060;
+  --text:     #E0E4EC;
+  --text2:    #A0A8B8;
+  --text3:    #6A7080;
+  --blue:     #4A9FE5;
+  --blue-bg:  #1A2D44;
+  --green:    #3ABB6E;
+  --green-bg: #1A3328;
+  --orange:   #E88030;
+  --orange-bg:#3A2810;
+  --red:      #E84040;
+  --red-bg:   #3A1818;
+  --purple:   #9B6FD0;
+  --purple-bg:#2A1E40;
+  --teal:     #3AC0C8;
+  --teal-bg:  #1A3030;
+  --gold:     #D4A840;
+  --gold-bg:  #2A2410;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow:    0 2px 8px rgba(0,0,0,0.4);
+  --shadow-lg: 0 4px 20px rgba(0,0,0,0.5);
+  --k1-c: #8A90A0; --k1-bg: #2A2E36;
+  --k9-c: #D4A840; --k9-bg: #2A2410;
+  --k2-c: #E84040; --k2-bg: #3A1818;
+  --k3-c: #E88030; --k3-bg: #3A2810;
+  --k4-c: #D4A840; --k4-bg: #2A2410;
+  --k5-c: #3ABB6E; --k5-bg: #1A3328;
+  --k6-c: #4A9FE5; --k6-bg: #1A2D44;
+  --k7-c: #9B6FD0; --k7-bg: #2A1E40;
+}
+html.dark input, html.dark textarea, html.dark select {
+  background: var(--surface2); color: var(--text); border-color: var(--border2);
+}
+html.dark .btn { border-color: var(--border2); }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; }
+

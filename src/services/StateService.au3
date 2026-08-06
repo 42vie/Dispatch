@@ -1091,6 +1091,8 @@ Func _QueueGroups()
     If UBound($g_aQueueBlocks) > 0 Then
         Local $res[0]
         Local $hasChecked = False
+        Local $i = 0
+
         For $i = 0 To UBound($g_aQueueBlocks) - 1
             If _GUICtrlListView_GetItemChecked($idQueueList, $i) Then
                 $hasChecked = True
@@ -1098,9 +1100,11 @@ Func _QueueGroups()
                 $res[UBound($res) - 1] = $g_aQueueBlocks[$i]
             EndIf
         Next
+
         If $hasChecked Then Return $res
         Return $g_aQueueBlocks
     EndIf
+
     Return _QueueGroupsFromText(GUICtrlRead($idQueue))
 EndFunc
 

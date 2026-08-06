@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dispatch Master</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #1E1E1E; color: #FFFFFF; margin: 0; padding: 20px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { color: #00FF00; }
+    .status { background: #2D2D30; padding: 20px; border-radius: 8px; margin-top: 20px; }
+    .status-item { margin: 10px 0; }
+    .label { color: #00A0FF; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Dispatch Master</h1>
+    <div class="status">
+      <div class="status-item"><span class="label">Serveur:</span> Connect</div>
+      <div class="status-item"><span class="label">Port:</span> 9500</div>
+      <div class="status-item"><span class="label">API:</span> /api/ping, /api/action, /api/load, /api/save</div>
+      <div class="status-item"><span class="label">Interface:</span> En cours de chargement...</div>
+    </div>
+  </div>
+  <script>
+    console.log("Dispatch interface loaded");
+  </script>
+</body>
+</html>

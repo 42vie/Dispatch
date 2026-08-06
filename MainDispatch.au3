@@ -35,37 +35,24 @@ Opt("GUIOnEventMode", 0)
 #include "src\services\JobService.au3"
 
 ; ========== FEATURES ==========
-; ETMS
 #include "src\features\etms\Action_ETMS.au3"
-
-; COMAT
 #include "src\features\comat\Action_COMAT.au3"
 #include "src\features\comat\Batch_COMAT.au3"
-
-; FC
 #include "src\features\fc\Action_FC.au3"
 #include "src\features\fc\Batch_FC.au3"
 #include "src\features\fc\Audit_FC.au3"
-
-; CMR
 #include "src\features\cmr\Action_CMR.au3"
 #include "src\features\cmr\CMR_Engine.au3"
 #include "src\features\cmr\CMR_Mail.au3"
 #include "src\features\cmr\CMR_EDOC.au3"
 #include "src\features\cmr\CMR_PDF.au3"
-
-; EDOC
 #include "src\features\edoc\Action_EDOC.au3"
 #include "src\features\edoc\EDOC_Web.au3"
 #include "src\features\edoc\EDOC_Master.au3"
-
-; MAIL
 #include "src\features\mail\Mail_Common.au3"
 #include "src\features\mail\Mail_RDV.au3"
 #include "src\features\mail\Mail_Alertes.au3"
 #include "src\features\mail\Mail_CP.au3"
-
-; DIAGNOSTICS
 #include "src\features\diagnostics\Diagnostic.au3"
 #include "src\features\diagnostics\StorageInfo.au3"
 #include "src\features\diagnostics\ContactsCleanup.au3"
@@ -83,10 +70,33 @@ Opt("GUIOnEventMode", 0)
 MainDispatch()
 
 Func MainDispatch()
+    Local $hGUI = GUICreate("Dispatch Server", 300, 100)
+    GUISetBkColor(0x1E1E1E, $hGUI)
+    GUISetFont(10, 400, 0, "Segoe UI", $hGUI)
+    
+    Local $lblStatus = GUICtrlCreateLabel("D marrage...", 20, 20, 260, 30)
+    GUICtrlSetColor($lblStatus, 0x00FF00)
+    GUICtrlSetBkColor($lblStatus, 0x1E1E1E)
+    
+    Local $lblURL = GUICtrlCreateLabel("", 20, 55, 260, 20)
+    GUICtrlSetColor($lblURL, 0x00A0FF)
+    GUICtrlSetBkColor($lblURL, 0x1E1E1E)
+    
+    GUISetState(@SW_SHOW, $hGUI)
+    
     DispatchInitialize()
     DispatchStartServer()
+    GUICtrlSetData($lblStatus, "Serveur HTTP en ligne")
+    
     DispatchOpenInterface()
+    GUICtrlSetData($lblURL, "http://localhost:9500")
+    
+    AuditLog("Dispatch d marr")
+    
     While 1
+        Local $iMsg = GUIGetMsg()
+        If $iMsg = -3 Then Exit
+        
         DispatchProcessClients()
         DispatchProcessBackgroundJobs()
         Sleep(10)
@@ -107,10 +117,10 @@ EndFunc
 Func DispatchStartServer()
     $giMainSocket = TCPListen("0.0.0.0", $giPort, 100)
     If @error Then
-        MsgBox(16, "Erreur", "Impossible de démarrer le serveur HTTP sur le port " & $giPort)
+        MsgBox(16, "Erreur", "Impossible de d marrer le serveur HTTP sur le port " & $giPort)
         Exit
     EndIf
-    AuditLog("Serveur HTTP démarréĺ§ sur port " & $giPort)
+    AuditLog("Serveur HTTP d marr sur port " & $giPort)
 EndFunc
 
 Func DispatchOpenInterface()

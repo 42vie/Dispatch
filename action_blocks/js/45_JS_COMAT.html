@@ -1,0 +1,60 @@
+<!-- ============================================================================
+     JS_COMAT
+     Lignes source Interface.html: 3795-3848
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+// ║  COMAT                                                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.getElementById('btn-comat-multi').onclick = async (e) => {
+  e.stopPropagation();
+  const raw = document.getElementById('comat-list').value.trim();
+  if (!raw) return toast('Liste vide — saisir des N° de dossier.');
+  const numsRaw = raw.split('\n').map(s => s.trim()).filter(Boolean);
+  const nums = [];
+  numsRaw.forEach(n => n.split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean).forEach(s => nums.push(s)));
+  if (!nums.length) return toast('Aucun numéro valide.');
+  if (!confirm('Lancer COMAT sur ' + nums.length + ' dossier(s) ?')) return;
+  _comatRunning = true;
+  const total = nums.length;
+  _batchShowBar('COMAT', 0, total);
+  toast(`COMAT : ${total} dossier(s) — l'interface reste utilisable.`);
+  let done = 0;
+  async function _comatTabNext() {
+    if (done >= nums.length || !_comatRunning) {
+      _comatRunning = false; _batchHideBar();
+      toast(`COMAT terminé — ${done}/${total} dossier(s) traité(s).`);
+      return;
+    }
+    const n = nums[done];
+    _batchShowBar('COMAT', done, total, n);
+    try { await apiCall('action', { action: 'COMAT_MULTI', data: n + ';;;' }); } catch(e) {}
+    done++;
+    _batchShowBar('COMAT', done, total);
+    setTimeout(_comatTabNext, 50);
+  }
+  _comatTabNext();
+};
+
+document.getElementById('btn-comat-solo').onclick = async (e) => {
+  e.stopPropagation();
+  const num = document.getElementById('comat-solo-num').value.trim();
+  if (!num) return toast('Saisir un N° de dossier.');
+  document.getElementById('comat-status').style.display = 'block';
+  document.getElementById('comat-status-txt').textContent = 'COMAT Solo : ' + num + ' en cours...';
+  toast('COMAT Solo : ' + num + ' envoyé à AutoIt...');
+  await apiCall('action', { action: 'COMAT_SOLO', file: num });
+  document.getElementById('comat-status').style.display = 'none';
+  toast('COMAT Solo : ' + num + ' terminé.');
+};
+
+document.getElementById('btn-comat-stop').onclick = async (e) => {
+  e.stopPropagation();
+  await apiCall('action', { action: 'COMAT_STOP' });
+  _comatRunning = false;
+  _batchHideBar();
+  toast('Signal STOP envoyé à AutoIt.');
+};
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

@@ -1,0 +1,46 @@
+<!-- ============================================================================
+     JS_ADD MANUAL
+     Lignes source Interface.html: 2954-2993
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+// ║  ADD MANUAL                                                              ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.getElementById('btn-add-manual').onclick = () => {
+  ['add-file','add-client','add-svct','add-dept','add-transp'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('add-poids').value='0';
+  document.getElementById('add-vol').value='0';
+  openModal('modal-add');
+};
+
+function recalcTranspAdd() {
+  const svct=document.getElementById('add-svct').value;
+  const dept=document.getElementById('add-dept').value;
+  const p=parseFloat(document.getElementById('add-poids').value)||0;
+  const v=parseFloat(document.getElementById('add-vol').value)||0;
+  const client=document.getElementById('add-client').value;
+  document.getElementById('add-transp').value=calcTransp(svct,calcTaxable(p,v),dept,isCP(client));
+}
+
+function saveManual() {
+  const file=document.getElementById('add-file').value.trim();
+  if (!file) return toast('N° dossier obligatoire.');
+  if (g_master.some(r=>r.file===file)) return toast('Ce dossier existe déjà.');
+  const client=document.getElementById('add-client').value;
+  const svct=document.getElementById('add-svct').value;
+  const p=parseFloat(document.getElementById('add-poids').value)||0;
+  const v=parseFloat(document.getElementById('add-vol').value)||0;
+  const t=calcTaxable(p,v);
+  const dept=document.getElementById('add-dept').value;
+  let transp=document.getElementById('add-transp').value||calcTransp(svct,t,dept,isCP(client));
+  const today=new Date().toISOString().slice(0,10);
+  g_master.push({file,client,rdl:'',svct,transp,poids:p,vol:v,taxable:t,
+    dept,contact:'',tel:'',email:'',cc:'Non',comment:'',statut:'1',operator:'',_dateCreated:today});
+  storeRaw(file,client,svct,p,v,t,dept,'');
+  autoFillContact(file,client);
+  closeModal('modal-add');
+  renderMaster(); renderKanban(); updateStats();
+  toast('Dossier ajouté.');
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

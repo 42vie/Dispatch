@@ -1,0 +1,97 @@
+<!-- ============================================================================
+     JS_EDIT MODAL
+     Lignes source Interface.html: 2631-2721
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+// ║  EDIT MODAL                                                              ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+function openEdit(idx) {
+  const r=g_master[idx];
+  if (!r) return;
+  if ((r.file||'').includes(' + ')) { openGroup(idx); return; }
+  g_editIdx=idx;
+  document.getElementById('med-title').textContent=`Édition : ${r.file}`;
+  document.getElementById('ed-file').value=r.file||'';
+  document.getElementById('ed-client').value=r.client||'';
+  document.getElementById('ed-rdl').value=r.rdl||'';
+  document.getElementById('ed-svct').value=r.svct||'';
+  document.getElementById('ed-dept').value=r.dept||'';
+  document.getElementById('ed-transp').value=r.transp||'';
+  document.getElementById('ed-poids').value=r.poids||0;
+  document.getElementById('ed-vol').value=r.vol||0;
+  document.getElementById('ed-taxable-display').textContent=fmt(r.taxable)+' kg taxable';
+  const rawEdit = g_rawData[r.file] || {};
+  document.getElementById('ed-supplement').value = rawEdit.supplement || 0;
+  document.getElementById('ed-contact').value=r.contact||'';
+  document.getElementById('ed-tel').value=r.tel||'';
+  document.getElementById('ed-email').value=r.email||'';
+  document.getElementById('ed-comment').value=r.comment||'';
+  document.getElementById('ed-operator').value=r.operator||'';
+  document.getElementById('ed-statut').value=statutNum(r.statut);
+  document.getElementById('ed-cc').checked=r.cc==='Cc';
+  openModal('modal-edit');
+}
+
+function autoRecalcTaxable() {
+  const p=parseFloat(document.getElementById('ed-poids').value)||0;
+  const v=parseFloat(document.getElementById('ed-vol').value)||0;
+  document.getElementById('ed-taxable-display').textContent=fmt(calcTaxable(p,v))+' kg taxable';
+}
+
+function recalcTransp() {
+  if (g_editIdx<0) return;
+  const r=g_master[g_editIdx];
+  const svct=document.getElementById('ed-svct').value;
+  const dept=document.getElementById('ed-dept').value;
+  const p=parseFloat(document.getElementById('ed-poids').value)||0;
+  const v=parseFloat(document.getElementById('ed-vol').value)||0;
+  const t=calcTaxable(p,v);
+  document.getElementById('ed-transp').value=calcTransp(svct,t,dept,isCP(r.client),p);
+}
+
+function saveEdit() {
+  if (g_editIdx<0) return;
+  const r=g_master[g_editIdx];
+  const ccWas=r.cc;
+  const oldFile=r.file;
+  r.file=document.getElementById('ed-file').value.trim();
+  r.client=document.getElementById('ed-client').value;
+  r.rdl=document.getElementById('ed-rdl').value;
+  r.svct=document.getElementById('ed-svct').value;
+  r.dept=document.getElementById('ed-dept').value;
+  r.transp=document.getElementById('ed-transp').value;
+  r.poids=parseFloat(document.getElementById('ed-poids').value)||0;
+  r.vol=parseFloat(document.getElementById('ed-vol').value)||0;
+  r.taxable=calcTaxable(r.poids,r.vol);
+  // Sauvegarder le supplément camion dans g_rawData
+  const supplVal = parseFloat(document.getElementById('ed-supplement').value) || 0;
+  if (!g_rawData[r.file]) g_rawData[r.file] = {};
+  g_rawData[r.file].supplement = supplVal;
+  r.contact=document.getElementById('ed-contact').value;
+  r.tel=document.getElementById('ed-tel').value;
+  r.email=document.getElementById('ed-email').value;
+  r.comment=document.getElementById('ed-comment').value;
+  r.operator=document.getElementById('ed-operator').value.trim();
+  r.statut=document.getElementById('ed-statut').value; stampRecord(r);
+  // Si contact renseigné → enrichir g_contacts auto
+  if (r.contact&&r.email) {
+    const existing=g_contacts.find(c=>c.email===r.email);
+    if (!existing) {
+      g_contacts.push({societe:r.client,nom:r.contact,tel:r.tel,email:r.email,cp:'',notes:''});
+      renderContacts();
+      saveContacts();
+    }
+  }
+  if (document.getElementById('ed-cc').checked&&ccWas!=='Cc') {
+    closeModal('modal-edit');
+    processCC(g_editIdx);
+  } else {
+    r.cc=document.getElementById('ed-cc').checked?'Cc':'Non';
+    closeModal('modal-edit');
+    renderMaster(); renderKanban(); updateStats();
+  }
+  toast('Dossier enregistré.');
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

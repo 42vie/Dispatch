@@ -1,0 +1,56 @@
+<!-- ============================================================================
+     HTML_MODAL_GROUPE_MANUEL
+     Lignes source Interface.html: 1402-1451
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+<!-- ══ MODAL GROUPE MANUEL ══ -->
+<div class="overlay" id="modal-group-manual">
+  <div class="modal" style="max-width:540px">
+    <div class="modal-hd">
+      <h2>Créer un groupe manuellement</h2>
+      <button class="modal-close" onclick="closeModal('modal-group-manual')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:12px">
+        Saisissez les N° de dossiers J à regrouper (un par ligne ou séparés par espace/virgule).<br>
+        Les dossiers déjà présents dans le Dispatch seront utilisés. Les inconnus seront créés vides.
+      </div>
+      <div class="form-row" style="align-items:flex-start">
+        <label style="margin-top:6px">N° de dossiers</label>
+        <textarea id="grpm-files" rows="4"
+          placeholder="J1A0040247&#10;J1A0040248&#10;J1A0040249"
+          style="flex:1;font-family:var(--mono);font-size:12px;resize:vertical;
+                 border:1px solid var(--border2);border-radius:4px;padding:6px 8px;
+                 background:var(--surface2);color:var(--text)"></textarea>
+      </div>
+      <div id="grpm-preview" style="display:none;margin-top:10px;padding:10px;
+        background:var(--surface2);border:1px solid var(--border);border-radius:5px;font-size:11px">
+      </div>
+      <div class="form-section" style="margin-top:14px">Informations du groupe</div>
+      <div class="form-row"><label>Client</label><input id="grpm-client" type="text"></div>
+      <div class="form-row"><label>RDL</label><input id="grpm-rdl" type="text"></div>
+      <div class="form-row"><label>SVCT</label><input id="grpm-svct" type="text"></div>
+      <div class="form-row">
+        <label>Département</label>
+        <input id="grpm-dept" type="text" style="max-width:70px;flex:unset">
+        <button class="btn btn-orange-out btn-sm" style="margin-left:6px" onclick="grpmAutoTransp()">↺ Auto transp.</button>
+      </div>
+      <div class="form-row"><label>Transporteur</label><input id="grpm-transp" type="text"></div>
+      <div class="form-row">
+        <label>Statut initial</label>
+        <select id="grpm-statut" style="flex:1">
+          <option value="1">1. Pas encore CC</option>
+          <option value="2">2. RDV à envoyer</option>
+          <option value="5" selected>5. Prêt pour FC</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="grpmPreview()">🔍 Aperçu</button>
+      <button class="btn btn-ghost" onclick="closeModal('modal-group-manual')">Annuler</button>
+      <button class="btn btn-success" onclick="grpmSave()">🔗 Créer le groupe</button>
+    </div>
+  </div>
+</div>
+

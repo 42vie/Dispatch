@@ -1,0 +1,33 @@
+<!-- ============================================================================
+     HTML_MODAL_AJOUT_MANUEL
+     Lignes source Interface.html: 1263-1289
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+<!-- ══ MODAL AJOUT MANUEL ══ -->
+<div class="overlay" id="modal-add">
+  <div class="modal">
+    <div class="modal-hd">
+      <h2>Ajouter dossier manuellement</h2>
+      <button class="modal-close" onclick="closeModal('modal-add')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row"><label>N° Dossier (J)*</label><input id="add-file" type="text"></div>
+      <div class="form-row"><label>Client</label><input id="add-client" type="text"></div>
+      <div class="form-row"><label>SVCT</label><input id="add-svct" type="text"></div>
+      <div class="form-row"><label>Poids brut (kg)</label><input id="add-poids" type="number" step="0.01" value="0"></div>
+      <div class="form-row"><label>Volume (m³)</label><input id="add-vol" type="number" step="0.001" value="0"></div>
+      <div class="form-row">
+        <label>Département</label>
+        <input id="add-dept" type="text" style="max-width:70px;flex:unset">
+        <button class="btn btn-orange-out btn-sm" style="margin-left:6px" onclick="recalcTranspAdd()">↺ Auto</button>
+      </div>
+      <div class="form-row"><label>Transporteur</label><input id="add-transp" type="text"></div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add')">Annuler</button>
+      <button class="btn btn-success" onclick="saveManual()">➕ Ajouter</button>
+    </div>
+  </div>
+</div>
+

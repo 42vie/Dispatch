@@ -1,0 +1,23 @@
+<!-- ============================================================================
+     HTML_MODAL_GROUPE
+     Lignes source Interface.html: 1246-1262
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+<!-- ══ MODAL GROUPE ══ -->
+<div class="overlay" id="modal-group">
+  <div class="modal wide">
+    <div class="modal-hd">
+      <h2 id="mgrp-title">Gestion Groupe</h2>
+      <button class="modal-close" onclick="closeModal('modal-group')">✕</button>
+    </div>
+    <div class="modal-body" id="mgrp-body"></div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="closeModal('modal-group')">Fermer</button>
+      <button class="btn btn-sm btn-ghost" onclick="copyGroupDossiers()" title="Copier tous les numéros">📋 Copier n°</button>
+      <button class="btn btn-danger" onclick="retirerCochesGroupe()">⬆ Retirer cochés → Solo</button>
+      <button class="btn btn-success" onclick="validerCCPartiels()">✓ Valider CC (cochés seulement)</button>
+    </div>
+  </div>
+</div>
+

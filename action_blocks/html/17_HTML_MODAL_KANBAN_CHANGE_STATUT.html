@@ -1,0 +1,36 @@
+<!-- ============================================================================
+     HTML_MODAL_KANBAN_CHANGE_STATUT
+     Lignes source Interface.html: 1452-1481
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+<!-- ══ MODAL KANBAN CHANGE STATUT ══ -->
+<div class="overlay" id="modal-kab-status">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-hd">
+      <h2>Changer le statut</h2>
+      <button class="modal-close" onclick="closeModal('modal-kab-status')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:12px" id="kab-status-files"></div>
+      <div class="form-row">
+        <label>Nouveau statut</label>
+        <select id="kab-new-status" style="flex:1">
+          <option value="1">1. Pas encore CC</option>
+          <option value="2">2. RDV à envoyer</option>
+          <option value="3">3. Attente réponse</option>
+          <option value="4">4. Pré-alerte &amp; FC</option>
+          <option value="5">5. Prêt pour FC</option>
+          <option value="6">6. COMAT</option>
+          <option value="7">7. NTO</option>
+          <option value="8">8. Terminé</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="closeModal('modal-kab-status')">Annuler</button>
+      <button class="btn btn-success" onclick="kabApplyStatus()">✓ Appliquer</button>
+    </div>
+  </div>
+</div>
+

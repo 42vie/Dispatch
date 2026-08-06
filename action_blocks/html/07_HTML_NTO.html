@@ -1,0 +1,160 @@
+<!-- ============================================================================
+     HTML_NTO
+     Lignes source Interface.html: 807-960
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+  <!-- NTO -->
+  <div class="tabpane" id="tab-nto">
+    <div class="tab-toolbar">
+      <span style="font-size:11px;font-weight:600;color:var(--purple)">NTO — Calcul Tarification Transport</span>
+      <div style="flex:1"></div>
+      <button class="btn btn-purple-out btn-sm" id="nto-btn-mode-j" onclick="ntoSetMode('j')">📦 Par dossier J</button>
+      <button class="btn btn-ghost btn-sm" id="nto-btn-mode-m" onclick="ntoSetMode('m')" style="margin-left:4px">✏ Saisie manuelle</button>
+    </div>
+    <div style="display:flex;gap:0;flex:1;overflow:hidden;min-height:0">
+
+      <!-- ── GAUCHE : saisie ── -->
+      <div style="width:300px;flex-shrink:0;border-right:1px solid var(--border);padding:16px;display:flex;flex-direction:column;gap:10px;overflow:hidden">
+
+        <!-- Mode J -->
+        <div id="nto-panel-j">
+          <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Par dossier J</div>
+          <div class="form-row">
+            <label>N° Dossier</label>
+            <input id="nto-inp-j" type="text" placeholder="J1A0040357"
+              onkeydown="if(event.key==='Enter') ntoLoadDossier()"
+              onfocus="this.style.borderColor='var(--purple)'"
+              onblur="this.style.borderColor='var(--border2)'">
+          </div>
+          <button class="btn btn-ghost" onclick="ntoLoadDossier()" style="width:100%;margin-top:2px">↺ Charger depuis Dispatch</button>
+          <div id="nto-detected" style="display:none;margin-top:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;font-size:11px">
+            <div style="color:var(--text2);margin-bottom:6px">Données détectées — modifiables :</div>
+            <div style="display:flex;gap:6px;margin-bottom:5px;align-items:center">
+              <label style="color:var(--text3);white-space:nowrap">Poids brut</label>
+              <input id="nto-det-poids" type="number" step="0.01" min="0"
+                style="width:75px;height:22px;font-size:11px;font-family:var(--mono);
+                       border:1px solid var(--border2);border-radius:3px;
+                       background:var(--surface);color:var(--text);padding:0 5px"
+                oninput="ntoRecalcFromJ()">
+              <label style="color:var(--text3);white-space:nowrap">Volume</label>
+              <input id="nto-det-vol" type="number" step="0.001" min="0"
+                style="width:70px;height:22px;font-size:11px;font-family:var(--mono);
+                       border:1px solid var(--border2);border-radius:3px;
+                       background:var(--surface);color:var(--text);padding:0 5px"
+                oninput="ntoRecalcFromJ()">
+            </div>
+            <div style="font-family:var(--mono)">Dept <strong id="nto-det-dept">—</strong> · <strong id="nto-det-taxable">—</strong> kg taxable</div>
+            <div style="color:var(--text3);margin-top:3px" id="nto-det-transp">—</div>
+          </div>
+        </div>
+
+        <!-- Mode Manuel -->
+        <div id="nto-panel-m" style="display:none">
+          <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Saisie manuelle</div>
+          <div class="form-row">
+            <label>Département</label>
+            <input id="nto-inp-dept" type="text" placeholder="75" maxlength="3"
+              style="max-width:70px;flex:unset"
+              onfocus="this.style.borderColor='var(--purple)'"
+              onblur="this.style.borderColor='var(--border2)'">
+          </div>
+          <div class="form-row">
+            <label>Poids taxable (kg)</label>
+            <input id="nto-inp-taxable" type="number" step="0.01" min="0" placeholder="0.00"
+              onfocus="this.style.borderColor='var(--purple)'"
+              onblur="this.style.borderColor='var(--border2)'">
+          </div>
+          <div class="form-row">
+            <label>Transporteur</label>
+            <select id="nto-inp-transp">
+              <option value="auto">Auto-détection</option>
+              <option value="DGS">DGS (National)</option>
+              <option value="UTE">Cartage / Flex (IDF)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="flex:1"></div>
+
+        <!-- Fuel indicator -->
+        <div style="background:var(--gold-bg);border:1px solid var(--gold);border-radius:5px;padding:8px 12px;font-size:11px;color:var(--gold);display:flex;justify-content:space-between;align-items:center">
+          <span>⛽ Fuel <span id="nto-fuel-month"></span></span>
+          <div style="display:flex;align-items:center;gap:4px">
+            <input id="nto-fuel-rate" type="number" step="0.1" min="0" max="30"
+              style="width:58px;height:24px;text-align:right;font-family:var(--mono);font-size:12px;font-weight:700;
+                     border:1px solid var(--gold);border-radius:4px;background:transparent;color:var(--gold);padding:0 4px"
+              title="Taux fuel modifiable" onchange="ntoSaveFuelOverride()">
+            <span style="font-size:11px;color:var(--gold)">%</span>
+          </div>
+        </div>
+
+        <button class="btn btn-purple-out" onclick="ntoCalculer()" style="height:40px;font-size:13px;font-weight:600">
+          🧮 Calculer NTO
+        </button>
+      </div>
+
+      <!-- ── DROITE : résultat ── -->
+      <div style="flex:1;padding:16px;display:flex;flex-direction:column;gap:12px;overflow:auto">
+
+        <div id="nto-empty" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;opacity:.45">
+          <div style="font-size:42px">🧮</div>
+          <div style="font-size:16px;font-weight:600;color:var(--k7-c)">NTO — Tarification</div>
+          <div style="font-size:12px;color:var(--text2)">Saisir les informations et cliquer sur Calculer</div>
+        </div>
+
+        <!-- BATCH NTO — déclenché par Kanban col 7 -->
+        <div id="nto-batch" style="display:none;flex-direction:column;gap:10px;overflow:hidden;flex:1;min-height:0">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+            <div style="font-size:13px;font-weight:700;color:var(--k7-c)" id="nto-batch-title">NTO Batch</div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-purple-out btn-sm" onclick="ntoBatchCopier()">📋 Copier (coller en B)</button>
+              <button class="btn btn-success btn-sm" onclick="ntoBatchValider()">✓ Passer statut 8</button>
+              <button class="btn btn-ghost btn-sm" onclick="ntoBatchFermer()">✕</button>
+            </div>
+          </div>
+          <!-- en-tête -->
+          <div style="display:grid;grid-template-columns:150px 55px 1fr 90px;flex-shrink:0;background:var(--surface2);border:1px solid var(--border);border-radius:5px 5px 0 0">
+            <div style="padding:5px 8px;font-size:11px;font-weight:600;color:var(--text2);border-right:1px solid var(--border)">Dossier (col B)</div>
+            <div style="padding:5px 8px;font-size:11px;font-weight:600;color:var(--text2);border-right:1px solid var(--border)">Event</div>
+            <div style="padding:5px 8px;font-size:11px;font-weight:600;color:var(--text2);border-right:1px solid var(--border)">Détail calcul</div>
+            <div style="padding:5px 8px;font-size:11px;font-weight:600;color:var(--purple);text-align:right">Remark</div>
+          </div>
+          <!-- lignes -->
+          <div id="nto-batch-body" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-top:none;border-radius:0 0 5px 5px;min-height:0"></div>
+          <!-- total -->
+          <div style="background:var(--purple-bg);border:1px solid var(--purple);border-radius:5px;padding:9px 14px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+            <span style="font-size:11px;color:var(--purple)"><strong id="nto-batch-count">0</strong> dossier(s) · <span id="nto-batch-skip" style="color:var(--text3)"></span></span>
+            <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--purple)" id="nto-batch-total">—</span>
+          </div>
+        </div>
+
+        <div id="nto-result" style="display:none;flex-direction:column;gap:14px">
+
+          <!-- Total header -->
+          <div style="background:var(--purple-bg);border:1px solid var(--purple);border-radius:8px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <div style="font-size:12px;font-weight:700;color:var(--purple);text-transform:uppercase;letter-spacing:.5px" id="nto-res-transp-lbl">—</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:3px" id="nto-res-dept-lbl">—</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:32px;font-weight:700;color:var(--purple);font-family:var(--mono)" id="nto-res-total">—</div>
+              <div style="font-size:10px;color:var(--text3)">EUR TTC fuel inclus</div>
+            </div>
+          </div>
+
+          <!-- Détail -->
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:14px">
+            <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:.4px">Détail du calcul</div>
+            <div id="nto-res-detail" style="display:flex;flex-direction:column;gap:7px;font-size:12px"></div>
+          </div>
+
+          <button class="btn btn-purple-out" onclick="ntoCopier()" style="height:36px;font-size:12px">
+            📋 Copier résultat dans le presse-papiers
+          </button>
+
+        </div>
+      </div>
+    </div>
+  </div>
+

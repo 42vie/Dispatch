@@ -1,0 +1,15 @@
+<!-- ============================================================================
+     JS_SAVE / LOAD JSON
+     Lignes source Interface.html: 3013-3021
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+// ║  SAVE / LOAD JSON                                                        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.getElementById('btn-save').onclick = () => {
+  const data=JSON.stringify({master:g_master,rawData:g_rawData,cpData:g_cpData,contacts:g_contacts},null,2);
+  downloadText('DispatchMaster_'+new Date().toISOString().slice(0,16).replace('T','_')+'.json', data);
+  toast('Sauvegarde téléchargée.');
+};
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

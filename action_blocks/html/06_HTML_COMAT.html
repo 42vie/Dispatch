@@ -1,0 +1,62 @@
+<!-- ============================================================================
+     HTML_COMAT
+     Lignes source Interface.html: 751-806
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+<!-- COMAT -->
+<div class="tabpane" id="tab-comat">
+  <div class="tab-toolbar">
+    <span style="font-size:11px;color:var(--text3)">Saisir un ou plusieurs N° de dossier J</span>
+    <div style="flex:1"></div>
+    <button class="btn btn-ghost btn-sm" style="color:var(--red)" id="btn-comat-stop">⛔ STOP</button>
+  </div>
+  <div style="display:flex;gap:0;flex:1;overflow:hidden;min-height:0">
+    <!-- Colonne gauche : saisie manuelle multi -->
+    <div style="width:280px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;padding:14px;gap:10px;overflow:hidden">
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">COMAT Multi (liste)</div>
+      <textarea id="comat-list" placeholder="J123456&#10;J789012&#10;J345678"
+        style="flex:1;resize:none;background:var(--surface2);border:1px solid var(--border2);
+               border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;
+               padding:10px;outline:none"
+        onfocus="this.style.borderColor='var(--blue)'"
+        onblur="this.style.borderColor='var(--border2)'"></textarea>
+      <button class="btn btn-blue-out" id="btn-comat-multi" style="height:38px;font-size:13px;flex-shrink:0">
+        ▶ Lancer COMAT Multi
+      </button>
+    </div>
+    <!-- Colonne droite : solo + info -->
+    <div style="flex:1;display:flex;flex-direction:column;padding:14px;gap:14px;overflow:auto">
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">COMAT Solo</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="comat-solo-num" type="text" placeholder="N° dossier J…"
+          style="width:160px;height:32px;border:1px solid var(--border2);background:var(--surface2);
+                 color:var(--text);font-family:var(--mono);font-size:12px;padding:0 10px;
+                 border-radius:5px;outline:none"
+          onfocus="this.style.borderColor='var(--blue)'"
+          onblur="this.style.borderColor='var(--border2)'"
+          onkeydown="if(event.key==='Enter') document.getElementById('btn-comat-solo').click()">
+        <button class="btn btn-ghost" id="btn-comat-solo" style="color:var(--blue)">
+          ▶ Lancer Solo
+        </button>
+      </div>
+      <!-- Info séquence -->
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:12px 14px">
+        <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:8px">Séquence automatisée</div>
+        <div style="display:flex;flex-direction:column;gap:5px;font-size:11px;font-family:var(--mono);color:var(--text2)">
+          <span>1 · LOG J → <kbd style="background:var(--border);padding:1px 5px;border-radius:3px">F8</kbd></span>
+          <span>2 · <kbd style="background:var(--border);padding:1px 5px;border-radius:3px">F3</kbd></span>
+          <span>3 · <kbd style="background:var(--border);padding:1px 5px;border-radius:3px">F5</kbd> × 4</span>
+          <span>4 · <kbd style="background:var(--border);padding:1px 5px;border-radius:3px">F1</kbd> → TAB × 6 → <kbd style="background:var(--border);padding:1px 5px;border-radius:3px">C</kbd> → <kbd style="background:var(--border);padding:1px 5px;border-radius:3px">F5</kbd> × 4</span>
+          <span>5 · Retour LOG</span>
+        </div>
+      </div>
+      <!-- Statut en temps réel -->
+      <div id="comat-status" style="display:none;background:var(--blue-bg);border:1px solid var(--blue);
+           border-radius:6px;padding:10px 14px;font-size:12px;color:var(--blue)">
+        ⏳ <span id="comat-status-txt">En cours...</span>
+      </div>
+    </div>
+  </div>
+</div>
+

@@ -1,0 +1,118 @@
+<!-- ============================================================================
+     HTML_CONTENT_DISPATCH_WORKFLOW_CP_CONTACTS
+     Lignes source Interface.html: 639-750
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+<!-- ══ CONTENT ══ -->
+<div id="content">
+
+  <!-- DISPATCH -->
+  <div class="tabpane active" id="tab-dispatch">
+    <div class="tab-toolbar">
+      <span style="font-size:11px;color:var(--text3)">Double-clic pour éditer · Case à cocher pour valider CC</span>
+      <div style="flex:1"></div>
+      <div class="import-info" id="import-info" style="display:none">
+        <span>ℹ</span>
+        <span id="import-info-text"></span>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="t-master" id="master-table">
+        <thead>
+          <tr>
+            <th style="width:30px"></th>
+            <th style="width:115px" data-col="file">File J <span class="col-filter-btn" onclick="event.stopPropagation();openColFilter(this,'file')">▼</span></th>
+            <th style="width:145px" data-col="client">Client <span class="col-filter-btn" onclick="event.stopPropagation();openColFilter(this,'client')">▼</span></th>
+            <th style="width:62px"  data-col="rdl">RDL</th>
+            <th style="width:54px"  data-col="svct">SVCT <span class="col-filter-btn" onclick="event.stopPropagation();openColFilter(this,'svct')">▼</span></th>
+            <th style="width:125px" data-col="transp">Transp. <span class="col-filter-btn" onclick="event.stopPropagation();openColFilter(this,'transp')">▼</span></th>
+            <th style="width:66px"  data-col="poids">Poids kg</th>
+            <th style="width:60px"  data-col="vol">Vol m³</th>
+            <th style="width:72px"  data-col="taxable">Taxable</th>
+            <th style="width:44px"  data-col="dept">Dept <span class="col-filter-btn" onclick="event.stopPropagation();openColFilter(this,'dept')">▼</span></th>
+            <th style="width:94px"  data-col="contact">Contact</th>
+            <th style="width:90px"  data-col="tel">Tél</th>
+            <th style="width:120px" data-col="email">Email</th>
+            <th style="width:44px"  data-col="cc">Cc <span class="col-filter-btn" onclick="event.stopPropagation();openColFilter(this,'cc')">▼</span></th>
+            <th style="width:80px"  data-col="days">⏳ J+</th>
+            <th style="width:155px" data-col="comment">Commentaire</th>
+            <th style="width:155px" data-col="statut">Statut <span class="col-filter-btn" onclick="event.stopPropagation();openColFilter(this,'statut')">▼</span></th>
+          </tr>
+        </thead>
+        <tbody id="master-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- WORKFLOW KANBAN -->
+  <div class="tabpane" id="tab-workflow">
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0">
+      <span style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Trier par</span>
+      <select id="kanban-sort" style="height:28px;font-size:11px;border:1px solid var(--border2);border-radius:5px;background:var(--surface2);color:var(--text);padding:0 8px" onchange="renderKanban()">
+        <option value="">Défaut (ordre d'import)</option>
+        <option value="transp">Transporteur</option>
+        <option value="client">Client</option>
+        <option value="_dateCreated">Date création</option>
+        <option value="rdl">RDL</option>
+        <option value="dept">Département</option>
+      </select>
+    </div>
+    <div id="kanban-wrap">
+      <!-- 7 colonnes générées en JS -->
+    </div>
+  </div>
+
+  <!-- CHANNEL PARTNERS -->
+  <div class="tabpane" id="tab-cp">
+    <div class="tab-toolbar">
+      <button class="btn btn-success btn-sm" onclick="cpAddManual()">+ Ajouter CP</button>
+      <button class="btn btn-danger" id="btn-rdv-cp">⚡ Envoyer Demandes RDV (cochés)</button>
+      <button class="btn btn-purple-out" id="btn-retirer-cp">↗ Retirer fichiers du groupe</button>
+    </div>
+    <div class="cp-wrap">
+      <table class="t-cp" id="cp-table">
+        <thead><tr>
+          <th style="width:30px"></th>
+          <th style="width:155px">Client CP</th>
+          <th>Commandes (Files J)</th>
+          <th style="width:70px">Palettes</th>
+          <th style="width:70px">Colis</th>
+          <th style="width:80px">Poids kg</th>
+          <th style="width:72px">Vol m³</th>
+          <th style="width:82px">Taxable kg</th>
+          <th style="width:200px">Doc. Consolidé</th>
+          <th style="width:40px"></th>
+        </tr></thead>
+        <tbody id="cp-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- CONTACTS CLIENTS -->
+  <div class="tabpane" id="tab-contacts">
+    <div class="tab-toolbar">
+      <button class="btn btn-success btn-sm" id="btn-add-contact">➕ Ajouter Contact</button>
+      <div style="flex:1"></div>
+      <span style="font-size:11px;color:var(--text3)">Fichier indépendant — partageable entre collègues</span>
+      <button class="btn btn-ghost btn-sm" id="btn-export-contacts" title="Exporter les contacts dans un fichier séparé">📤 Exporter</button>
+      <button class="btn btn-ghost btn-sm" id="btn-import-contacts" title="Importer des contacts depuis un fichier">📥 Importer</button>
+      <input type="file" id="contacts-input" accept=".json,.tsv,.txt" style="display:none">
+    </div>
+    <div class="contacts-wrap">
+      <table class="t-contacts" id="contacts-table">
+        <thead><tr>
+          <th style="width:155px">Société / Client</th>
+          <th style="width:140px">Nom Contact</th>
+          <th style="width:130px">Téléphone</th>
+          <th style="width:190px">Email</th>
+          <th style="width:90px">CP (Arrow/SCC…)</th>
+          <th>Notes</th>
+          <th style="width:80px">Actions</th>
+        </tr></thead>
+        <tbody id="contacts-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+

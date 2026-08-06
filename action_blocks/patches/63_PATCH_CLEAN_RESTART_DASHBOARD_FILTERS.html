@@ -1,0 +1,182 @@
+<!-- ============================================================================
+     PATCH_CLEAN_RESTART_DASHBOARD_FILTERS
+     Lignes source Interface.html: 5640-5815
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+<!-- UX_FILTERS: EFDS Groussard --><!-- DispatchMaster FINAL UX V2 - save indicator + filtres + CP persistence + actions audit -->
+
+<!-- ============================================================
+     CLEAN RESTART - Dashboard + Dispatch chips + CMR fusion
+     Une seule couche propre, sans les patchs empilés précédents.
+     ============================================================ -->
+<style id="clean-restart-style">
+  #cr-dashboard, #cr-cmr { height:100%; overflow:auto; background:var(--bg); }
+  .cr-page { padding:12px; display:flex; flex-direction:column; gap:12px; }
+  .cr-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+  .cr-card { background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow-sm); padding:13px; }
+  .cr-card h3 { margin:0 0 8px; font-size:11px; color:var(--text3); text-transform:uppercase; letter-spacing:.45px; font-weight:800; }
+  .cr-kpi { font-family:var(--mono); font-size:26px; font-weight:800; color:var(--text); line-height:1; }
+  .cr-sub { font-size:11px; color:var(--text3); margin-top:5px; }
+  .cr-wide { grid-column:span 2; }
+  .cr-full { grid-column:span 4; }
+  .cr-row { display:grid; grid-template-columns:130px 1fr 42px; gap:8px; align-items:center; margin:7px 0; font-size:11px; color:var(--text2); }
+  .cr-track { height:8px; background:var(--border); border-radius:999px; overflow:hidden; }
+  .cr-bar { height:100%; background:var(--blue); border-radius:999px; }
+  .cr-status-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+  .cr-status-cell { border:1px solid var(--border); background:var(--surface2); border-radius:10px; padding:9px; }
+  .cr-status-cell b { display:block; font-family:var(--mono); font-size:19px; }
+  .cr-status-cell span { font-size:10px; color:var(--text3); }
+  .cr-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .cr-alert-chip, .cr-chip { height:28px; padding:0 12px; border-radius:999px; border:1px solid var(--border2); background:var(--surface2); color:var(--text2); font-size:11px; font-weight:800; cursor:pointer; display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+  .cr-alert-chip:hover, .cr-chip:hover { border-color:var(--blue); color:var(--blue); background:var(--blue-bg); }
+  .cr-chip.active { border-color:var(--blue); color:var(--blue); background:var(--blue-bg); box-shadow:0 0 0 2px rgba(26,110,191,.10); }
+  .cr-danger { border-color:var(--red)!important; color:var(--red)!important; background:var(--red-bg)!important; }
+  .cr-warn { border-color:var(--orange)!important; color:var(--orange)!important; background:var(--orange-bg)!important; }
+  .cr-good { border-color:var(--green)!important; color:var(--green)!important; background:var(--green-bg)!important; }
+  #cr-filter-panel { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:8px 12px; background:var(--surface); border-bottom:1px solid var(--border); }
+  #cr-chip-row { display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
+  #cr-filter-count { font-size:11px; color:var(--text3); font-weight:700; }
+  .cr-hidden { display:none!important; }
+  #cr-edit-panel { display:none; }
+  #cr-edit-panel.open { display:block; }
+  .cr-table-wrap { max-height:470px; overflow:auto; border:1px solid var(--border); border-radius:12px; }
+  .cr-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .cr-table th { position:sticky; top:0; background:var(--surface2); z-index:4; text-align:left; padding:8px; border-bottom:1px solid var(--border); color:var(--text2); font-size:11px; white-space:nowrap; }
+  .cr-table td { padding:6px 7px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  .cr-table tr:hover { background:var(--blue-bg); }
+  .cr-file { font-family:var(--mono); font-weight:800; color:var(--blue); white-space:nowrap; }
+  .cr-input { width:100%; height:28px; border:1px solid var(--border2); border-radius:7px; background:var(--surface2); color:var(--text); font-size:12px; padding:0 8px; outline:none; }
+  .cr-input:focus { border-color:var(--blue); background:var(--surface); }
+  .cr-missing { box-shadow:inset 0 0 0 1px var(--orange); background:var(--orange-bg)!important; }
+  .cr-mini { height:25px; padding:0 8px; font-size:10px; border-radius:999px; }
+  .cr-cmr-layout { display:grid; grid-template-columns:360px 1fr; gap:12px; height:100%; min-height:0; }
+  .cr-textarea { width:100%; min-height:180px; resize:vertical; border:1px solid var(--border2); border-radius:10px; background:var(--surface2); color:var(--text); font-family:var(--mono); font-size:12px; padding:10px; outline:none; }
+  .cr-live { font-family:var(--mono); font-size:11px; color:var(--purple); background:var(--purple-bg); border:1px solid var(--purple); border-radius:10px; padding:8px 10px; white-space:pre-wrap; }
+  #cr-cmr-kanban-btn { background:var(--purple-bg); border-color:var(--purple); color:var(--purple); }
+  @media(max-width:1100px){ .cr-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.cr-wide,.cr-full{grid-column:span 2}.cr-cmr-layout{grid-template-columns:1fr;} }
+  @media(max-width:700px){ .cr-grid{grid-template-columns:1fr}.cr-wide,.cr-full{grid-column:span 1} }
+</style>
+<script id="clean-restart-script">
+(function(){
+'use strict';
+var crFilter = 'all';
+var crCmrQueue = [];
+var crPoll = null;
+
+function id(x){ return document.getElementById(x); }
+function toastMsg(s){ if(typeof toast === 'function') toast(s); else console.log(s); }
+function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function safeAttr(s){ return String(s == null ? '' : s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+function firstJ(s){ var m = String(s || '').toUpperCase().match(/J[A-Z0-9]{6,}/); return m ? m[0] : String(s || '').split(/\s*\+\s*/)[0].trim(); }
+function rows(){ try { return Array.isArray(g_master) ? g_master : []; } catch(e){ return []; } }
+function stat(r){ try { return String(typeof statutNum === 'function' ? statutNum(r.statut) : (String(r.statut || '1').match(/^(\d)/) || ['','1'])[1]); } catch(e){ return '1'; } }
+function statText(r){ try { return typeof statutLabel === 'function' ? statutLabel(stat(r)) : String(r.statut || ''); } catch(e){ return String(r.statut || ''); } }
+function days(r){ try { return typeof daysSince === 'function' ? daysSince(r._dateCreated) : 0; } catch(e){ return 0; } }
+function rdlLate(r){ try { return typeof isRdlOverdue === 'function' && isRdlOverdue(r.rdl) && +stat(r) >= 2 && +stat(r) <= 6; } catch(e){ return false; } }
+function norm(s){ return String(s || '').toLowerCase().trim(); }
+function groupable(r){ var key = norm((r.client || '') + '|' + (r.dept || '')); if(!key || key === '|') return false; return rows().some(function(x){ return x !== r && norm((x.client || '') + '|' + (x.dept || '')) === key; }); }
+function metric(){
+  var rs = rows(); var byStatus = {}, byOp = {}, byTransp = {};
+  rs.forEach(function(r){ var s = stat(r); byStatus[s] = (byStatus[s] || 0) + 1; var op = (r.operator || 'Non assigné').trim() || 'Non assigné'; byOp[op] = (byOp[op] || 0) + 1; var tr = (r.transp || 'Sans transp.').trim() || 'Sans transp.'; byTransp[tr] = (byTransp[tr] || 0) + 1; });
+  return {
+    total: rs.length,
+    late: rs.filter(function(r){ return days(r) >= 2 && +stat(r) <= 7; }).length,
+    noEmail: rs.filter(function(r){ return !String(r.email || '').trim(); }).length,
+    noContact: rs.filter(function(r){ return !String(r.contact || '').trim() && !String(r.tel || '').trim(); }).length,
+    groupable: rs.filter(groupable).length,
+    ccWait: rs.filter(function(r){ return r.cc !== 'Cc' && stat(r) === '1'; }).length,
+    rdl: rs.filter(rdlLate).length,
+    nto: rs.filter(function(r){ return stat(r) === '7'; }).length,
+    done: rs.filter(function(r){ return stat(r) === '8'; }).length,
+    byStatus: byStatus,
+    byOp: byOp,
+    byTransp: byTransp
+  };
+}
+function barRows(obj){ var entries = Object.entries(obj || {}).sort(function(a,b){return b[1]-a[1];}).slice(0,7); var max = Math.max(1, ...entries.map(function(e){return e[1];})); return entries.map(function(e){ return '<div class="cr-row"><div title="'+esc(e[0])+'">'+esc(String(e[0]).slice(0,18))+'</div><div class="cr-track"><div class="cr-bar" style="width:'+Math.round(e[1]/max*100)+'%"></div></div><b>'+e[1]+'</b></div>'; }).join('') || '<span class="cr-sub">Aucune donnée</span>'; }
+function apiAction(payload){ if(typeof apiCall === 'function') return apiCall('action', payload); return fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){ return r.json().catch(function(){ return {status:r.ok?'ok':'error'}; }); }); }
+
+function createTabs(){
+  var tabbar = id('tabbar'), content = id('content'); if(!tabbar || !content) return;
+  if(!document.querySelector('.tab[data-tab="dashboard"]')){
+    var t = document.createElement('div'); t.className = 'tab'; t.dataset.tab = 'dashboard'; t.textContent = 'Dashboard'; tabbar.insertBefore(t, tabbar.firstChild);
+  }
+  if(!id('tab-dashboard')){
+    var p = document.createElement('div'); p.className = 'tabpane'; p.id = 'tab-dashboard'; p.innerHTML = '<div id="cr-dashboard"><div class="cr-page"><div class="cr-actions" id="cr-dashboard-actions"><button class="btn btn-purple-out btn-sm" data-cr-open="both">🛠 Compléter les infos manquantes</button></div><div class="cr-grid" id="cr-dashboard-grid"></div><section class="cr-card cr-full" id="cr-edit-panel"></section></div></div>'; content.insertBefore(p, content.firstChild);
+  }
+  if(!document.querySelector('.tab[data-tab="cmr"]')){
+    var t2 = document.createElement('div'); t2.className = 'tab'; t2.dataset.tab = 'cmr'; t2.textContent = 'CMR / BL'; var opt = document.querySelector('.tab[data-tab="options"]'); tabbar.insertBefore(t2, opt || null);
+  }
+  if(!id('tab-cmr')){
+    var c = document.createElement('div'); c.className = 'tabpane'; c.id = 'tab-cmr'; c.innerHTML = '<div id="cr-cmr"><div class="cr-page"><div class="cr-cmr-layout"><section class="cr-card"><h3>CMR / BL</h3><div class="cr-sub">Colle des J. Ligne vide ou --- = nouveau BL. Tu peux aussi envoyer la sélection Kanban.</div><textarea id="cr-cmr-manual" class="cr-textarea" placeholder="J1A0040247\nJ1A0040248\n\n---\nJ1A0040300"></textarea><div class="cr-actions" style="margin-top:10px"><button class="btn btn-success btn-sm" id="cr-cmr-add">➕ Ajouter</button><button class="btn btn-blue-out btn-sm" id="cr-cmr-kanban-one">Kanban = 1 BL</button><button class="btn btn-ghost btn-sm" id="cr-cmr-clear">🗑 Vider</button></div><div class="cr-actions" style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px"><button class="btn btn-primary" id="cr-cmr-generate">🚀 Générer CMR / BL / PDF</button><button class="btn btn-ghost" id="cr-cmr-status">🔄 Statut</button></div><div class="cr-live" id="cr-cmr-live" style="margin-top:10px">Prêt.</div></section><section class="cr-card"><h3>Queue CMR</h3><div class="cr-table-wrap"><table class="cr-table"><thead><tr><th>#</th><th>BL / dossiers</th><th>Nb</th><th>Action</th></tr></thead><tbody id="cr-cmr-body"></tbody></table></div></section></div></div></div>'; content.appendChild(c);
+  }
+}
+function switchTab(name){ document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');}); document.querySelectorAll('.tabpane').forEach(function(p){p.classList.remove('active');}); var t = document.querySelector('.tab[data-tab="'+name+'"]'), p = id('tab-'+name); if(t) t.classList.add('active'); if(p) p.classList.add('active'); if(name === 'dashboard') updateDashboard(); if(name === 'cmr') renderCmr(); }
+function bindTabs(){ document.addEventListener('click', function(e){ var t = e.target.closest('.tab[data-tab]'); if(!t) return; e.preventDefault(); e.stopPropagation(); switchTab(t.dataset.tab); }, true); }
+
+function updateDashboard(){
+  var m = metric(); var grid = id('cr-dashboard-grid'); if(!grid) return;
+  var labels = {'1':'Pas encore CC','2':'RDV','3':'Attente','4':'Pré-alerte','5':'FC','6':'COMAT','7':'NTO','8':'Terminé','9':'En attente'};
+  var statusHtml = Object.keys(labels).map(function(k){ return '<div class="cr-status-cell"><b>'+(m.byStatus[k] || 0)+'</b><span>'+labels[k]+'</span></div>'; }).join('');
+  grid.innerHTML = '<section class="cr-card"><h3>Total dossiers</h3><div class="cr-kpi">'+m.total+'</div><div class="cr-sub">Dossiers actifs</div></section>'+
+    '<section class="cr-card"><h3>Alertes</h3><div class="cr-kpi">'+(m.late+m.noEmail+m.noContact+m.rdl)+'</div><div class="cr-sub">Retard / email / contact / RDL</div></section>'+
+    '<section class="cr-card"><h3>NTO</h3><div class="cr-kpi">'+m.nto+'</div><div class="cr-sub">À traiter</div></section>'+
+    '<section class="cr-card"><h3>Terminés</h3><div class="cr-kpi">'+m.done+'</div><div class="cr-sub">Statut 8</div></section>'+
+    '<section class="cr-card cr-full"><h3>Actions rapides</h3><div class="cr-actions"><button class="cr-alert-chip cr-warn" data-cr-open="both">🛠 Compléter infos manquantes <b>'+(m.noEmail+m.noContact)+'</b></button><button class="cr-alert-chip cr-danger" data-filter="late">⚠ Retard <b>'+m.late+'</b></button><button class="cr-alert-chip cr-danger" data-filter="rdl">📅 RDL dépassée <b>'+m.rdl+'</b></button><button class="cr-alert-chip cr-good" data-filter="groupable">🔗 Groupables <b>'+m.groupable+'</b></button></div></section>'+
+    '<section class="cr-card cr-wide"><h3>Répartition par statut</h3><div class="cr-status-grid">'+statusHtml+'</div></section>'+
+    '<section class="cr-card cr-wide"><h3>Charge opérateur</h3>'+barRows(m.byOp)+'</section>'+
+    '<section class="cr-card cr-wide"><h3>Top transporteurs</h3>'+barRows(m.byTransp)+'</section>'+
+    '<section class="cr-card cr-wide"><h3>Focus manquant</h3><div class="cr-sub">Clique sur Sans email / Sans contact pour compléter directement les informations.</div></section>';
+}
+function bindDashboardActions(){ document.addEventListener('click', function(e){ var open = e.target.closest('[data-cr-open]'); if(open){ openMissing(open.dataset.crOpen); return; } var f = e.target.closest('[data-filter]'); if(f){ crFilter = f.dataset.filter; switchTab('dispatch'); setTimeout(applyFilter,100); } }); }
+
+function injectDispatchFilter(){
+  var pane = id('tab-dispatch'); if(!pane || id('cr-filter-panel')) return; var wrap = pane.querySelector('.table-wrap'); if(!wrap) return;
+  var panel = document.createElement('div'); panel.id = 'cr-filter-panel'; panel.innerHTML = '<div id="cr-chip-row"></div><div id="cr-filter-count"></div>'; wrap.parentNode.insertBefore(panel, wrap); bindFilterPanel(); updateFilterChips();
+}
+function bindFilterPanel(){ var row = id('cr-chip-row'); if(!row || row.dataset.bound) return; row.dataset.bound = '1'; row.addEventListener('click', function(e){ var b = e.target.closest('[data-cr-filter]'); if(!b) return; crFilter = b.dataset.crFilter; applyFilter(); }); }
+function updateFilterChips(){ var m = metric(); var row = id('cr-chip-row'); if(!row) return; var chips = [['all','📊 Tout '+m.total,''],['late','⚠ Retard '+m.late,'cr-danger'],['noemail','📧 Sans email '+m.noEmail,'cr-warn'],['nocontact','⏳ Sans contact '+m.noContact,'cr-warn'],['groupable','🔗 Groupables '+m.groupable,'cr-good'],['ccwait','✓ CC attente '+m.ccWait,''],['rdl','📅 RDL dépassée '+m.rdl,'cr-danger']]; row.innerHTML = chips.map(function(c){ return '<button class="cr-chip '+c[2]+' '+(crFilter===c[0]?'active':'')+'" data-cr-filter="'+c[0]+'">'+c[1]+'</button>'; }).join(''); }
+function pass(r){ if(!r) return false; if(crFilter === 'all') return true; if(crFilter === 'late') return days(r) >= 2 && +stat(r) <= 7; if(crFilter === 'noemail') return !String(r.email || '').trim(); if(crFilter === 'nocontact') return !String(r.contact || '').trim() && !String(r.tel || '').trim(); if(crFilter === 'groupable') return groupable(r); if(crFilter === 'ccwait') return r.cc !== 'Cc' && stat(r) === '1'; if(crFilter === 'rdl') return rdlLate(r); return true; }
+function rowRecord(tr){ var raw = (tr.children[1] && tr.children[1].textContent || '').replace('GROUPE','').replace(/🔗.*$/,'').replace('…','').trim(); return rows().find(function(r){ return String(r.file || '').startsWith(raw); }); }
+function applyFilter(){ injectDispatchFilter(); var total=0, shown=0; document.querySelectorAll('#master-tbody tr').forEach(function(tr){ total++; var show = pass(rowRecord(tr)); tr.classList.toggle('cr-hidden', !show); if(show) shown++; }); document.querySelectorAll('.k-item').forEach(function(card){ var r = rows().find(function(x){ return x.file === card.dataset.file; }); card.classList.toggle('cr-hidden', !pass(r)); }); var count = id('cr-filter-count'); if(count) count.textContent = crFilter === 'all' ? '' : shown+'/'+total+' affichés'; updateFilterChips(); }
+
+function openMissing(mode){
+  switchTab('dashboard'); var panel = id('cr-edit-panel'); if(!panel) return; var list = rows().filter(function(r){ var noEmail = !String(r.email || '').trim(); var noContact = !String(r.contact || '').trim() && !String(r.tel || '').trim(); return mode === 'email' ? noEmail : mode === 'contact' ? noContact : (noEmail || noContact); });
+  panel.classList.add('open'); panel.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px"><div><h3 style="margin:0">'+(mode==='email'?'Dossiers sans email':mode==='contact'?'Dossiers sans contact':'Infos manquantes')+'</h3><div class="cr-sub">'+list.length+' dossier(s). NOTES ouvre E.TMS directement sur le dossier.</div></div><div class="cr-actions"><button class="btn btn-success btn-sm" id="cr-save-all">💾 Sauvegarder tout</button><button class="btn btn-ghost btn-sm" id="cr-close-edit">✕ Fermer</button></div></div><div class="cr-table-wrap"><table class="cr-table"><thead><tr><th>Dossier</th><th>Client</th><th>Contact</th><th>Téléphone</th><th>Email</th><th>Transporteur</th><th>Actions</th></tr></thead><tbody id="cr-edit-body"></tbody></table></div>';
+  var body = id('cr-edit-body'); body.innerHTML = list.length ? list.map(function(r){ var idx = rows().indexOf(r); var noEmail = !String(r.email || '').trim(); var noContact = !String(r.contact || '').trim() && !String(r.tel || '').trim(); return '<tr data-idx="'+idx+'"><td class="cr-file">'+esc(r.file)+'</td><td>'+esc(r.client||'')+'</td><td><input class="cr-input '+(noContact?'cr-missing':'')+'" data-field="contact" value="'+esc(r.contact||'')+'"></td><td><input class="cr-input '+(noContact?'cr-missing':'')+'" data-field="tel" value="'+esc(r.tel||'')+'"></td><td><input class="cr-input '+(noEmail?'cr-missing':'')+'" data-field="email" value="'+esc(r.email||'')+'"></td><td><input class="cr-input" data-field="transp" value="'+esc(r.transp||'')+'"></td><td><button class="btn btn-blue-out cr-mini" data-notes="'+esc(firstJ(r.file))+'">NOTES</button> <button class="btn btn-success cr-mini" data-save-one="'+idx+'">Save</button></td></tr>'; }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:20px">Aucun dossier à compléter.</td></tr>';
+  id('cr-save-all').onclick = saveAllMissing; id('cr-close-edit').onclick = function(){ panel.classList.remove('open'); };
+}
+function saveTr(tr){ var idx = Number(tr.dataset.idx); var r = rows()[idx]; if(!r) return false; tr.querySelectorAll('[data-field]').forEach(function(inp){ r[inp.dataset.field] = inp.value.trim(); }); try{ if(typeof stampRecord === 'function') stampRecord(r); }catch(e){} return true; }
+function saveAllMissing(){ var n=0; document.querySelectorAll('#cr-edit-body tr[data-idx]').forEach(function(tr){ if(saveTr(tr)) n++; }); refreshExisting(); toastMsg(n+' dossier(s) mis à jour.'); }
+function bindEditActions(){ document.addEventListener('click', function(e){ var n = e.target.closest('[data-notes]'); if(n){ e.preventDefault(); e.stopPropagation(); if(n.dataset.busy==='1') return; n.dataset.busy='1'; setTimeout(function(){ n.dataset.busy='0'; }, 1200); apiAction({action:'ETMS_CMD', cmd:'NOTES', file:n.dataset.notes}); toastMsg('→ NOTES '+n.dataset.notes); return; } var s = e.target.closest('[data-save-one]'); if(s){ var tr = s.closest('tr'); if(saveTr(tr)){ refreshExisting(); toastMsg('Dossier mis à jour.'); } } }); }
+
+function selectedKanban(){ try{ if(typeof g_kabSelected !== 'undefined' && g_kabSelected && g_kabSelected.size) return Array.from(g_kabSelected); }catch(e){} return Array.from(document.querySelectorAll('.k-item.k-selected,.k-item input.k-chk:checked')).map(function(el){ var card = el.closest('.k-item') || el; return card.dataset.file; }).filter(Boolean); }
+function addCmrGroups(groups){ groups.forEach(function(g){ var files = Array.from(new Set(g.map(function(x){return String(x||'').trim().toUpperCase();}).filter(function(x){return /^J[A-Z0-9]{6,}$/.test(x);}))); if(files.length) crCmrQueue.push(files); }); renderCmr(); }
+function parseManual(txt){ return String(txt||'').split(/\n\s*(?:---+)?\s*\n/g).map(function(block){ return (block.match(/J[A-Z0-9]{6,}/gi)||[]); }).filter(function(a){return a.length;}); }
+function renderCmr(){ var body = id('cr-cmr-body'); if(!body) return; body.innerHTML = crCmrQueue.length ? crCmrQueue.map(function(g,i){ return '<tr><td><b>BL '+(i+1)+'</b></td><td class="cr-file">'+esc(g.join(' / '))+'</td><td>'+g.length+'</td><td><button class="btn btn-ghost cr-mini" data-cmr-remove="'+i+'">Retirer</button></td></tr>'; }).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:22px">Queue vide.</td></tr>'; }
+function bindCmr(){
+  document.addEventListener('click', function(e){ var r = e.target.closest('[data-cmr-remove]'); if(r){ crCmrQueue.splice(Number(r.dataset.cmrRemove),1); renderCmr(); } });
+  var add = id('cr-cmr-add'); if(add && !add.dataset.bound){ add.dataset.bound='1'; add.onclick=function(){ addCmrGroups(parseManual(id('cr-cmr-manual').value)); id('cr-cmr-manual').value=''; }; }
+  var kan = id('cr-cmr-kanban-one'); if(kan && !kan.dataset.bound){ kan.dataset.bound='1'; kan.onclick=function(){ var f=selectedKanban(); if(!f.length) return toastMsg('Aucune carte Kanban sélectionnée.'); addCmrGroups([f]); }; }
+  var clear = id('cr-cmr-clear'); if(clear && !clear.dataset.bound){ clear.dataset.bound='1'; clear.onclick=function(){ crCmrQueue=[]; renderCmr(); }; }
+  var gen = id('cr-cmr-generate'); if(gen && !gen.dataset.bound){ gen.dataset.bound='1'; gen.onclick=generateCmr; }
+  var st = id('cr-cmr-status'); if(st && !st.dataset.bound){ st.dataset.bound='1'; st.onclick=pollCmr; }
+}
+function addCmrToKanban(){ var bar = id('kanban-action-bar'); if(!bar || id('cr-cmr-kanban-btn')) return; var btn = document.createElement('button'); btn.id='cr-cmr-kanban-btn'; btn.className='btn btn-sm'; btn.textContent='📦 CMR'; btn.title='Ajouter la sélection Kanban à la queue CMR'; btn.onclick=function(){ var f=selectedKanban(); if(!f.length) return toastMsg('Sélectionne au moins une carte Kanban.'); switchTab('cmr'); addCmrGroups([f]); toastMsg(f.length+' dossier(s) ajoutés à la queue CMR.'); }; bar.appendChild(btn); }
+function cmrLive(s){ var el=id('cr-cmr-live'); if(el) el.textContent=s; }
+function generateCmr(){ if(!crCmrQueue.length) return toastMsg('Queue CMR vide.'); cmrLive('Génération CMR lancée...'); apiAction({action:'CMR_GENERATE', data:crCmrQueue.map(function(g){return g.join(',');}).join('@@BL@@')}).then(function(){ pollCmr(); startPoll(); }).catch(function(e){ cmrLive('Erreur : '+(e.message||e)); }); }
+function startPoll(){ if(crPoll) clearInterval(crPoll); crPoll=setInterval(pollCmr,1500); }
+function pollCmr(){ apiAction({action:'CMR_STATUS'}).then(function(res){ cmrLive(res.message || JSON.stringify(res)); if(res && res.running === false && crPoll){ clearInterval(crPoll); crPoll=null; } if(res && Array.isArray(res.results) && res.results.length) showCmrResults(res.results); }).catch(function(e){ cmrLive('Erreur statut : '+(e.message||e)); }); }
+function showCmrResults(list){ var body=id('cr-cmr-body'); if(!body) return; body.innerHTML = list.map(function(r,i){ return '<tr><td><b>#'+(i+1)+'</b></td><td><div class="cr-file">'+esc(r.bl||'')+'</div><div class="cr-sub">'+esc(r.company||'')+'</div></td><td>'+esc(r.carrier||'')+'</td><td><button class="btn btn-ghost cr-mini" data-open-pdf="'+safeAttr(r.pdf)+'">PDF</button> <button class="btn btn-ghost cr-mini" data-open-html="'+safeAttr(r.html)+'">HTML</button> <button class="btn btn-blue-out cr-mini" data-cmr-mail="'+r.index+'">Mail</button> <button class="btn btn-purple-out cr-mini" data-cmr-edoc="'+r.index+'">EDOC</button></td></tr>'; }).join(''); }
+function bindCmrResultActions(){ document.addEventListener('click', function(e){ var p=e.target.closest('[data-open-pdf]'); if(p) return void apiAction({action:'CMR_OPEN_PDF', path:p.dataset.openPdf}); var h=e.target.closest('[data-open-html]'); if(h) return void apiAction({action:'CMR_OPEN_HTML', path:h.dataset.openHtml}); var m=e.target.closest('[data-cmr-mail]'); if(m) return void apiAction({action:'CMR_MAIL', index:m.dataset.cmrMail}); var d=e.target.closest('[data-cmr-edoc]'); if(d) return void apiAction({action:'CMR_EDOC', index:d.dataset.cmrEdoc}); }); }
+
+function refreshExisting(){ try{ if(typeof renderMaster === 'function') renderMaster(id('inp-search') ? id('inp-search').value : ''); if(typeof renderKanban === 'function') renderKanban(); if(typeof updateStats === 'function') updateStats(); if(typeof markDirty === 'function') markDirty(); if(typeof autoSave === 'function') autoSave(); }catch(e){ console.warn(e); } setTimeout(function(){ updateDashboard(); applyFilter(); addCmrToKanban(); },50); }
+function wrapRenders(){ ['renderMaster','renderKanban','updateStats'].forEach(function(name){ try{ var fn = eval(name); if(typeof fn === 'function' && !fn.__cr){ var w = function(){ var r = fn.apply(this, arguments); setTimeout(function(){ updateDashboard(); injectDispatchFilter(); applyFilter(); addCmrToKanban(); },0); return r; }; w.__cr = true; window[name] = w; try{ eval(name+' = w'); }catch(e){} } }catch(e){} }); }
+function init(){ if(window.__CLEAN_RESTART_INIT_DONE) return; window.__CLEAN_RESTART_INIT_DONE = true; createTabs(); bindTabs(); bindDashboardActions(); bindEditActions(); bindCmrResultActions(); injectDispatchFilter(); bindCmr(); wrapRenders(); updateDashboard(); applyFilter(); addCmrToKanban(); switchTab('dashboard'); setInterval(function(){ if(id('tab-dashboard') && id('tab-dashboard').classList.contains('active')) updateDashboard(); },1000); }
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(init,300); }); else setTimeout(init,300);
+window.addEventListener('load', function(){ setTimeout(init,800); });
+})();
+</script>
+
+

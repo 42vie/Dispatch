@@ -1,0 +1,25 @@
+<!-- ============================================================================
+     JS_CLEAR DONE
+     Lignes source Interface.html: 2994-3012
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+// ║  CLEAR DONE                                                              ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+document.getElementById('btn-clear-done').onclick = () => {
+  const done = g_master.filter(r => String(r.statut)==='8' && !String(r.statut).includes('9'));
+  if (!done.length) return toast('Aucun dossier terminé.');
+  if (!confirm(`Supprimer ${done.length} dossier(s) terminés de la mémoire ?\n(Les contacts clients sont conservés)`)) return;
+  // Supprimer les rawData associés
+  done.forEach(r => {
+    (r.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean).forEach(f => {
+      delete g_rawData[f];
+    });
+  });
+  // Retirer de g_master — libère la mémoire
+  g_master = g_master.filter(r => String(r.statut)!=='8');
+  renderMaster(); renderKanban(); updateStats(); markDirty();
+  toast(`${done.length} dossier(s) supprimés. Contacts conservés.`);
+};
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

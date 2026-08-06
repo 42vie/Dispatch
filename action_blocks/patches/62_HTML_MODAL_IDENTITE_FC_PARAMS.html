@@ -1,0 +1,103 @@
+<!-- ============================================================================
+     HTML_MODAL_IDENTITE_FC_PARAMS
+     Lignes source Interface.html: 5543-5639
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+
+<!-- ══ MODAL IDENTITÉ — démarrage ══ -->
+<div class="overlay" id="modal-identity" style="display:none">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-hd">
+      <h2>Bienvenue — Qui êtes-vous ?</h2>
+    </div>
+    <div class="modal-body" style="padding:20px;display:flex;flex-direction:column;gap:14px">
+      <div style="font-size:12px;color:var(--text2)">
+        Saisissez votre prénom pour filtrer les dossiers qui vous sont assignés.<br>
+        Vous pouvez changer cela à tout moment dans Options → Réseau partagé.
+      </div>
+      <select id="identity-select"
+        style="height:36px;border:1px solid var(--border2);border-radius:5px;background:var(--surface2);color:var(--text);font-size:13px;padding:0 10px">
+        <option value="">— Voir tous les dossiers —</option>
+      </select>
+      <input id="identity-input" type="text" placeholder="Ou saisir un prénom..."
+        style="height:36px" onkeydown="if(event.key==='Enter') identityConfirm()">
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-purple-out" onclick="identityConfirm()" style="flex:1;height:36px">✓ Confirmer</button>
+        <button class="btn btn-ghost" onclick="identitySkip()" style="height:36px">Passer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL FC PARAMS ═══════════════════════════════════════════════════ -->
+<div id="modal-fc-params" class="overlay">
+  <div class="modal" style="width:580px;max-height:80vh;overflow-y:auto">
+    <div class="modal-hd">
+      <h2>⚙ Paramètres File Closing</h2>
+      <button class="modal-close" onclick="closeModal('modal-fc-params')">✕</button>
+    </div>
+    <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+
+
+      <!-- BKD — Booking Date : règle utilisée pour la date de garantie FC -->
+      <div id="bkd-fc-block" style="padding:12px;background:var(--purple-bg);border-radius:8px;border:2px solid var(--purple);display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <div>
+            <div style="font-size:12px;font-weight:800;color:var(--purple);text-transform:uppercase;letter-spacing:.5px">BKD — choix visible</div>
+            <div style="font-size:10px;color:var(--text2);margin-top:3px">Attention : <b>BKD ≠ date estimée livraison</b>. Le BKD ne modifie plus la date livraison. La livraison est recalculée selon le transporteur : Flex / autres.</div>
+          </div>
+          <span id="bkd-fc-preview" style="font-family:var(--mono);font-size:13px;font-weight:800;color:var(--purple);background:var(--surface);border:2px solid var(--purple);border-radius:999px;padding:5px 11px">BKD : —</span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-green-out btn-sm bkd-quick" data-mode="today" type="button" onclick="bkdSetGlobalInline('today')" style="font-weight:800">✅ Aujourd'hui</button>
+          <button class="btn btn-orange-out btn-sm bkd-quick" data-mode="tomorrow" type="button" onclick="bkdSetGlobalInline('tomorrow')" style="font-weight:800">➡ J+1 / Demain</button>
+          <button class="btn btn-purple-out btn-sm bkd-quick" data-mode="custom" type="button" onclick="bkdSetGlobalInline('custom')" style="font-weight:800">📅 Date précise</button>
+          <button class="btn btn-ghost btn-sm bkd-quick" data-mode="auto" type="button" onclick="bkdSetGlobalInline('auto')">🕒 Auto cutoff</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1.25fr .75fr 1fr;gap:8px;align-items:end">
+          <div><label style="font-size:10px;color:var(--text2);display:block;margin-bottom:4px">Mode BKD global</label><select id="bkd-fc-mode" style="width:100%;height:30px;border:1px solid var(--border2);border-radius:5px;background:var(--surface);color:var(--text);padding:0 8px;font-size:11px;font-weight:700"><option value="auto">🕒 Auto selon heure limite</option><option value="today">✅ Forcer aujourd'hui</option><option value="tomorrow">➡ Forcer J+1</option><option value="custom">📅 Date manuelle</option></select></div>
+          <div><label style="font-size:10px;color:var(--text2);display:block;margin-bottom:4px">Heure limite Auto</label><input id="bkd-fc-cutoff" type="time" value="14:30" style="width:100%;height:30px;border:1px solid var(--border2);border-radius:5px;background:var(--surface);color:var(--text);padding:0 8px;font-family:var(--mono);font-size:11px"></div>
+          <div><label style="font-size:10px;color:var(--text2);display:block;margin-bottom:4px">Si Date précise</label><input id="bkd-fc-custom" type="date" style="width:100%;height:30px;border:1px solid var(--border2);border-radius:5px;background:var(--surface);color:var(--text);padding:0 8px;font-family:var(--mono);font-size:11px"></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn btn-purple-out btn-sm" id="bkd-fc-save" type="button">💾 Enregistrer BKD global</button><button class="btn btn-green-out btn-sm" id="bkd-fc-apply" type="button">⬇ Appliquer BKD aux badges visibles</button><button class="btn btn-ghost btn-sm" id="bkd-fc-reset" type="button">↺ Revenir Auto 14:30</button><span id="bkd-fc-status" style="font-size:10px;color:var(--green);font-weight:700"></span></div>
+      </div>
+
+      <!-- Paramètres globaux -->
+      <div style="padding:10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Paramètres manuels — appliqués à tous</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div>
+            <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Date de garantie forcée (dd.mm.aa)</label>
+            <input id="fc-global-date" type="text" placeholder="laisser vide = auto par ligne" maxlength="8"
+              style="width:100%;height:28px;font-family:var(--mono);font-size:12px;
+                     border:1px solid var(--border2);border-radius:4px;
+                     background:var(--surface);color:var(--text);padding:0 8px"
+              oninput="fcApplyGlobal()">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Horaire</label>
+            <input id="fc-global-horaire" type="text" value="09h et 12h" placeholder="09h et 12h"
+              style="width:100%;height:28px;font-size:12px;
+                     border:1px solid var(--border2);border-radius:4px;
+                     background:var(--surface);color:var(--text);padding:0 8px"
+              oninput="fcApplyGlobal()">
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="fcRecalcDates()" style="margin-top:8px;font-size:11px">↺ Recalculer dates auto par transporteur</button>
+      </div>
+
+      <!-- Liste dossiers -->
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Dossiers — ajuster si RDV particulier</div>
+        <div id="fc-dossier-list" style="display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto"></div>
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+        <button class="btn btn-ghost" onclick="closeModal('modal-fc-params')">Annuler</button>
+        <button class="btn btn-primary" onclick="fcLancer()">🚀 Lancer FC</button>
+      </div>
+    </div>
+  </div>
+</div>
+

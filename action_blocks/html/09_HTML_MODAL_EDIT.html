@@ -1,0 +1,90 @@
+<!-- ============================================================================
+     HTML_MODAL_EDIT
+     Lignes source Interface.html: 1162-1245
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+<!-- ══ MODAL EDIT ══ -->
+<div class="overlay" id="modal-edit">
+  <div class="modal">
+    <div class="modal-hd">
+      <h2 id="med-title">Édition dossier</h2>
+      <button class="modal-close" onclick="closeModal('modal-edit')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-section">Identification</div>
+<div style="display:flex; gap:5px; margin-bottom:12px; padding:6px; background:var(--surface2); border:1px solid var(--border); border-radius:5px;">
+        <span style="font-size:10px;font-weight:600;color:var(--text3);margin-top:5px;margin-right:4px;">ACTIONS</span>
+        <button class="etms-btn" onclick="sendAction('ETMS_CMD', 'EDOC')">EDOC</button>
+        <button class="etms-btn" onclick="sendAction('ETMS_CMD', 'LOG')">LOG</button>
+        <button class="etms-btn" onclick="sendAction('ETMS_CMD', 'DIMS')">DIMS</button>
+        <button class="etms-btn" onclick="sendAction('ETMS_CMD', 'NOTES')">NOTES</button>
+        <button class="etms-btn" onclick="sendAction('ETMS_CMD', 'HIST')">HIST</button>
+        <button class="etms-btn" onclick="sendAction('ETMS_CMD', 'REFS')">REFS</button>
+        <button class="etms-btn" style="color:var(--orange);font-weight:700" onclick="sendAction('ETMS_CMD', 'F8')">F8</button>
+        <button class="etms-btn warn" onclick="sendAction('ETMS_CMD', 'LOG X')">LOG X</button>
+        <div class="etms-sep" style="margin-top:4px"></div>
+        <button class="etms-btn" style="color:var(--teal); border-color:var(--teal);" onclick="sendAction('MAIL_RDV')">📧</button>
+      </div>
+      <div class="form-row"><label>N° Dossier (J)*</label><input id="ed-file" type="text"><button class="btn btn-sm btn-ghost" onclick="copyDossier()" title="Copier le numéro" style="margin-left:4px;min-width:32px;padding:2px 6px">📋</button></div>
+      <div class="form-row"><label>Client</label><input id="ed-client" type="text"></div>
+      <div class="form-row"><label>RDL</label><input id="ed-rdl" type="text"></div>
+      <div class="form-row"><label>SVCT</label><input id="ed-svct" type="text"></div>
+
+      <div class="form-section">Logistique</div>
+      <div class="form-row">
+        <label>Département</label>
+        <input id="ed-dept" type="text" style="max-width:70px;flex:unset">
+        <button class="btn btn-orange-out btn-sm" style="margin-left:6px" onclick="recalcTransp()">↺ Recalc. Transp.</button>
+      </div>
+      <div class="form-row"><label>Transporteur</label><input id="ed-transp" type="text"></div>
+      <div class="form-row"><label>Poids brut (kg)</label><input id="ed-poids" type="number" step="0.01" oninput="autoRecalcTaxable()"></div>
+      <div class="form-row"><label>Volume (m³)</label><input id="ed-vol" type="number" step="0.001" oninput="autoRecalcTaxable()"></div>
+      <div class="form-row">
+        <label>Poids taxable</label>
+        <span id="ed-taxable-display" style="font-family:var(--mono);font-weight:600;color:var(--orange);padding-left:10px"></span>
+      </div>
+      <div class="form-row">
+        <label>Supplément camion (€)</label>
+        <input id="ed-supplement" type="number" step="0.01" min="0" style="max-width:110px;flex:unset">
+      </div>
+
+      <div class="form-section">Contact livraison</div>
+      <div class="form-row"><label>Nom contact</label><input id="ed-contact" type="text"></div>
+      <div class="form-row"><label>Téléphone</label><input id="ed-tel" type="text"></div>
+      <div class="form-row"><label>Email</label><input id="ed-email" type="email"></div>
+
+      <div class="form-section">Suivi</div>
+      <div class="form-row"><label>Commentaire</label><input id="ed-comment" type="text"></div>
+      <div class="form-row">
+        <label>Opérateur</label>
+        <input id="ed-operator" type="text" placeholder="Prénom">
+      </div>
+      <div class="form-row">
+        <label>Statut</label>
+        <select id="ed-statut">
+          <option value="1">1. Pas encore CC</option>
+          <option value="2">2. RDV à envoyer</option>
+          <option value="3">3. Attente réponse</option>
+          <option value="4">4. Pré-alerte &amp; 5. FC</option>
+          <option value="5">5. Prêt pour FC</option>
+          <option value="6">6. COMAT</option>
+          <option value="7">7. NTO</option>
+          <option value="8">8. Terminé</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Consolidation CC</label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;color:var(--green)">
+          <input type="checkbox" id="ed-cc" style="width:15px;height:15px;accent-color:var(--green)">
+          Valider CC (Cc : OK)
+        </label>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit')">Annuler</button>
+      <button class="btn btn-success" onclick="saveEdit()">💾 Enregistrer</button>
+    </div>
+  </div>
+</div>
+

@@ -1,0 +1,54 @@
+<!-- ============================================================================
+     JS_OPTIONS — STOCKAGE + NETTOYAGE CONTACTS
+     Lignes source Interface.html: 4536-4583
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+// ║  OPTIONS — STOCKAGE + NETTOYAGE CONTACTS                                  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+async function loadStorageInfo() {
+  const st = document.getElementById('storage-status');
+  if (st) st.textContent = 'Analyse en cours...';
+  try {
+    const info = await apiCall('action', { action: 'STORAGE_INFO' });
+    const el = document.getElementById('storage-info');
+    if (info && info.files) {
+      el.innerHTML = info.files.map(f => {
+        const kb = (f.size / 1024).toFixed(1);
+        const color = f.size > 500000 ? 'var(--red)' : f.size > 100000 ? 'var(--orange)' : 'var(--green)';
+        return `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">
+          <span style="font-family:var(--mono)">${f.name}</span>
+          <span style="color:${color};font-weight:600;font-family:var(--mono)">${kb} KB</span>
+        </div>`;
+      }).join('') +
+        `<div style="margin-top:8px;font-weight:700;font-size:13px">Total : ${info.totalKB} KB (${info.totalMB} MB)</div>`;
+    }
+    if (st) st.textContent = '✓ Analyse terminée';
+  } catch(e) {
+    if (st) st.textContent = '✗ Erreur : ' + (e.message || 'Serveur hors ligne');
+  }
+  // Mémoire locale
+  const fmtSize = (obj) => { const s = JSON.stringify(obj).length; return (s/1024).toFixed(1) + ' KB'; };
+  const m = document.getElementById('mem-master');
+  const c = document.getElementById('mem-contacts');
+  const r = document.getElementById('mem-rawdata');
+  const p = document.getElementById('mem-cpdata');
+  if (m) m.textContent = g_master.length + ' dossiers (' + fmtSize(g_master) + ')';
+  if (c) c.textContent = g_contacts.length + ' contacts (' + fmtSize(g_contacts) + ')';
+  if (r) r.textContent = Object.keys(g_rawData).length + ' entrées (' + fmtSize(g_rawData) + ')';
+  if (p) p.textContent = g_cpData.length + ' entrées (' + fmtSize(g_cpData) + ')';
+}
+
+async function cleanContacts() {
+  const st = document.getElementById('storage-status');
+  if (st) st.textContent = 'Nettoyage en cours...';
+  try {
+    await apiCall('action', { action: 'CLEAN_CONTACTS' });
+    if (st) st.textContent = '✓ Contacts nettoyés — vérifiez les TrayTip';
+    toast('Nettoyage contacts terminé.');
+  } catch(e) {
+    if (st) st.textContent = '✗ Erreur nettoyage';
+  }
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

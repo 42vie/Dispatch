@@ -1,0 +1,40 @@
+<!-- ============================================================================
+     HTML_MODAL_KANBAN_MULTI_EDIT
+     Lignes source Interface.html: 1368-1401
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+<!-- ══ MODAL KANBAN MULTI-EDIT ══ -->
+<div class="overlay" id="modal-kab-edit">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-hd">
+      <h2 id="kab-edit-title">Éditer sélection</h2>
+      <button class="modal-close" onclick="closeModal('modal-kab-edit')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:12px" id="kab-edit-files"></div>
+      <div class="form-section">Contact livraison</div>
+      <div class="form-row">
+        <label>Nom contact</label>
+        <input id="kab-contact" type="text" placeholder="Laisser vide = ne pas modifier">
+      </div>
+      <div class="form-row">
+        <label>Téléphone</label>
+        <input id="kab-tel" type="text" placeholder="Laisser vide = ne pas modifier">
+      </div>
+      <div class="form-row">
+        <label>Email</label>
+        <input id="kab-email" type="email" placeholder="Laisser vide = ne pas modifier">
+      </div>
+      <div class="form-row">
+        <label>Commentaire</label>
+        <input id="kab-comment" type="text" placeholder="Laisser vide = ne pas modifier">
+      </div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="closeModal('modal-kab-edit')">Annuler</button>
+      <button class="btn btn-success" onclick="kabSaveEdit()">💾 Appliquer à tous</button>
+    </div>
+  </div>
+</div>
+

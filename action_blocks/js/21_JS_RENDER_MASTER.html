@@ -1,0 +1,228 @@
+<!-- ============================================================================
+     JS_RENDER MASTER
+     Lignes source Interface.html: 1598-1819
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+// ║  RENDER MASTER                                                           ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+// Détecte les dossiers allant au même endroit (client+dept) pour signaler les regroupements possibles
+function buildSiblingsMap() {
+  const map = {}; // clé = "client_lower|dept" → [fichiers]
+  g_master.forEach(r => {
+    const key = (r.client||'').toLowerCase().trim() + '|' + (r.dept||'').trim();
+    if (!map[key]) map[key] = [];
+    map[key].push(r);
+  });
+  return map;
+}
+
+function getSiblingBadge(r, siblingsMap) {
+  const key = (r.client||'').toLowerCase().trim() + '|' + (r.dept||'').trim();
+  const siblings = siblingsMap[key];
+  if (!siblings || siblings.length < 2) return '';
+  // Compter ceux qui ne sont pas encore CC
+  const notCC = siblings.filter(s => s.cc !== 'Cc' && s.file !== r.file);
+  const alreadyCC = siblings.filter(s => s.cc === 'Cc' && s.file !== r.file);
+  if (notCC.length === 0 && alreadyCC.length === 0) return '';
+  // S'il y a des frères pas encore CC → badge orange "X en attente CC"
+  if (notCC.length > 0) {
+    return `<span title="${siblings.length} dossiers pour ${r.client} dept ${r.dept} — ${notCC.length} pas encore CC" style="font-size:9px;font-weight:700;color:var(--orange);background:var(--orange-bg);padding:1px 5px;border-radius:8px;margin-left:4px;white-space:nowrap">🔗 ${notCC.length} att. CC</span>`;
+  }
+  // Tous les frères sont CC → badge vert "groupable"
+  if (alreadyCC.length > 0) {
+    return `<span title="${alreadyCC.length + 1} dossiers CC pour ${r.client} dept ${r.dept} — regroupement possible" style="font-size:9px;font-weight:700;color:var(--green);background:var(--green-bg);padding:1px 5px;border-radius:8px;margin-left:4px;white-space:nowrap">🔗 ${alreadyCC.length + 1} groupable</span>`;
+  }
+  return '';
+}
+
+function renderMaster(filter='') {
+  const fl = (filter||'').toLowerCase();
+  let rows = g_master;
+  if (fl) rows = rows.filter(r =>
+    (r.file||'').toLowerCase().includes(fl) ||
+    (r.client||'').toLowerCase().includes(fl) ||
+    (r.statut&&statutLabel(statutNum(r.statut)).toLowerCase().includes(fl))
+  );
+  if (g_operatorFilter) rows = rows.filter(r => (r.operator||'') === g_operatorFilter);
+  // Filtres colonnes (style Excel)
+  for (const [col, allowed] of Object.entries(g_colFilters)) {
+    if (!allowed || !allowed.size) continue;
+    rows = rows.filter(r => {
+      const v = col === 'statut' ? statutLabel(statutNum(r.statut)) : String(r[col]||'');
+      return allowed.has(v);
+    });
+  }
+  if (g_sortCol) {
+    rows = [...rows].sort((a,b) => {
+      let va=a[g_sortCol]||'', vb=b[g_sortCol]||'';
+      if (!isNaN(+va)&&!isNaN(+vb)){va=+va;vb=+vb;}
+      return (va<vb?-1:va>vb?1:0) * (g_sortAsc?1:-1);
+    });
+  }
+  const siblingsMap = buildSiblingsMap();
+  const tbody = document.getElementById('master-tbody');
+  tbody.innerHTML = rows.map(r => {
+    const idx = g_master.indexOf(r);
+    const sn = statutNum(r.statut);
+    const isGroup = (r.file||'').includes(' + ');
+    const days = daysSince(r._dateCreated);
+    const fileDisp = (r.file||'').length>15 ? r.file.substring(0,15)+'…' : r.file;
+    const sibBadge = getSiblingBadge(r, siblingsMap);
+    return `<tr class="${isGroup?'is-group':''}" ondblclick="openEdit(${idx})">
+      <td style="text-align:center">
+        <input type="checkbox" ${r.cc==='Cc'?'checked':''} onchange="onCCCheck(${idx},this.checked)" style="accent-color:var(--green)">
+      </td>
+      <td title="${r.file||''}">
+        ${fileDisp}${isGroup?'<span class="tag-group">GROUPE</span>':''}${sibBadge}
+      </td>
+      <td title="${r.client||''}">${trunc(r.client,20)}</td>
+      <td>${r.rdl||''}${isRdlOverdue(r.rdl)&&+sn>=2&&+sn<=6?'<span style="color:var(--red);font-weight:700;font-size:10px;margin-left:3px" title="RDL dépassée">⚠</span>':''}</td>
+      <td style="font-family:var(--mono);font-size:11px">${r.svct||''}</td>
+      <td title="${r.transp||''}">${trunc(r.transp,17)}</td>
+      <td class="poids-val" style="text-align:right">${fmt(r.poids)}</td>
+      <td class="poids-val" style="text-align:right">${fmt(r.vol,3)}</td>
+      <td class="taxable-val" style="text-align:right">${fmt(r.taxable)}</td>
+      <td style="text-align:center">${r.dept||''}</td>
+      <td>${trunc(r.contact,13)}</td>
+      <td style="font-family:var(--mono);font-size:11px">${r.tel||''}</td>
+      <td title="${r.email||''}">${trunc(r.email,16)}</td>
+      <td class="${r.cc==='Cc'?'cc-yes':'cc-no'}">${r.cc==='Cc'?'✓ Cc':'—'}</td>
+      <td>${r.statut&&+sn>=2&&+sn<=7 ? daysBadge(days) : ''}</td>
+      <td title="${r.comment||''}" style="color:var(--text2)">${trunc(r.comment,22)}</td>
+      <td><span class="badge ${statutClass(sn)}">${trunc(statutLabel(sn),24)}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function trunc(s,n){s=s||'';return s.length>n?s.substring(0,n)+'…':s;}
+function fmt(v,d=2){const n=parseFloat(v);return isNaN(n)?'':n.toFixed(d);}
+
+// Tri colonnes
+document.querySelectorAll('table.t-master thead th[data-col]').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.col;
+    if (g_sortCol===col) g_sortAsc=!g_sortAsc;
+    else { g_sortCol=col; g_sortAsc=true; }
+    document.querySelectorAll('th[data-col]').forEach(t=>t.classList.remove('sorted'));
+    th.classList.add('sorted');
+    renderMaster(document.getElementById('inp-search').value);
+  });
+});
+
+// ── Filtres colonnes (style Excel) ──────────────────────────────────────
+function getColValues(col) {
+  let vals;
+  if (col === 'statut') {
+    vals = g_master.map(r => statutLabel(statutNum(r.statut)));
+  } else {
+    vals = g_master.map(r => String(r[col]||''));
+  }
+  if (g_operatorFilter) {
+    const filtered = g_master.filter(r => (r.operator||'') === g_operatorFilter);
+    if (col === 'statut') vals = filtered.map(r => statutLabel(statutNum(r.statut)));
+    else vals = filtered.map(r => String(r[col]||''));
+  }
+  return [...new Set(vals)].sort((a,b) => a.localeCompare(b,'fr'));
+}
+
+function openColFilter(btn, col) {
+  closeColFilter();
+  const rect = btn.getBoundingClientRect();
+  const popup = document.createElement('div');
+  popup.className = 'col-filter-popup';
+  popup.id = 'col-filter-popup';
+  popup.style.left = Math.min(rect.left, window.innerWidth - 220) + 'px';
+  popup.style.top  = (rect.bottom + 4) + 'px';
+  popup.style.position = 'fixed';
+
+  const allVals = getColValues(col);
+  const active = g_colFilters[col]; // Set or undefined (undefined = all shown)
+
+  popup.innerHTML = `
+    <input class="cfp-search" type="text" placeholder="Rechercher..." oninput="filterColList(this.value)">
+    <div class="cfp-item" style="border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:4px">
+      <input type="checkbox" id="cfp-all" ${!active?'checked':allVals.every(v=>active.has(v))?'checked':''} onchange="cfpToggleAll(this.checked,'${col}')">
+      <label for="cfp-all" style="font-weight:600;cursor:pointer">(Tout sélectionner)</label>
+    </div>
+    <div class="cfp-list" id="cfp-list">
+      ${allVals.map((v,i) => `<div class="cfp-item" data-val="${v.replace(/"/g,'&quot;').toLowerCase()}">
+        <input type="checkbox" id="cfp-${i}" data-v="${v.replace(/"/g,'&quot;')}" ${!active||active.has(v)?'checked':''}>
+        <label for="cfp-${i}" style="cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${v||'(vide)'}">${v||'<i>(vide)</i>'}</label>
+      </div>`).join('')}
+    </div>
+    <div class="cfp-actions">
+      <button class="btn btn-purple-out" onclick="applyColFilter('${col}')">Appliquer</button>
+      <button class="btn btn-ghost" onclick="clearColFilter('${col}')">Effacer</button>
+    </div>`;
+  document.body.appendChild(popup);
+
+  // Close on outside click
+  setTimeout(() => document.addEventListener('click', _colFilterOutClick), 10);
+}
+
+function _colFilterOutClick(e) {
+  const popup = document.getElementById('col-filter-popup');
+  if (popup && !popup.contains(e.target)) closeColFilter();
+}
+
+function closeColFilter() {
+  const popup = document.getElementById('col-filter-popup');
+  if (popup) popup.remove();
+  document.removeEventListener('click', _colFilterOutClick);
+}
+
+function filterColList(q) {
+  const lq = q.toLowerCase();
+  document.querySelectorAll('#cfp-list .cfp-item').forEach(el => {
+    el.style.display = el.dataset.val.includes(lq) ? '' : 'none';
+  });
+}
+
+function cfpToggleAll(checked, col) {
+  document.querySelectorAll('#cfp-list input[type=checkbox]').forEach(cb => { cb.checked = checked; });
+}
+
+function applyColFilter(col) {
+  const checks = document.querySelectorAll('#cfp-list input[type=checkbox]');
+  const selected = new Set();
+  checks.forEach(cb => { if (cb.checked) selected.add(cb.dataset.v); });
+  const allVals = getColValues(col);
+  if (selected.size === allVals.length || selected.size === 0) {
+    delete g_colFilters[col];
+  } else {
+    g_colFilters[col] = selected;
+  }
+  // Update header highlight
+  document.querySelectorAll('th[data-col]').forEach(th => {
+    if (th.dataset.col === col) th.classList.toggle('filtered', !!g_colFilters[col]);
+  });
+  closeColFilter();
+  renderMaster(document.getElementById('inp-search').value);
+  renderKanban(); updateStats();
+}
+
+function clearColFilter(col) {
+  delete g_colFilters[col];
+  document.querySelectorAll('th[data-col]').forEach(th => {
+    if (th.dataset.col === col) th.classList.remove('filtered');
+  });
+  closeColFilter();
+  renderMaster(document.getElementById('inp-search').value);
+  renderKanban(); updateStats();
+}
+
+// Recherche
+document.getElementById('inp-search').addEventListener('input', e => renderMaster(e.target.value));
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key==='f'){e.preventDefault();document.getElementById('inp-search').focus();return;}
+  if (e.ctrlKey && e.key==='s'){e.preventDefault();autoSave();toast('Sauvegarde lancée.');return;}
+  if (e.ctrlKey && e.key==='z'){e.preventDefault();undoLast();return;}
+});
+
+function onCCCheck(idx, checked) {
+  if (checked && g_master[idx].cc !== 'Cc') processCC(idx);
+  else if (!checked) { g_master[idx].cc = 'Non'; renderMaster(); updateStats(); }
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

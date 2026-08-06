@@ -1,0 +1,207 @@
+<!-- ============================================================================
+     HTML_OPTIONS
+     Lignes source Interface.html: 961-1161
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+  <!-- OPTIONS -->
+  <!-- Options -->
+  <div class="tabpane" id="tab-options">
+    <div class="tab-toolbar">
+      <span style="font-size:12px;font-weight:600;color:var(--k2-c)">OPTIONS — Configuration</span>
+      <div style="display:flex;gap:2px;margin-left:16px">
+        <button class="btn btn-sm btn-purple-out" onclick="optsShowPanel('cp')"     id="otab-cp">📋 Channel Partners</button>
+        <button class="btn btn-sm btn-ghost"      onclick="optsShowPanel('pj')"     id="otab-pj">📎 PJ Mails</button>
+        <button class="btn btn-sm btn-ghost"      onclick="optsShowPanel('reseau')" id="otab-reseau">🌐 Réseau partagé</button>
+        <button class="btn btn-sm btn-ghost"      onclick="optsShowPanel('nto')"    id="otab-nto">⛽ NTO / Fuel</button>
+        <button class="btn btn-sm btn-ghost"      onclick="optsShowPanel('diag')"   id="otab-diag">🔍 Diagnostic</button>
+        <button class="btn btn-sm btn-ghost"      onclick="optsShowPanel('stockage')" id="otab-stockage">💾 Stockage</button>
+      </div>
+    </div>
+
+    <!-- Panel CP ─────────────────────────────────── -->
+    <div id="opts-panel-cp" class="contacts-wrap" style="display:flex;flex-direction:column;gap:0">
+      <div style="padding:8px 12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border)">
+        <button class="btn btn-purple-out btn-sm" onclick="cpCfgAdd()">➕ Ajouter CP</button>
+        <button class="btn btn-ghost btn-sm" onclick="cpCfgSave()">💾 Enregistrer</button>
+        <span id="cp-cfg-status" style="font-size:11px;color:var(--green)"></span>
+      </div>
+      <table class="t-contacts" id="cp-cfg-table">
+        <thead><tr>
+          <th style="width:170px">Nom CP</th>
+          <th style="width:230px">Email principal (To)</th>
+          <th style="width:180px">Email CC</th>
+          <th style="width:60px">Actions</th>
+        </tr></thead>
+        <tbody id="cp-cfg-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Panel PJ Mails ───────────────────────────── -->
+    <div id="opts-panel-pj" style="display:none;padding:20px;max-width:620px;overflow-y:auto">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">Pièces jointes — Mails automatiques</div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:11px">
+        <div class="form-row">
+          <label style="min-width:190px">Chemin réseau PJ</label>
+          <input id="opts-pj-path" type="text" placeholder="F:\PJ" style="flex:1;font-family:var(--mono)">
+        </div>
+        <div style="font-size:11px;color:var(--text3)">
+          AutoIt cherchera dans ce dossier les fichiers correspondant au N° de dossier (ex: J1A0040247.pdf).
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:10px;font-size:12px;font-weight:600;color:var(--text2)">Extensions acceptées par type de mail</div>
+        <div class="form-row">
+          <label style="min-width:190px">Mail RDV</label>
+          <input id="opts-pj-rdv-ext" type="text" placeholder="pdf,xlsx" value="pdf" style="max-width:150px;font-family:var(--mono)">
+          <span style="font-size:10px;color:var(--text3);margin-left:8px">séparés par virgule</span>
+        </div>
+        <div class="form-row">
+          <label style="min-width:190px">Pré-alerte</label>
+          <input id="opts-pj-prealerte-ext" type="text" placeholder="pdf" value="pdf" style="max-width:150px;font-family:var(--mono)">
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:10px;font-size:12px;font-weight:600;color:var(--text2)">Sous-dossiers par transporteur (optionnel)</div>
+        <div class="form-row">
+          <label style="min-width:190px">Sous-dossier UPS</label>
+          <input id="opts-pj-ups-folder" type="text" placeholder="UPS" value="UPS" style="max-width:150px;font-family:var(--mono)">
+        </div>
+        <div class="form-row">
+          <label style="min-width:190px">Sous-dossier DGS</label>
+          <input id="opts-pj-dgs-folder" type="text" placeholder="DGS" value="DGS" style="max-width:150px;font-family:var(--mono)">
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;padding-top:4px">
+          <button class="btn btn-purple-out" onclick="optsSavePJ()" style="height:32px">💾 Enregistrer</button>
+          <span id="opts-pj-status" style="font-size:11px;color:var(--green)"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel NTO / Fuel ────────────────────────────── -->
+    <div id="opts-panel-nto" style="display:none;padding:20px;max-width:620px;overflow-y:auto">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">NTO — Taux fuel par transporteur</div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:11px">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:4px">
+          Chaque transporteur peut avoir un taux fuel différent. Laisser à 0 = taux automatique du mois.
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px">
+            <div style="font-size:12px;font-weight:700;color:var(--blue);margin-bottom:8px">Flex (IDF)</div>
+            <div class="form-row" style="align-items:center">
+              <label style="min-width:80px">Fuel %</label>
+              <input id="opts-fuel-flex" type="number" min="0" max="30" step="0.1" placeholder="ex: 6.5"
+                style="max-width:80px;font-family:var(--mono);font-size:14px;font-weight:700;color:var(--blue)">
+            </div>
+          </div>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px">
+            <div style="font-size:12px;font-weight:700;color:var(--orange);margin-bottom:8px">DGS (Province)</div>
+            <div class="form-row" style="align-items:center">
+              <label style="min-width:80px">Fuel %</label>
+              <input id="opts-fuel-dgs" type="number" min="0" max="30" step="0.1" placeholder="ex: 5.5"
+                style="max-width:80px;font-family:var(--mono);font-size:14px;font-weight:700;color:var(--orange)">
+            </div>
+          </div>
+        </div>
+        <div class="form-row" style="align-items:center;margin-top:4px">
+          <label style="min-width:200px">Taux global (si identique)</label>
+          <input id="opts-fuel-val" type="number" min="0" max="30" step="0.1" placeholder="ex: 6.5"
+            style="max-width:100px;font-family:var(--mono);font-size:13px;color:var(--purple)">
+          <span style="font-size:11px;color:var(--text3);margin-left:8px">Remplace les deux si renseigné</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-purple-out" onclick="optsSaveFuel()" style="height:32px">💾 Enregistrer</button>
+          <button class="btn btn-ghost" onclick="optsResetFuel()" style="height:32px">↺ Réinitialiser (auto)</button>
+          <span id="opts-fuel-status" style="font-size:11px;color:var(--green)"></span>
+        </div>
+      </div>
+      <div style="margin-top:16px;font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">Tableau historique</div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:12px">
+        <div id="opts-fuel-table" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;font-size:11px"></div>
+        <div style="margin-top:10px;font-size:11px;color:var(--text3)">
+          Pour mettre à jour le tableau : modifier la constante NTO_FUEL dans le fichier HTML.
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel Diagnostic ───────────────────────────── -->
+    <div id="opts-panel-diag" style="display:none;padding:20px;max-width:680px;overflow-y:auto">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">Diagnostic — Pourquoi c'est lent ?</div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-size:12px;color:var(--text3);line-height:1.6">
+          Lance un benchmark complet qui teste :<br>
+          — <b>Système</b> : RAM, CPU, disque (vitesse lecture/écriture)<br>
+          — <b>E.TMS</b> : réactivité des boutons LOG/NOTES/REFS, WinActivate, ControlSetText, Send<br>
+          — <b>Fichiers</b> : accès EDS, dossier PJ, réseau partagé<br>
+          — <b>Réseau</b> : serveur local, latences<br><br>
+          Le rapport s'affiche dans une fenêtre avec les temps en ms et les problèmes identifiés.<br>
+          Les logs sont sauvés dans <code style="color:var(--purple)">logs/DIAG_*.log</code>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button class="btn btn-purple-out" onclick="runDiagnostic()" style="height:38px;font-size:13px;padding:0 20px">
+            🔍 Lancer le diagnostic
+          </button>
+          <span id="diag-status" style="font-size:11px;color:var(--text3)"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel Stockage ─────────────────────────────── -->
+    <div id="opts-panel-stockage" style="display:none;padding:20px;max-width:680px;overflow-y:auto">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">Stockage — Taille des fichiers JSON</div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:14px">
+        <div id="storage-info" style="font-size:12px;color:var(--text2);line-height:1.8">
+          Cliquez sur "Analyser" pour voir la taille des fichiers.
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-blue-out btn-sm" onclick="loadStorageInfo()" style="height:32px">📊 Analyser le stockage</button>
+          <button class="btn btn-green-out btn-sm" onclick="cleanContacts()" style="height:32px">🧹 Nettoyer les contacts</button>
+          <span id="storage-status" style="font-size:11px;color:var(--text3)"></span>
+        </div>
+      </div>
+      <div style="margin-top:14px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:16px">
+        <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">Mémoire locale (navigateur)</div>
+        <div style="font-size:12px;color:var(--text2);line-height:1.8">
+          <b>Dossiers actifs :</b> <span id="mem-master">-</span><br>
+          <b>Contacts :</b> <span id="mem-contacts">-</span><br>
+          <b>RawData :</b> <span id="mem-rawdata">-</span><br>
+          <b>CP Data :</b> <span id="mem-cpdata">-</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel Réseau partagé ─────────────────────── -->
+    <div id="opts-panel-reseau" style="display:none;padding:20px;max-width:620px;overflow-y:auto">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">Mémoire partagée — Réseau F:\</div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:11px">
+        <div class="form-row">
+          <label style="min-width:190px">Chemin fichier état</label>
+          <input id="opts-state-path" type="text" placeholder="F:\dispatch\state.json"
+            style="flex:1;font-family:var(--mono)"
+            value="F:\CDG\PRODUCT\TRANSCON\Shared\Clients\HPE\Workboard\dispatch_state.json">
+        </div>
+        <div style="font-size:11px;color:var(--text3)">
+          Fichier JSON partagé sur le réseau. Toutes les personnes pointant vers le même fichier<br>
+          partageront l'état du Kanban en temps réel. AutoIt lit/écrit ce fichier automatiquement.
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:10px">
+          <div class="form-row" style="gap:6px">
+            <label style="min-width:190px">Mon prénom (opérateur)</label>
+            <input id="opts-my-name" type="text" placeholder="Mohamed" style="max-width:160px"
+              oninput="optsUpdateMyName()">
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">
+            Utilisé pour filtrer les dossiers vous concernant dans le Dispatch.
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-purple-out" onclick="optsSaveReseau()" style="height:32px">💾 Enregistrer</button>
+          <button class="btn btn-ghost" onclick="reseauForceSave()" style="height:32px">⬆ Sauvegarder maintenant</button>
+          <button class="btn btn-ghost" onclick="reseauForceLoad()" style="height:32px">⬇ Recharger depuis réseau</button>
+        </div>
+        <div id="opts-reseau-status" style="font-size:11px;color:var(--text3)">—</div>
+      </div>
+
+      <div style="font-size:11px;color:var(--green);margin-top:12px;padding:8px;background:var(--green-bg);border-radius:4px">
+        Les contacts sont inclus dans le fichier état partagé — pas besoin de fichier séparé.
+      </div>
+    </div>
+  </div>
+</div><!-- /content -->
+

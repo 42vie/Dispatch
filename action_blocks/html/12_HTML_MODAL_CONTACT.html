@@ -1,0 +1,38 @@
+<!-- ============================================================================
+     HTML_MODAL_CONTACT
+     Lignes source Interface.html: 1290-1321
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+<!-- ══ MODAL CONTACT ══ -->
+<div class="overlay" id="modal-contact">
+  <div class="modal">
+    <div class="modal-hd">
+      <h2 id="mcon-title">Ajouter Contact</h2>
+      <button class="modal-close" onclick="closeModal('modal-contact')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row"><label>Société / Client</label><input id="con-societe" type="text"></div>
+      <div class="form-row"><label>Nom Contact</label><input id="con-nom" type="text"></div>
+      <div class="form-row"><label>Téléphone</label><input id="con-tel" type="text"></div>
+      <div class="form-row"><label>Email</label><input id="con-email" type="email"></div>
+      <div class="form-row">
+        <label>CP ?</label>
+        <select id="con-cp">
+          <option value="">Non</option>
+          <option value="Arrow">Arrow</option>
+          <option value="SCC">SCC</option>
+          <option value="Computacenter">Computacenter</option>
+        </select>
+      </div>
+      <div class="form-row"><label>Notes</label><input id="con-notes" type="text"></div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="closeModal('modal-contact')">Annuler</button>
+      <button class="btn btn-success" onclick="saveContact()">💾 Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+

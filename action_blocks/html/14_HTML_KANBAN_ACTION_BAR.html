@@ -1,0 +1,42 @@
+<!-- ============================================================================
+     HTML_KANBAN_ACTION_BAR
+     Lignes source Interface.html: 1332-1367
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+<!-- ══ KANBAN ACTION BAR ══ -->
+<div id="kanban-action-bar">
+  <span class="kab-count"><span id="kab-count">0</span> sélectionné(s)</span>
+  <div style="width:1px;height:22px;background:var(--border2);margin:0 4px"></div>
+
+  <!-- Actions E.TMS -->
+  <button class="btn btn-sm" style="background:var(--blue-bg);color:var(--blue);border-color:var(--blue)" onclick="kabSendMail()" title="Envoyer mail RDV pour les dossiers sélectionnés">
+    📧 Mail RDV
+  </button>
+  <button class="btn btn-sm" style="background:var(--orange-bg);color:var(--orange);border-color:var(--orange)" onclick="kabSendAlerte()" title="Envoyer pré-alerte pour les dossiers sélectionnés">
+    ⚡ Pré-alerte
+  </button>
+  <button class="btn btn-sm" style="background:var(--green-bg);color:var(--green);border-color:var(--green)" onclick="kabLaunchFC()" title="Lancer le File Closing pour les dossiers sélectionnés">
+    📋 FC
+  </button>
+  <button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border-color:var(--purple)" onclick="kabLaunchCOMAT()" title="Lancer COMAT pour les dossiers sélectionnés">
+    🔎 COMAT
+  </button>
+
+  <div style="width:1px;height:22px;background:var(--border2);margin:0 4px"></div>
+
+  <!-- Actions édition -->
+  <button class="btn btn-sm btn-ghost" onclick="kabChangeStatus()" title="Changer le statut">
+    🔄 Statut
+  </button>
+  <button class="btn btn-sm btn-ghost" onclick="kabOpenEdit()" title="Éditer contact / email">
+    ✏ Contact
+  </button>
+  <button class="btn btn-sm btn-ghost" onclick="kabSelectAll()" title="Tout sélectionner dans cette colonne">
+    ☑ Tout
+  </button>
+  <button class="btn btn-sm btn-ghost" style="color:var(--red)" onclick="kabClearSel()" title="Désélectionner tout">
+    ✕
+  </button>
+</div>
+

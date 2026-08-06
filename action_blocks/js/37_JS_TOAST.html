@@ -1,0 +1,17 @@
+<!-- ============================================================================
+     JS_TOAST
+     Lignes source Interface.html: 3239-3249
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+// ║  TOAST                                                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+let _toastTimer=null;
+function toast(msg) {
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer=setTimeout(()=>el.classList.remove('show'),3000);
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗

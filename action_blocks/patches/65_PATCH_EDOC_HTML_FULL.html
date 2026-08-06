@@ -1,0 +1,77 @@
+<!-- ============================================================================
+     PATCH_EDOC_HTML_FULL
+     Lignes source Interface.html: 5934-6004
+     Bloc contigu extrait tel quel.
+============================================================================ -->
+
+<!-- ============================================================
+     CLEAN V13 - EDOC Master 100% HTML, pont AutoIt uniquement
+     ============================================================ -->
+<style id="clean-edoc-html-full-v13-style">
+#tab-edocmaster{height:100%;overflow:auto;background:var(--bg);}
+.cr-edoc-page{padding:12px;display:grid;grid-template-columns:360px 1fr;gap:12px;min-height:100%;}
+.cr-edoc-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-sm);padding:14px;}
+.cr-edoc-card h3{margin:0 0 10px;font-size:13px;font-weight:900;color:var(--text);}
+.cr-edoc-card p{font-size:11px;color:var(--text3);line-height:1.45;margin:0 0 10px;}
+.cr-edoc-field{display:flex;flex-direction:column;gap:4px;margin-bottom:9px;}
+.cr-edoc-field label{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);font-weight:800;}
+.cr-edoc-input,.cr-edoc-select{height:30px;border:1px solid var(--border2);border-radius:8px;background:var(--surface2);color:var(--text);padding:0 9px;font-size:12px;outline:none;}
+.cr-edoc-input:focus,.cr-edoc-select:focus{border-color:var(--blue);background:var(--surface);}
+.cr-edoc-actions-list{display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:8px;background:var(--surface2);}
+.cr-edoc-action-row{display:grid;grid-template-columns:1fr 48px 48px;gap:6px;align-items:center;font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px;}
+.cr-edoc-table-wrap{height:calc(100vh - 270px);min-height:360px;overflow:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface);}
+.cr-edoc-table{width:100%;border-collapse:collapse;font-size:12px;}
+.cr-edoc-table th{position:sticky;top:0;background:var(--surface2);z-index:5;text-align:left;padding:8px;border-bottom:1px solid var(--border);color:var(--text2);font-size:11px;white-space:nowrap;}
+.cr-edoc-table td{padding:7px 8px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.cr-edoc-table tr:hover{background:var(--blue-bg);}
+.cr-edoc-live{font-family:var(--mono);font-size:11px;color:var(--purple);background:var(--purple-bg);border:1px solid var(--purple);border-radius:10px;padding:8px 10px;white-space:pre-wrap;margin-top:10px;}
+.cr-edoc-toolbar{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
+.cr-edoc-mini{height:25px;padding:0 8px;font-size:10px;border-radius:999px;}
+#cr-tools-panel{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:2px;}
+.cr-tool-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px;box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:7px;min-height:92px;}
+.cr-tool-title{font-size:12px;font-weight:900;color:var(--text);}.cr-tool-sub{font-size:10px;color:var(--text3);line-height:1.35;}
+#tab-dashboard .cr-grid{grid-template-columns:repeat(6,minmax(0,1fr));gap:8px!important;}#tab-dashboard .cr-card{padding:10px!important;}#tab-dashboard .cr-kpi{font-size:20px!important;}#tab-dashboard .cr-wide{grid-column:span 3!important;}#tab-dashboard .cr-full{grid-column:span 6!important;}
+@media(max-width:1100px){.cr-edoc-page,#cr-tools-panel{grid-template-columns:1fr}.cr-edoc-table-wrap{height:450px}#tab-dashboard .cr-grid{grid-template-columns:repeat(2,minmax(0,1fr));}#tab-dashboard .cr-wide,#tab-dashboard .cr-full{grid-column:span 2!important;}}
+</style>
+<script id="clean-edoc-html-full-v13-script">
+(function(){
+'use strict';
+var edocState={stores:[],profiles:[],items:[]};
+function id(x){return document.getElementById(x)}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function toastMsg(s){if(typeof toast==='function')toast(s);else console.log(s)}
+function apiAction(payload){if(typeof apiCall==='function')return apiCall('action',payload);return fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json().catch(function(){return {status:r.ok?'ok':'error'}});});}
+function switchTabClean(name){document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active')});document.querySelectorAll('.tabpane').forEach(function(p){p.classList.remove('active')});var t=document.querySelector('.tab[data-tab="'+name+'"]'),p=id('tab-'+name);if(t)t.classList.add('active');if(p)p.classList.add('active');if(name==='edocmaster')initEdocHtml();}
+function live(s){var el=id('cr-edoc-live');if(el)el.textContent=s;}
+function ensureEdocTab(){
+ var tabbar=id('tabbar'),content=id('content');if(!tabbar||!content)return;
+ if(!document.querySelector('.tab[data-tab="edocmaster"]')){var t=document.createElement('div');t.className='tab';t.dataset.tab='edocmaster';t.textContent='EDOC Master';var opt=document.querySelector('.tab[data-tab="options"]');tabbar.insertBefore(t,opt||null);}
+ if(!id('tab-edocmaster')){var p=document.createElement('div');p.className='tabpane';p.id='tab-edocmaster';p.innerHTML=`<div class="cr-edoc-page"><section class="cr-edoc-card"><h3>EDOC Master HTML</h3><p>Interface intégrée dans le HTML. AutoIt ne sert que de pont Outlook / EDOC.</p><div class="cr-edoc-field"><label>Boîte mail</label><select id="edoc-mailbox" class="cr-edoc-select"></select></div><div class="cr-edoc-field"><label>Profil client</label><select id="edoc-profile" class="cr-edoc-select"></select></div><div class="cr-edoc-field"><label>Actions à scanner</label><div class="cr-edoc-actions-list" id="edoc-actions-list"></div></div><div class="cr-edoc-field"><label>Période</label><select id="edoc-period" class="cr-edoc-select"><option>Dernier upload (Automatique)</option><option>Aujourd'hui</option><option>Il y a 1h</option><option>Personnalisé</option></select></div><div class="cr-edoc-field"><label>Du</label><input id="edoc-start" class="cr-edoc-input" placeholder="yyyy/mm/dd hh:mm:ss"></div><div class="cr-edoc-field"><label>Au</label><input id="edoc-end" class="cr-edoc-input" placeholder="yyyy/mm/dd hh:mm:ss"></div><div class="cr-edoc-toolbar"><button class="btn btn-primary" id="edoc-scan">🔎 Scanner</button><button class="btn btn-ghost" id="edoc-refresh">🔄 Recharger config</button></div><div class="cr-edoc-live" id="cr-edoc-live">Prêt.</div></section><section class="cr-edoc-card"><div class="cr-edoc-toolbar"><button class="btn btn-success" id="edoc-upload">🚀 Uploader sélection</button><button class="btn btn-blue-out" id="edoc-check-all">Tout cocher</button><button class="btn btn-ghost" id="edoc-uncheck-all">Tout décocher</button><button class="btn btn-purple-out" id="edoc-mail-only">Cocher mails</button><button class="btn btn-purple-out" id="edoc-pj-only">Cocher PJ</button></div><div class="cr-edoc-table-wrap"><table class="cr-edoc-table"><thead><tr><th></th><th>Action</th><th>Date</th><th>Dossiers</th><th>Mail</th><th>PJ</th><th>Fichiers PJ</th><th>Objet</th></tr></thead><tbody id="edoc-results"></tbody></table></div></section></div>`;content.appendChild(p);bindEdocHtml();}
+}
+function bindEdocHtml(){
+ [['edoc-refresh',loadEdocConfig],['edoc-scan',scanEdoc],['edoc-upload',uploadEdoc],['edoc-check-all',function(){setChecks(true)}],['edoc-uncheck-all',function(){setChecks(false)}],['edoc-mail-only',function(){checkMode('mail')}],['edoc-pj-only',function(){checkMode('pj')}]].forEach(function(x){var b=id(x[0]);if(b&&!b.dataset.bound){b.dataset.bound='1';b.onclick=x[1];}});
+ var p=id('edoc-profile');if(p&&!p.dataset.bound){p.dataset.bound='1';p.onchange=renderActions;}
+ var per=id('edoc-period');if(per&&!per.dataset.bound){per.dataset.bound='1';per.onchange=updateDates;}
+}
+function todayEnd(){var d=new Date();return d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+' 23:59:59'}
+function todayStart(){var d=new Date();return d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+' 00:00:00'}
+function hourAgo(){var d=new Date(Date.now()-3600000);return d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':00'}
+function updateDates(){var v=id('edoc-period').value;if(v==="Aujourd'hui")id('edoc-start').value=todayStart();else if(v==='Il y a 1h')id('edoc-start').value=hourAgo();else if(v==='Personnalisé'&&!id('edoc-start').value)id('edoc-start').value=todayStart();else if(v==='Dernier upload (Automatique)')id('edoc-start').value='Calculé automatiquement';id('edoc-end').value=todayEnd();}
+function loadEdocConfig(){live('Chargement Outlook/config EDOC...');apiAction({action:'EDOC_WEB_INIT'}).then(function(r){if(r.status!=='ok'){live('Erreur : '+(r.reason||'init impossible'));return;}edocState.stores=r.stores||[];edocState.profiles=r.profiles||[];id('edoc-mailbox').innerHTML=edocState.stores.map(function(s){return '<option>'+esc(s)+'</option>'}).join('');id('edoc-profile').innerHTML=edocState.profiles.map(function(p){return '<option>'+esc(p.name)+'</option>'}).join('');renderActions();updateDates();live('Config chargée.');}).catch(function(e){live('Erreur config : '+(e.message||e));});}
+function currentProfile(){var n=id('edoc-profile').value;return edocState.profiles.find(function(p){return p.name===n})||{actions:[]};}
+function renderActions(){var prof=currentProfile();var box=id('edoc-actions-list');if(!box)return;box.innerHTML=(prof.actions||[]).map(function(a){return `<div class="cr-edoc-action-row" data-action="${esc(a.name)}"><b>${esc(a.name)}</b><label><input type="checkbox" data-kind="mail"> Mail</label><label><input type="checkbox" data-kind="pj"> PJ</label></div>`}).join('')||'<span class="cr-sub">Aucune action.</span>';}
+function actionSpec(){return Array.from(document.querySelectorAll('#edoc-actions-list [data-action]')).map(function(row){var name=row.dataset.action;var mail=row.querySelector('[data-kind="mail"]').checked?'1':'0';var pj=row.querySelector('[data-kind="pj"]').checked?'1':'0';return name+'~'+mail+'~'+pj;}).join('|');}
+function scanEdoc(){var payload={action:'EDOC_WEB_SCAN',mailbox:id('edoc-mailbox').value,profile:id('edoc-profile').value,period:id('edoc-period').value,start:id('edoc-start').value,end:id('edoc-end').value,actions:actionSpec()};live('Scan Outlook en cours...');apiAction(payload).then(function(r){if(r.status!=='ok'){live('Erreur scan : '+(r.reason||'inconnue'));return;}edocState.items=r.items||[];renderResults();live((r.count||0)+' élément(s) trouvé(s).');}).catch(function(e){live('Erreur scan : '+(e.message||e));});}
+function renderResults(){var body=id('edoc-results');body.innerHTML=edocState.items.length?edocState.items.map(function(it){return `<tr data-idx="${it.index}"><td><input type="checkbox" class="edoc-row-check"></td><td>${esc(it.action)}</td><td>${esc(it.date)}</td><td><b>${esc(it.dossiers)}</b></td><td>${it.mail?'Oui':'Non'}</td><td>${it.pj?'Oui':'Non'}</td><td>${esc(it.pjNames||'')}</td><td title="${esc(it.subject)}">${esc(String(it.subject||'').slice(0,95))}</td></tr>`}).join(''):'<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:22px">Aucun résultat.</td></tr>';}
+function setChecks(v){document.querySelectorAll('.edoc-row-check').forEach(function(c){c.checked=v})}
+function checkMode(mode){document.querySelectorAll('#edoc-results tr[data-idx]').forEach(function(tr){var idx=Number(tr.dataset.idx);var it=edocState.items.find(function(x){return x.index===idx});if(!it)return;tr.querySelector('.edoc-row-check').checked=mode==='mail'?!!it.mail:!!it.pj;});}
+function uploadEdoc(){var idx=Array.from(document.querySelectorAll('#edoc-results tr[data-idx]')).filter(function(tr){return tr.querySelector('.edoc-row-check').checked}).map(function(tr){return tr.dataset.idx}).join('|');if(!idx){toastMsg('Aucune ligne cochée.');return;}live('Upload EDOC en cours...');apiAction({action:'EDOC_WEB_UPLOAD',mailbox:id('edoc-mailbox').value,indexes:idx}).then(function(r){live(r.status==='ok'?'Upload terminé : '+r.uploaded+' élément(s).':'Erreur upload : '+(r.reason||'inconnue'));}).catch(function(e){live('Erreur upload : '+(e.message||e));});}
+function ensureToolsPanel(){var dash=document.querySelector('#tab-dashboard .cr-page');if(!dash||id('cr-tools-panel'))return;var panel=document.createElement('section');panel.id='cr-tools-panel';panel.innerHTML='<div class="cr-tool-card"><div class="cr-tool-title">🛠 Infos manquantes</div><div class="cr-tool-sub">Email, contact, téléphone, transporteur.</div><button class="btn btn-purple-out btn-sm" data-cr-open="both">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">📦 CMR / BL</div><div class="cr-tool-sub">Queue CMR, BL/PDF, mail, EDOC.</div><button class="btn btn-blue-out btn-sm" id="tool-cmr">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">📤 EDOC Master</div><div class="cr-tool-sub">Scan Outlook + upload EDOC dans HTML.</div><button class="btn btn-success btn-sm" id="tool-edoc">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">🧭 Workflow</div><div class="cr-tool-sub">Kanban + filtres transporteur.</div><button class="btn btn-ghost btn-sm" id="tool-workflow">Ouvrir</button></div>';var a=id('cr-dashboard-actions');if(a)a.insertAdjacentElement('afterend',panel);else dash.insertBefore(panel,dash.firstChild);id('tool-cmr').onclick=function(){switchTabClean('cmr')};id('tool-edoc').onclick=function(){switchTabClean('edocmaster')};id('tool-workflow').onclick=function(){switchTabClean('workflow')};}
+function patchTabs(){document.addEventListener('click',function(e){var t=e.target.closest('.tab[data-tab="edocmaster"]');if(!t)return;e.preventDefault();e.stopPropagation();switchTabClean('edocmaster');},true)}
+function initEdocHtml(){ensureEdocTab();bindEdocHtml();if(!edocState.stores.length)loadEdocConfig();}
+function init(){ensureEdocTab();ensureToolsPanel();patchTabs();setInterval(function(){if(id('tab-dashboard')&&id('tab-dashboard').classList.contains('active'))ensureToolsPanel();},1000)}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){setTimeout(init,700)});else setTimeout(init,700);window.addEventListener('load',function(){setTimeout(init,1200)});
+})();
+</script>
+
+

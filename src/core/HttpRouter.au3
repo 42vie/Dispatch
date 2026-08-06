@@ -6,7 +6,7 @@
 ; MainDispatch.au3 reste la version executable complete pour eviter toute casse.
 ; ============================================================================
 
-Func _HandleClient($iSocket)
+Func HttpServer_HandleClient($iSocket)
     Local $sHeader = ""
     Local $iContentLength = 0
     Local $sBody = ""

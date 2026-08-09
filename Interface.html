@@ -641,7 +641,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
 <!-- ══ TABS + CONTENT (rangée horizontale : sidebar verticale à gauche) ══ -->
 <div id="app-row" style="display:flex;flex:1;overflow:hidden;min-height:0;">
 <div id="tabbar">
-  <div id="tabbar-toggle" title="Réduire / agrandir le menu"><span class="tic">◀</span><span class="ttx">Réduire</span></div>
+  <div id="tabbar-toggle" title="Réduire / agrandir le menu (Ctrl+B)"><span class="tic">◀</span><span class="ttx">Réduire</span></div>
   <div class="tab active" data-tab="dispatch">📋 Dispatch</div>
   <div class="tab" data-tab="workflow">🧭 Workflow</div>
   <div class="tab" data-tab="cp">🤝 Channel Partners</div>
@@ -1847,6 +1847,7 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key==='f'){e.preventDefault();document.getElementById('inp-search').focus();return;}
   if (e.ctrlKey && e.key==='s'){e.preventDefault();autoSave();toast('Sauvegarde lancée.');return;}
   if (e.ctrlKey && e.key==='z'){e.preventDefault();undoLast();return;}
+  if (e.ctrlKey && e.key==='b'){e.preventDefault();var tgl=document.getElementById('tabbar-toggle');if(tgl)tgl.click();return;}
 });
 
 function onCCCheck(idx, checked) {
@@ -6597,6 +6598,8 @@ function ensureTab(){
     id('hpe-quick-ref').addEventListener('keydown', function(e){ if(e.key==='Enter') quickSearch(); });
     id('hpe-map-add').onclick=addMapping;
     id('hpe-map-reload').onclick=loadMapping;
+    id('hpe-map-ref').addEventListener('keydown', function(e){ if(e.key==='Enter') addMapping(); });
+    id('hpe-map-dossier').addEventListener('keydown', function(e){ if(e.key==='Enter') addMapping(); });
     id('hpe-map-body').addEventListener('click', function(e){
       var d=e.target.closest('[data-map-del]'); if(!d) return;
       if(confirm('Supprimer le lien "'+d.dataset.mapDel+'" ?')) delMapping(d.dataset.mapDel);
@@ -6604,7 +6607,10 @@ function ensureTab(){
     id('hpe-suivi-load').onclick=loadDossier;
     id('hpe-suivi-dossier').addEventListener('keydown', function(e){ if(e.key==='Enter') loadDossier(); });
     id('hpe-suivi-save').onclick=saveSuivi;
+    id('hpe-suivi-owner').addEventListener('keydown', function(e){ if(e.key==='Enter') saveSuivi(); });
+    id('hpe-suivi-status').addEventListener('keydown', function(e){ if(e.key==='Enter') saveSuivi(); });
     id('hpe-note-add').onclick=addNote;
+    id('hpe-note-text').addEventListener('keydown', function(e){ if(e.key==='Enter' && e.ctrlKey){ addNote(); } });
     id('hpe-suivi-body').addEventListener('click', function(e){
       var tr=e.target.closest('tr[data-dossier]'); if(!tr) return;
       id('hpe-suivi-dossier').value = tr.dataset.dossier;

@@ -6361,6 +6361,77 @@ function addNote(){
   }).catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
 }
 
+var lastAlerts = [];
+var LS_DISMISS = 'dispatch_hpe_dismissed';
+function dismissKey(a){ return a.reference+'@'+a.date; }
+function getDismissed(){ try{ return JSON.parse(localStorage.getItem(LS_DISMISS)||'[]'); }catch(e){ return []; } }
+function isDismissed(a){ return getDismissed().indexOf(dismissKey(a))!==-1; }
+function dismissAlert(a){
+  var d=getDismissed(), k=dismissKey(a);
+  if(d.indexOf(k)===-1){ d.push(k); try{ localStorage.setItem(LS_DISMISS, JSON.stringify(d)); }catch(e){} }
+}
+
+function renderAlerts(list){
+  var b=id('hpe-alerts-list'); if(!b) return;
+  var visible=list.filter(function(a){ return !isDismissed(a); });
+  if(!visible.length){ b.innerHTML='<div style="color:var(--text3);font-size:11px">Aucune alerte.</div>'; return; }
+  b.innerHTML=visible.map(function(a){
+    var replyBadge = a.reply ? ' <span style="color:var(--text3);font-size:10px">(réponse)</span>' : '';
+    var threadBadge = a.threadCount>1 ? ' <span style="color:var(--blue);font-size:10px">· '+a.threadCount+' mails</span>' : '';
+    var ownerTxt = a.owner ? (' — Propriétaire : <b>'+esc(a.owner)+'</b>') : '';
+    return '<div class="hpe-note" data-alert-ref="'+esc(a.reference)+'" data-alert-date="'+esc(a.date)+'">' +
+      '<div class="hpe-note-meta">'+esc(a.date)+' — '+esc(a.sender)+threadBadge+replyBadge+'</div>' +
+      '<div><b>'+esc(a.reference)+'</b> ↔ dossier <b>'+esc(a.dossier)+'</b>'+ownerTxt+'</div>' +
+      '<div style="color:var(--text2)">'+esc(a.subject)+'</div>' +
+      '<div class="hpe-actions" style="margin:6px 0 0"><button class="btn btn-blue-out hpe-mini" data-alert-open="'+esc(a.dossier)+'" style="height:22px;padding:0 7px;font-size:10px">Ouvrir suivi</button><button class="btn btn-ghost hpe-mini" data-alert-dismiss="1" style="height:22px;padding:0 7px;font-size:10px">✕ Ignorer</button></div>' +
+      '</div>';
+  }).join('');
+}
+
+function scanMail(){
+  var st=id('hpe-scan-status');
+  if(st) st.textContent='Scan en cours...';
+  apiAction({action:'HPE_MAIL_SCAN'}).then(function(r){
+    if(!r || r.status!=='ok'){ if(st) st.textContent='Erreur : '+((r&&r.message)||'inconnue'); return; }
+    lastAlerts = r.alerts || [];
+    if(st) st.textContent = lastAlerts.length ? (lastAlerts.length+' fil(s) détecté(s).') : 'Aucun mail lié trouvé.';
+    renderAlerts(lastAlerts);
+    renderDashboardBanner(lastAlerts);
+  }).catch(function(e){ if(st) st.textContent='Erreur : '+(e.message||e); });
+}
+
+function ensureDashboardBanner(){
+  var dash=document.querySelector('#tab-dashboard .cr-page'); if(!dash) return null;
+  var el=id('hpe-dash-banner');
+  if(!el){
+    el=document.createElement('section'); el.id='hpe-dash-banner';
+    el.style.cssText='display:none;background:var(--orange-bg);border:1px solid var(--orange);border-radius:12px;padding:10px 12px;margin-bottom:10px;';
+    dash.insertBefore(el, dash.firstChild);
+  }
+  return el;
+}
+function renderDashboardBanner(list){
+  var el=ensureDashboardBanner(); if(!el) return;
+  var visible=list.filter(function(a){ return !isDismissed(a); });
+  if(!visible.length){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='block';
+  el.innerHTML='<div style="font-weight:800;color:var(--orange);font-size:12px;margin-bottom:6px">⚠ '+visible.length+' mail(s) HPE lié(s) à un dossier suivi</div>' +
+    visible.slice(0,5).map(function(a){
+      var ownerTxt = a.owner ? (' (Propriétaire : '+esc(a.owner)+')') : '';
+      return '<div style="font-size:11px;margin-bottom:3px">'+esc(a.reference)+' → <b>'+esc(a.dossier)+'</b>'+ownerTxt+' — '+esc(a.subject)+' <a href="#" data-dash-hpe-open="'+esc(a.dossier)+'" style="color:var(--blue)">ouvrir</a></div>';
+    }).join('') +
+    (visible.length>5 ? '<div style="font-size:10px;color:var(--text3)">+ '+(visible.length-5)+' autre(s) — voir onglet HPE</div>' : '');
+}
+document.addEventListener('click', function(e){
+  var link=e.target.closest('[data-dash-hpe-open]');
+  if(!link) return;
+  e.preventDefault();
+  var dossier=link.dataset.dashHpeOpen;
+  var t=document.querySelector('.tab[data-tab="hpe"]');
+  if(t) t.click();
+  setTimeout(function(){ var f=id('hpe-suivi-dossier'); if(f){ f.value=dossier; loadDossier(); } }, 300);
+}, true);
+
 function ensureTab(){
   var tabbar=id('tabbar'), content=id('content'); if(!tabbar||!content) return;
   var tab=document.querySelector('.tab[data-tab="hpe"]');
@@ -6370,6 +6441,12 @@ function ensureTab(){
   if(!pane){
     pane=document.createElement('div'); pane.className='tabpane'; pane.id='tab-hpe';
     pane.innerHTML = '<div class="hpe-page">' +
+      '<section class="hpe-card" style="grid-column:1 / -1">' +
+      '<h3>🎫 Alertes mail HPE</h3>' +
+      '<div class="hpe-sub">Mails reçus (14 derniers jours) dont la référence (objet du mail) est liée à un dossier suivi. Les réponses (RE:/TR:...) du même fil sont regroupées en une seule alerte.</div>' +
+      '<div class="hpe-actions"><button class="btn btn-orange-out btn-sm" id="hpe-scan-btn">📧 Scanner les mails</button><span id="hpe-scan-status" class="hpe-hint"></span></div>' +
+      '<div id="hpe-alerts-list"></div>' +
+      '</section>' +
       '<section class="hpe-card">' +
       '<h3>Recherche rapide E.TMS</h3>' +
       '<div class="hpe-sub">Colle une référence HPE (INC/FXC/ARN...) : prépare "R#..." dans le champ de recherche E.TMS en haut de l\'écran.</div>' +
@@ -6396,6 +6473,17 @@ function ensureTab(){
       '<div class="hpe-table-wrap"><table class="hpe-table"><thead><tr><th>Dossier</th><th>Propriétaire</th><th>Statut</th><th>MAJ</th></tr></thead><tbody id="hpe-suivi-body"></tbody></table></div>' +
       '</section></div>';
     content.appendChild(pane);
+    id('hpe-scan-btn').onclick=scanMail;
+    id('hpe-alerts-list').addEventListener('click', function(e){
+      var card=e.target.closest('[data-alert-ref]'); if(!card) return;
+      var openBtn=e.target.closest('[data-alert-open]');
+      if(openBtn){ id('hpe-suivi-dossier').value=openBtn.dataset.alertOpen; loadDossier(); return; }
+      var dismissBtn=e.target.closest('[data-alert-dismiss]');
+      if(dismissBtn){
+        var a=lastAlerts.find(function(x){ return x.reference===card.dataset.alertRef && x.date===card.dataset.alertDate; });
+        if(a){ dismissAlert(a); renderAlerts(lastAlerts); renderDashboardBanner(lastAlerts); }
+      }
+    });
     id('hpe-quick-go').onclick=quickSearch;
     id('hpe-quick-ref').addEventListener('keydown', function(e){ if(e.key==='Enter') quickSearch(); });
     id('hpe-map-add').onclick=addMapping;
@@ -6429,7 +6517,7 @@ document.addEventListener('click', function(e){
   if(tab){ e.preventDefault(); e.stopPropagation(); ensureTab(); switchToHpe(); }
 }, true);
 
-function init(){ ensureTab(); }
+function init(){ ensureTab(); scanMail(); setInterval(scanMail, 300000); }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(init,700); });
 else setTimeout(init,700);
 window.addEventListener('load', function(){ setTimeout(init,1300); });

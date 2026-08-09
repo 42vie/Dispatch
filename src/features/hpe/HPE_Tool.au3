@@ -229,9 +229,10 @@ Func _HPE_MailScanJSON($sMailbox = "")
     $oItems.Sort("[ReceivedTime]", True) ; plus recent d'abord
     Local $sDateLimit = _FmtDate(_DateAdd('d', -14, _NowCalc()))
 
-    Local $oThreadData = ObjCreate("Scripting.Dictionary")  ; reference -> champs (packe)
+    Local $oThreadData = ObjCreate("Scripting.Dictionary")  ; reference -> champs (packe), dossier connu
     Local $oThreadCount = ObjCreate("Scripting.Dictionary") ; reference -> nb de mails du fil
-    Local $oNoMatch = ObjCreate("Scripting.Dictionary")     ; references confirmees sans dossier lie
+    Local $oNoMatchData = ObjCreate("Scripting.Dictionary")  ; reference -> champs (packe), pas de dossier lie
+    Local $oNoMatchCount = ObjCreate("Scripting.Dictionary") ; reference -> nb de mails du fil (non lie)
 
     Local $iScanned = 0
     For $oItem In $oItems
@@ -252,19 +253,27 @@ Func _HPE_MailScanJSON($sMailbox = "")
             $oThreadCount.Item($sRef) = $oThreadCount.Item($sRef) + 1
             ContinueLoop
         EndIf
-        If $oNoMatch.Exists($sRef) Then ContinueLoop
+        If $oNoMatchData.Exists($sRef) Then
+            $oNoMatchCount.Item($sRef) = $oNoMatchCount.Item($sRef) + 1
+            ContinueLoop
+        EndIf
+
+        Local $sReply = "false"
+        If StringRegExp($sSubj, "(?i)^(RE|TR|FW|FWD)\s*:") Then $sReply = "true"
 
         Local $sDossier = IniRead($HPE_INI_PATH, _HPE_MapSec($sRef), "DOSSIER", "")
         If $sDossier = "" Then
-            $oNoMatch.Add($sRef, True)
+            ; Reference HPE detectee dans l'objet mais pas encore liee a un
+            ; dossier : on la garde quand meme (au lieu de la jeter) pour que
+            ; l'utilisateur puisse la relier depuis l'onglet HPE -- c'est la
+            ; le vrai interet du scan pour les *nouveaux* dossiers.
+            $oNoMatchData.Add($sRef, $oItem.EntryID & Chr(31) & $sSubj & Chr(31) & $oItem.SenderName & Chr(31) & $itemDate & Chr(31) & $sReply)
+            $oNoMatchCount.Add($sRef, 1)
             ContinueLoop
         EndIf
 
         Local $sOwner = IniRead($HPE_INI_PATH, _HPE_SuiviSec($sDossier), "OWNER", "")
         Local $sStatus = IniRead($HPE_INI_PATH, _HPE_SuiviSec($sDossier), "STATUS", "")
-
-        Local $sReply = "false"
-        If StringRegExp($sSubj, "(?i)^(RE|TR|FW|FWD)\s*:") Then $sReply = "true"
 
         $oThreadData.Add($sRef, $oItem.EntryID & Chr(31) & $sDossier & Chr(31) & $sSubj & Chr(31) & $oItem.SenderName & Chr(31) & $itemDate & Chr(31) & $sOwner & Chr(31) & $sStatus & Chr(31) & $sReply)
         $oThreadCount.Add($sRef, 1)
@@ -287,6 +296,20 @@ Func _HPE_MailScanJSON($sMailbox = "")
     Next
     $sJson &= "]"
 
+    Local $sUnmappedJson = "["
+    For $sKey In $oNoMatchData.Keys
+        Local $u = StringSplit($oNoMatchData.Item($sKey), Chr(31), 2)
+        If $sUnmappedJson <> "[" Then $sUnmappedJson &= ","
+        $sUnmappedJson &= '{"reference":"' & _JsonEscape($sKey) & '"' & _
+                ',"entryId":"' & _JsonEscape($u[0]) & '"' & _
+                ',"subject":"' & _JsonEscape($u[1]) & '"' & _
+                ',"sender":"' & _JsonEscape($u[2]) & '"' & _
+                ',"date":"' & _JsonEscape($u[3]) & '"' & _
+                ',"reply":' & $u[4] & _
+                ',"threadCount":' & $oNoMatchCount.Item($sKey) & '}'
+    Next
+    $sUnmappedJson &= "]"
+
     ; mappingCount/suiviCount pour l'apercu Dashboard.
     Local $iMapCount = 0, $iSuiviCount = 0
     Local $sections = IniReadSectionNames($HPE_INI_PATH)
@@ -296,5 +319,5 @@ Func _HPE_MailScanJSON($sMailbox = "")
             If StringLeft($sections[$i], 6) = "SUIVI:" Then $iSuiviCount += 1
         Next
     EndIf
-    Return '{"status":"ok","alerts":' & $sJson & ',"mappingCount":' & $iMapCount & ',"suiviCount":' & $iSuiviCount & '}'
+    Return '{"status":"ok","alerts":' & $sJson & ',"unmapped":' & $sUnmappedJson & ',"mappingCount":' & $iMapCount & ',"suiviCount":' & $iSuiviCount & '}'
 EndFunc

@@ -297,7 +297,15 @@ EndFunc
 ; ==================================================================================================
 
 Func _EDOC_EnsureOutlook()
-    If IsObj($g_oOutlook) And IsObj($g_oNamespace) Then Return True
+    ; Lecture prealable de chaque globale avant le test combine ci-dessous --
+    ; meme contournement que pour les ReDim dans StateService.au3/JobService.au3 :
+    ; la toute premiere reference a une variable Global a l'interieur d'une
+    ; Func peut echouer a se lier correctement si elle apparait directement
+    ; dans une expression composee ; une lecture simple juste avant regle le
+    ; probleme de facon fiable.
+    Local $bOutlookOk = IsObj($g_oOutlook)
+    Local $bNamespaceOk = IsObj($g_oNamespace)
+    If $bOutlookOk And $bNamespaceOk Then Return True
     _InitConfig()
     $g_oOutlook = ObjGet("", "Outlook.Application")
     If @error Or Not IsObj($g_oOutlook) Then Return False

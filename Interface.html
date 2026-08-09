@@ -204,25 +204,27 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
 .etms-btn.warn:hover { background: var(--orange-bg); border-color: var(--orange); }
 .etms-sep { width: 1px; height: 18px; background: var(--border); }
 
-/* ── TABS ── */
+/* ── TABS (barre latérale verticale) ── */
 #tabbar {
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  display: flex; align-items: flex-end;
-  padding: 0 12px;
-  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: stretch;
+  padding: 8px 8px;
+  width: 190px; flex-shrink: 0;
+  overflow-y: auto; overflow-x: hidden;
 }
 .tab {
-  height: 34px; padding: 0 14px; display: flex; align-items: center;
+  height: 36px; padding: 0 12px; display: flex; align-items: center;
   font-size: 12px; font-weight: 500; cursor: pointer;
-  color: var(--text2); border-bottom: 2px solid transparent;
+  color: var(--text2); border-left: 3px solid transparent; border-radius: 6px;
   transition: all .15s; white-space: nowrap; letter-spacing: 0.1px;
+  margin-bottom: 2px;
 }
-.tab:hover { color: var(--text); }
-.tab.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 600; }
+.tab:hover { color: var(--text); background: var(--surface2); }
+.tab.active { color: var(--blue); border-left-color: var(--blue); background: var(--blue-bg); font-weight: 600; }
 
 /* ── CONTENT ── */
-#content { flex: 1; overflow: hidden; }
+#content { flex: 1; overflow: hidden; min-width: 0; }
 .tabpane { display: none; height: 100%; flex-direction: column; }
 .tabpane.active { display: flex; }
 
@@ -624,7 +626,8 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
   </div>
 </div>
 
-<!-- ══ TABS ══ -->
+<!-- ══ TABS + CONTENT (rangée horizontale : sidebar verticale à gauche) ══ -->
+<div id="app-row" style="display:flex;flex:1;overflow:hidden;min-height:0;">
 <div id="tabbar">
   <div class="tab active" data-tab="dispatch">Dispatch</div>
   <div class="tab" data-tab="workflow">Workflow</div>
@@ -1158,6 +1161,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     </div>
   </div>
 </div><!-- /content -->
+</div><!-- /app-row -->
 
 <!-- ══ MODAL EDIT ══ -->
 <div class="overlay" id="modal-edit">
@@ -6058,6 +6062,145 @@ document.addEventListener('change',function(e){var q=e.target.closest('.cmr4-qch
 document.addEventListener('click',function(e){var tab=e.target.closest('.tab[data-tab="cmr"]');if(tab){e.preventDefault();e.stopPropagation();ensureTab();switchToCmr();return}var rm=e.target.closest('[data-q-remove]');if(rm){queue.splice(Number(rm.dataset.qRemove),1);saveQ();renderQueue();return}var p=e.target.closest('[data-pdf]');if(p)return void apiAction({action:'CMR_OPEN_PDF',path:p.dataset.pdf});var h=e.target.closest('[data-html]');if(h)return void apiAction({action:'CMR_OPEN_HTML',path:h.dataset.html});var ed=e.target.closest('[data-edit]');if(ed)return void apiAction({action:'CMR_EDIT',index:ed.dataset.edit});var rb=e.target.closest('[data-rebuild]');if(rb)return void apiAction({action:'CMR_REBUILD_PDF',index:rb.dataset.rebuild});var m=e.target.closest('[data-mail]');if(m)return void apiAction({action:'CMR_MAIL',index:m.dataset.mail});var d=e.target.closest('[data-edoc]');if(d)return void apiAction({action:'CMR_EDOC',index:d.dataset.edoc})},true);
 function init(){loadQ();ensureTab();renderQueue();renderResults()}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){setTimeout(init,600)});else setTimeout(init,600);window.addEventListener('load',function(){setTimeout(init,1200)});
+})();
+</script>
+
+<!-- ============================================================
+     SP_UI_V1 - onglet Transporteurs (modele mail par transporteur)
+     ============================================================ -->
+<style id="sp-ui-v1-style">
+#tab-sp{height:100%;overflow:auto;background:var(--bg);}
+.sp-page{padding:12px;display:grid;grid-template-columns:280px 1fr;gap:12px;min-height:100%;}
+.sp-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-sm);padding:13px;min-width:0;}
+.sp-card h3{margin:0 0 8px;font-size:13px;font-weight:900;color:var(--text);}
+.sp-sub{font-size:11px;color:var(--text3);line-height:1.35;margin-bottom:9px;}
+.sp-list{list-style:none;margin:0;padding:0;max-height:calc(100vh - 230px);overflow:auto;}
+.sp-list li{padding:8px 10px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;color:var(--text2);margin-bottom:3px;}
+.sp-list li:hover{background:var(--blue-bg);}
+.sp-list li.active{background:var(--blue-bg);color:var(--blue);}
+.sp-field{margin-bottom:10px;}
+.sp-field label{display:block;font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;}
+.sp-field input,.sp-field textarea{width:100%;border:1px solid var(--border2);border-radius:8px;background:var(--surface2);color:var(--text);font-size:12px;padding:8px 9px;outline:none;box-sizing:border-box;font-family:var(--mono);}
+.sp-field textarea{min-height:90px;resize:vertical;font-family:inherit;}
+.sp-row2{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+.sp-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;border-top:1px solid var(--border);padding-top:10px;}
+.sp-hint{font-size:10px;color:var(--text3);margin-top:-4px;margin-bottom:8px;}
+@media(max-width:1000px){.sp-page{grid-template-columns:1fr}}
+</style>
+<script id="sp-ui-v1-script">
+(function(){
+'use strict';
+var rules=[], selected=-1;
+function id(x){return document.getElementById(x)}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function toastMsg(s){if(typeof toast==='function')toast(s);else console.log(s)}
+function apiAction(payload){if(typeof apiCall==='function')return apiCall('action',payload);return fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json().catch(function(){return {status:r.ok?'ok':'error'}});});}
+
+function emptyRule(){return {carrier:'',to:'',cc:'',bcc:'',subject:'{J_SUBJECT}',pdf:'{J_FILE}_Delivery Order',body:'',signature:''};}
+
+function renderList(){
+  var ul=id('sp-list'); if(!ul) return;
+  ul.innerHTML = rules.map(function(r,i){
+    return '<li data-i="'+i+'" class="'+(i===selected?'active':'')+'">'+esc(r.carrier||'(sans nom)')+'</li>';
+  }).join('') || '<li style="cursor:default;color:var(--text3)">Aucun transporteur.</li>';
+}
+
+function renderForm(){
+  var r = (selected>=0 && rules[selected]) ? rules[selected] : emptyRule();
+  id('sp-carrier').value = r.carrier||'';
+  id('sp-to').value = r.to||'';
+  id('sp-cc').value = r.cc||'';
+  id('sp-bcc').value = r.bcc||'';
+  id('sp-subject').value = r.subject||'';
+  id('sp-pdf').value = r.pdf||'';
+  id('sp-body').value = r.body||'';
+  id('sp-signature').value = r.signature||'';
+  id('sp-delete').style.display = (selected>=0) ? '' : 'none';
+}
+
+function load(){
+  apiAction({action:'SP_LIST'}).then(function(r){
+    rules = (r && r.rules) || [];
+    if(selected>=rules.length) selected=-1;
+    renderList(); renderForm();
+  }).catch(function(e){ toastMsg('Erreur chargement transporteurs : '+(e.message||e)); });
+}
+
+function save(){
+  var carrier = id('sp-carrier').value.trim();
+  if(!carrier){ toastMsg('Le nom du transporteur est obligatoire.'); return; }
+  var payload = {action:'SP_SAVE', carrier:carrier, to:id('sp-to').value, cc:id('sp-cc').value,
+    bcc:id('sp-bcc').value, subject:id('sp-subject').value, pdf:id('sp-pdf').value,
+    body:id('sp-body').value, signature:id('sp-signature').value};
+  apiAction(payload).then(function(r){
+    if(r && r.status==='ok'){ toastMsg('Transporteur enregistré : '+carrier); load(); }
+    else toastMsg('Erreur enregistrement : '+((r&&r.message)||'inconnue'));
+  }).catch(function(e){ toastMsg('Erreur enregistrement : '+(e.message||e)); });
+}
+
+function del(){
+  if(selected<0 || !rules[selected]) return;
+  var carrier = rules[selected].carrier;
+  if(!confirm('Supprimer le transporteur "'+carrier+'" ?')) return;
+  apiAction({action:'SP_DELETE', carrier:carrier}).then(function(){
+    selected=-1; toastMsg('Transporteur supprimé.'); load();
+  }).catch(function(e){ toastMsg('Erreur suppression : '+(e.message||e)); });
+}
+
+function newRule(){ selected=-1; renderList(); renderForm(); }
+
+function ensureTab(){
+  var tabbar=id('tabbar'), content=id('content'); if(!tabbar||!content) return;
+  var tab=document.querySelector('.tab[data-tab="sp"]');
+  if(!tab){ tab=document.createElement('div'); tab.className='tab'; tab.dataset.tab='sp'; tab.textContent='Transporteurs';
+    var opt=document.querySelector('.tab[data-tab="options"]'); tabbar.insertBefore(tab, opt||null); }
+  var pane=id('tab-sp');
+  if(!pane){
+    pane=document.createElement('div'); pane.className='tabpane'; pane.id='tab-sp';
+    pane.innerHTML = '<div class="sp-page">' +
+      '<section class="sp-card"><h3>Transporteurs</h3><div class="sp-sub">Un modèle de mail par transporteur (destinataires + texte). La correspondance se fait sur le nom du transporteur du BL.</div>' +
+      '<ul class="sp-list" id="sp-list"></ul>' +
+      '<div class="sp-actions"><button class="btn btn-success btn-sm" id="sp-new">+ Nouveau</button><button class="btn btn-ghost btn-sm" id="sp-reload">Rafraîchir</button></div>' +
+      '</section>' +
+      '<section class="sp-card"><h3>Modèle mail</h3>' +
+      '<div class="sp-field"><label>Nom du transporteur (correspondance sur le champ Transporteur du BL)</label><input id="sp-carrier" type="text" placeholder="Ex: CARTAGE FLEX TRANSPORT"></div>' +
+      '<div class="sp-row2"><div class="sp-field"><label>À (TO)</label><input id="sp-to" type="text"></div><div class="sp-field"><label>CC</label><input id="sp-cc" type="text"></div><div class="sp-field"><label>BCC</label><input id="sp-bcc" type="text"></div></div>' +
+      '<div class="sp-field"><label>Objet</label><input id="sp-subject" type="text"></div>' +
+      '<div class="sp-field"><label>Nom du PDF joint</label><input id="sp-pdf" type="text"></div>' +
+      '<div class="sp-field"><label>Corps du mail</label><textarea id="sp-body"></textarea></div>' +
+      '<div class="sp-field"><label>Signature (ajoutée après le corps)</label><textarea id="sp-signature"></textarea></div>' +
+      '<div class="sp-hint">Variables disponibles : {J_SUBJECT} {J_FILE} {DELIVERY} {DELIVERY_SHORT} {DATE_JOUR} {OPERATOR} {CARRIER} {NL}</div>' +
+      '<div class="sp-actions"><button class="btn btn-primary btn-sm" id="sp-save">💾 Enregistrer</button><button class="btn btn-danger btn-sm" id="sp-delete">🗑 Supprimer</button></div>' +
+      '</section></div>';
+    content.appendChild(pane);
+    id('sp-new').onclick=newRule;
+    id('sp-reload').onclick=load;
+    id('sp-save').onclick=save;
+    id('sp-delete').onclick=del;
+    id('sp-list').addEventListener('click', function(e){
+      var li=e.target.closest('li[data-i]'); if(!li) return;
+      selected=Number(li.dataset.i); renderList(); renderForm();
+    });
+  }
+}
+
+function switchToSp(){
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active')});
+  document.querySelectorAll('.tabpane').forEach(function(p){p.classList.remove('active')});
+  var t=document.querySelector('.tab[data-tab="sp"]'), p=id('tab-sp');
+  if(t) t.classList.add('active'); if(p) p.classList.add('active');
+  load();
+}
+
+document.addEventListener('click', function(e){
+  var tab=e.target.closest('.tab[data-tab="sp"]');
+  if(tab){ e.preventDefault(); e.stopPropagation(); ensureTab(); switchToSp(); }
+}, true);
+
+function init(){ ensureTab(); }
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(init,650); });
+else setTimeout(init,650);
+window.addEventListener('load', function(){ setTimeout(init,1250); });
 })();
 </script>
 

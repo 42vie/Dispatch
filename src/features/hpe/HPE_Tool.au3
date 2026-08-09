@@ -282,8 +282,30 @@ EndFunc
 ; recent au plus ancien), avec le nombre de mails du fil.
 ; ============================================================================
 
-Func _HPE_MailScanJSON()
+; $sMailbox : nom de la boite partagee a scanner (ex: "CDG-Transcon-HPE@expeditors.com").
+; Si vide, scanne la boite par defaut de l'utilisateur (repli pratique pour
+; les tests, mais en usage reel la boite HPE doit etre precisee -- c'est
+; elle qui recoit les mails du client, pas la boite personnelle).
+Func _HPE_MailScanJSON($sMailbox = "")
     If Not _EDOC_EnsureOutlook() Then Return '{"status":"error","message":"outlook_indisponible","alerts":[]}'
+
+    Local $oInbox = 0
+    If $sMailbox = "" Then
+        $oInbox = $g_oNamespace.GetDefaultFolder(6) ; olFolderInbox
+    Else
+        Local $sWanted = StringUpper(StringStripWS($sMailbox, 3))
+        Local $sWantedNoDomain = StringRegExpReplace($sWanted, "@.*$", "")
+        Local $oStoreTarget = Null
+        For $oStore In $g_oNamespace.Stores
+            Local $sDisp = StringUpper($oStore.DisplayName)
+            If $sDisp = $sWanted Or $sDisp = $sWantedNoDomain Or StringInStr($sDisp, $sWantedNoDomain) Then
+                $oStoreTarget = $oStore
+                ExitLoop
+            EndIf
+        Next
+        If $oStoreTarget = Null Then Return '{"status":"error","message":"mailbox_not_found","alerts":[]}'
+        $oInbox = $oStoreTarget.GetDefaultFolder(6)
+    EndIf
 
     Local $h = _HPE_Open()
     If @error Or Not IsObj($h) Then Return '{"status":"error","message":"excel_indisponible","alerts":[]}'
@@ -292,7 +314,6 @@ Func _HPE_MailScanJSON()
     Local $oSuivi = $h.Item("book").Sheets("Suivi")
     Local $iSuiviLast = _HPE_NextRow($oSuivi) - 1
 
-    Local $oInbox = $g_oNamespace.GetDefaultFolder(6) ; olFolderInbox
     Local $oItems = $oInbox.Items
     $oItems.Sort("[ReceivedTime]", True) ; plus recent d'abord
     Local $sDateLimit = _FmtDate(_DateAdd('d', -14, _NowCalc()))
@@ -368,5 +389,12 @@ Func _HPE_MailScanJSON()
                 ',"threadCount":' & $oThreadCount.Item($sKey) & '}'
     Next
     $sJson &= "]"
-    Return '{"status":"ok","alerts":' & $sJson & '}'
+    ; mappingCount/suiviCount : reutilise les comptes deja lus dans cette
+    ; meme session Excel pour alimenter l'apercu du Dashboard sans avoir a
+    ; rouvrir Excel une 2e/3e fois juste pour compter des lignes.
+    Local $iMapCount = $iMapLast - 1
+    If $iMapCount < 0 Then $iMapCount = 0
+    Local $iSuiviCount = $iSuiviLast - 1
+    If $iSuiviCount < 0 Then $iSuiviCount = 0
+    Return '{"status":"ok","alerts":' & $sJson & ',"mappingCount":' & $iMapCount & ',"suiviCount":' & $iSuiviCount & '}'
 EndFunc

@@ -488,7 +488,8 @@ Func HttpServer_HandleClient($iSocket)
                 TCPCloseSocket($iSocket)
                 Return
             Case "HPE_MAIL_SCAN"
-                _SendHttpResponse($iSocket, 200, "application/json", _HPE_MailScanJSON())
+                $sData_a = _GetJsonValue($sBody, "mailbox")
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_MailScanJSON($sData_a))
                 TCPCloseSocket($iSocket)
                 Return
 

@@ -5775,7 +5775,12 @@ function createTabs(){
     var t = document.createElement('div'); t.className = 'tab'; t.dataset.tab = 'dashboard'; t.textContent = '📊 Dashboard'; tabbar.insertBefore(t, tabbar.firstChild);
   }
   if(!id('tab-dashboard')){
-    var p = document.createElement('div'); p.className = 'tabpane'; p.id = 'tab-dashboard'; p.innerHTML = '<div id="cr-dashboard"><div class="cr-page"><div class="cr-actions" id="cr-dashboard-actions"><button class="btn btn-purple-out btn-sm" data-cr-open="both">🛠 Compléter les infos manquantes</button></div><div class="cr-grid" id="cr-dashboard-grid"></div><section class="cr-card cr-full" id="cr-edit-panel"></section></div></div>'; content.insertBefore(p, content.firstChild);
+    var p = document.createElement('div'); p.className = 'tabpane'; p.id = 'tab-dashboard'; p.innerHTML = '<div id="cr-dashboard"><div class="cr-page"><div class="cr-grid" id="cr-dashboard-grid">' +
+      '<div class="dsp-skel"><div class="dsp-skel-line short"></div><div class="dsp-skel-line tall"></div></div>' +
+      '<div class="dsp-skel"><div class="dsp-skel-line short"></div><div class="dsp-skel-line tall"></div></div>' +
+      '<div class="dsp-skel"><div class="dsp-skel-line short"></div><div class="dsp-skel-line tall"></div></div>' +
+      '<div class="dsp-skel"><div class="dsp-skel-line short"></div><div class="dsp-skel-line tall"></div></div>' +
+      '</div><div class="cr-actions" id="cr-dashboard-actions"><button class="btn btn-purple-out btn-sm" data-cr-open="both">🛠 Compléter les infos manquantes</button></div><section class="cr-card cr-full" id="cr-edit-panel"></section></div></div>'; content.insertBefore(p, content.firstChild);
   }
   if(!document.querySelector('.tab[data-tab="cmr"]')){
     var t2 = document.createElement('div'); t2.className = 'tab'; t2.dataset.tab = 'cmr'; t2.textContent = '📄 CMR / BL'; var opt = document.querySelector('.tab[data-tab="options"]'); tabbar.insertBefore(t2, opt || null);
@@ -5994,7 +5999,13 @@ window.addEventListener('load', function(){ setTimeout(init, 900); });
 .cr-edoc-toolbar{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
 .cr-edoc-mini{height:25px;padding:0 8px;font-size:10px;border-radius:999px;}
 #cr-tools-panel{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:2px;}
-.cr-tool-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px;box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:7px;min-height:92px;}
+.cr-tool-card{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--border2);border-radius:12px;padding:10px;box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:7px;min-height:92px;transition:transform .12s,box-shadow .12s;}
+.cr-tool-card:hover{transform:translateY(-1px);box-shadow:var(--shadow);}
+@keyframes dsp-pulse{0%,100%{opacity:.5}50%{opacity:.9}}
+.dsp-skel{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-sm);padding:13px;min-height:78px;animation:dsp-pulse 1.3s ease-in-out infinite;}
+.dsp-skel-line{height:10px;border-radius:5px;background:var(--surface2);margin-bottom:8px;}
+.dsp-skel-line.short{width:45%;}
+.dsp-skel-line.tall{height:22px;width:35%;}
 .cr-tool-title{font-size:12px;font-weight:900;color:var(--text);}.cr-tool-sub{font-size:10px;color:var(--text3);line-height:1.35;}
 #tab-dashboard .cr-grid{grid-template-columns:repeat(6,minmax(0,1fr));gap:8px!important;}#tab-dashboard .cr-card{padding:10px!important;}#tab-dashboard .cr-kpi{font-size:20px!important;}#tab-dashboard .cr-wide{grid-column:span 3!important;}#tab-dashboard .cr-full{grid-column:span 6!important;}
 @media(max-width:1100px){.cr-edoc-page,#cr-tools-panel{grid-template-columns:1fr}.cr-edoc-table-wrap{height:450px}#tab-dashboard .cr-grid{grid-template-columns:repeat(2,minmax(0,1fr));}#tab-dashboard .cr-wide,#tab-dashboard .cr-full{grid-column:span 2!important;}}
@@ -6032,7 +6043,54 @@ function renderResults(){var body=id('edoc-results');body.innerHTML=edocState.it
 function setChecks(v){document.querySelectorAll('.edoc-row-check').forEach(function(c){c.checked=v})}
 function checkMode(mode){document.querySelectorAll('#edoc-results tr[data-idx]').forEach(function(tr){var idx=Number(tr.dataset.idx);var it=edocState.items.find(function(x){return x.index===idx});if(!it)return;tr.querySelector('.edoc-row-check').checked=mode==='mail'?!!it.mail:!!it.pj;});}
 function uploadEdoc(){var idx=Array.from(document.querySelectorAll('#edoc-results tr[data-idx]')).filter(function(tr){return tr.querySelector('.edoc-row-check').checked}).map(function(tr){return tr.dataset.idx}).join('|');if(!idx){toastMsg('Aucune ligne cochée.');return;}live('Upload EDOC en cours...');apiAction({action:'EDOC_WEB_UPLOAD',mailbox:id('edoc-mailbox').value,indexes:idx}).then(function(r){live(r.status==='ok'?'Upload terminé : '+r.uploaded+' élément(s).':'Erreur upload : '+(r.reason||'inconnue'));}).catch(function(e){live('Erreur upload : '+(e.message||e));});}
-function ensureToolsPanel(){var dash=document.querySelector('#tab-dashboard .cr-page');if(!dash||id('cr-tools-panel'))return;var panel=document.createElement('section');panel.id='cr-tools-panel';panel.innerHTML='<div class="cr-tool-card"><div class="cr-tool-title">🛠 Infos manquantes</div><div class="cr-tool-sub">Email, contact, téléphone, transporteur.</div><button class="btn btn-purple-out btn-sm" data-cr-open="both">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">📦 CMR / BL</div><div class="cr-tool-sub">Queue CMR, BL/PDF, mail, EDOC.</div><button class="btn btn-blue-out btn-sm" id="tool-cmr">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">📤 EDOC Master</div><div class="cr-tool-sub">Scan Outlook + upload EDOC dans HTML.</div><button class="btn btn-success btn-sm" id="tool-edoc">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">🧭 Workflow</div><div class="cr-tool-sub">Kanban + filtres transporteur.</div><button class="btn btn-ghost btn-sm" id="tool-workflow">Ouvrir</button></div><div class="cr-tool-card" id="hpe-dash-card" style="cursor:pointer"><div class="cr-tool-title">🎫 HPE</div><div id="hpe-dash-preview" class="cr-tool-sub">Chargement...</div></div>';var a=id('cr-dashboard-actions');if(a)a.insertAdjacentElement('afterend',panel);else dash.insertBefore(panel,dash.firstChild);id('tool-cmr').onclick=function(){switchTabClean('cmr')};id('tool-edoc').onclick=function(){switchTabClean('edocmaster')};id('tool-workflow').onclick=function(){switchTabClean('workflow')};id('hpe-dash-card').onclick=function(){var t=document.querySelector('.tab[data-tab="hpe"]');if(t)t.click();};}
+function ensureToolsPanel(){
+  var dash=document.querySelector('#tab-dashboard .cr-page');if(!dash||id('cr-tools-panel'))return;
+  var panel=document.createElement('section');panel.id='cr-tools-panel';
+  panel.innerHTML =
+    '<div class="cr-tool-card" style="border-left-color:var(--purple)"><div class="cr-tool-title">🛠 Infos manquantes</div><div id="miss-dash-preview" class="cr-tool-sub">Email, contact, téléphone, transporteur.</div><div class="cr-actions" style="margin:0"><button class="btn btn-purple-out btn-sm" data-cr-open="both">✏️ Compléter</button></div></div>' +
+    '<div class="cr-tool-card" style="border-left-color:var(--blue)"><div class="cr-tool-title">📦 CMR / BL</div><div id="cmr-dash-preview" class="cr-tool-sub">Chargement...</div><div class="cr-actions" style="margin:0"><button class="btn btn-blue-out btn-sm" id="cmr-dash-refresh">🔄 Statut</button><button class="btn btn-ghost btn-sm" id="tool-cmr">Queue →</button></div></div>' +
+    '<div class="cr-tool-card" style="border-left-color:var(--green)"><div class="cr-tool-title">📤 EDOC Master</div><div class="cr-tool-sub">Scan Outlook + upload EDOC dans HTML.</div><div class="cr-actions" style="margin:0"><button class="btn btn-success btn-sm" id="tool-edoc">▶ Lancer un scan</button></div></div>' +
+    '<div class="cr-tool-card" style="border-left-color:var(--teal)"><div class="cr-tool-title">🧭 Workflow</div><div id="wf-dash-preview" class="cr-tool-sub">Kanban + filtres transporteur.</div><div class="cr-actions" style="margin:0"><button class="btn btn-ghost btn-sm" id="tool-workflow">Voir le tableau →</button></div></div>' +
+    '<div class="cr-tool-card" style="border-left-color:var(--orange)"><div class="cr-tool-title">🎫 HPE</div><div id="hpe-dash-preview" class="cr-tool-sub">Chargement...</div><div class="cr-actions" style="margin:0"><button class="btn btn-orange-out btn-sm" id="hpe-dash-scan">🔄 Scanner</button><button class="btn btn-ghost btn-sm" id="hpe-dash-open">Ouvrir →</button></div></div>';
+  var g=id('cr-dashboard-grid');if(g)g.insertAdjacentElement('afterend',panel);else dash.insertBefore(panel,dash.firstChild);
+
+  // Infos manquantes : compte reel (meme filtre que openMissing('both'))
+  try{
+    var missList = typeof rows==='function' ? rows().filter(function(r){ var noEmail=!String(r.email||'').trim(); var noContact=!String(r.contact||'').trim() && !String(r.tel||'').trim(); return noEmail||noContact; }) : [];
+    var missEl = id('miss-dash-preview'); if(missEl) missEl.textContent = missList.length+' dossier(s) à compléter (email, contact, téléphone).';
+  }catch(e){}
+
+  // CMR/BL : statut reel via l'API, action directe (pas juste une navigation)
+  id('tool-cmr').onclick=function(){switchTabClean('cmr')};
+  function refreshCmrDashPreview(){
+    var el=id('cmr-dash-preview'); if(!el) return;
+    apiCall('action',{action:'CMR_STATUS'}).then(function(r){
+      var n=(r&&r.results&&r.results.length)||0;
+      el.textContent = n>0 ? (n+' résultat(s) — '+(r.message||'')) : ((r&&r.message)?r.message:'Queue vide.');
+    }).catch(function(){ el.textContent='Statut indisponible.'; });
+  }
+  id('cmr-dash-refresh').onclick=refreshCmrDashPreview;
+  refreshCmrDashPreview();
+
+  id('tool-edoc').onclick=function(){switchTabClean('edocmaster')};
+
+  // Workflow : repartition reelle (reutilise metric() deja calcule pour les KPI)
+  try{
+    var m = typeof metric==='function' ? metric() : null;
+    var wfEl = id('wf-dash-preview');
+    if(m && wfEl) wfEl.innerHTML = '<b>'+(m.byStatus['6']||0)+'</b> COMAT · <b>'+(m.byStatus['3']||0)+'</b> en attente · <b>'+(m.byStatus['5']||0)+'</b> FC';
+  }catch(e){}
+  id('tool-workflow').onclick=function(){switchTabClean('workflow')};
+
+  // HPE : action directe (scan reel sans quitter le dashboard)
+  id('hpe-dash-scan').onclick=function(e){
+    e.stopPropagation();
+    var btn=id('hpe-dash-scan'); if(btn){ btn.disabled=true; btn.textContent='...'; }
+    if(typeof window.hpeScanMail==='function') window.hpeScanMail();
+    setTimeout(function(){ if(btn){ btn.disabled=false; btn.textContent='🔄 Scanner'; } }, 2000);
+  };
+  id('hpe-dash-open').onclick=function(){var t=document.querySelector('.tab[data-tab="hpe"]');if(t)t.click();};
+}
 function patchTabs(){document.addEventListener('click',function(e){var t=e.target.closest('.tab[data-tab="edocmaster"]');if(!t)return;e.preventDefault();e.stopPropagation();switchTabClean('edocmaster');},true)}
 function initEdocHtml(){ensureEdocTab();bindEdocHtml();if(!edocState.stores.length)loadEdocConfig();}
 function init(){ensureEdocTab();ensureToolsPanel();patchTabs();setInterval(function(){if(id('tab-dashboard')&&id('tab-dashboard').classList.contains('active'))ensureToolsPanel();},1000)}
@@ -6632,6 +6690,7 @@ document.addEventListener('click', function(e){
   if(tab){ e.preventDefault(); e.stopPropagation(); ensureTab(); switchToHpe(); }
 }, true);
 
+window.hpeScanMail = scanMail; // permet au bouton "Scanner" de la carte Dashboard de declencher un vrai scan sans naviguer vers l'onglet HPE
 function init(){ ensureTab(); scanMail(); setInterval(scanMail, 300000); setTimeout(renderDashPreview, 2000); setTimeout(renderDashPreview, 5000); }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(init,700); });
 else setTimeout(init,700);
@@ -6706,6 +6765,102 @@ if(document.readyState==='loading') document.addEventListener('DOMContentLoaded'
 else setTimeout(tick,650);
 window.addEventListener('load', function(){ setTimeout(tick,1300); });
 setInterval(tick, 1500);
+})();
+</script>
+
+<!-- ============================================================
+     CMDK_V1 - palette de commande (Ctrl+K) pour sauter vers un onglet
+     ============================================================ -->
+<style id="cmdk-style">
+#cmdk-modal{align-items:flex-start;padding-top:12vh;}
+.cmdk-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg);width:560px;max-width:92vw;max-height:70vh;overflow:hidden;display:flex;flex-direction:column;}
+.cmdk-input{width:100%;border:none;border-bottom:1px solid var(--border);background:transparent;color:var(--text);font-size:15px;padding:16px 18px;outline:none;box-sizing:border-box;}
+.cmdk-list{overflow-y:auto;padding:6px;}
+.cmdk-item{padding:10px 12px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--text2);}
+.cmdk-item.sel{background:var(--blue-bg);color:var(--blue);}
+.cmdk-empty{padding:20px;text-align:center;color:var(--text3);font-size:12px;}
+.cmdk-hint{padding:8px 14px;border-top:1px solid var(--border);font-size:10.5px;color:var(--text3);display:flex;gap:14px;}
+</style>
+<div class="overlay" id="cmdk-modal">
+  <div class="cmdk-box">
+    <input id="cmdk-input" class="cmdk-input" type="text" placeholder="Rechercher un onglet... (Ctrl+K)" autocomplete="off">
+    <div class="cmdk-list" id="cmdk-list"></div>
+    <div class="cmdk-hint"><span>↑↓ naviguer</span><span>↵ ouvrir</span><span>Esc fermer</span></div>
+  </div>
+</div>
+<script id="cmdk-script">
+(function(){
+'use strict';
+var selIdx = 0;
+var items = [];
+
+function id(x){ return document.getElementById(x); }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function collectTabs(){
+  return Array.from(document.querySelectorAll('#tabbar .tab')).map(function(t){
+    return { label: t.textContent.trim(), tab: t.dataset.tab };
+  });
+}
+
+function updateSelClass(){
+  Array.from(document.querySelectorAll('.cmdk-item')).forEach(function(el,i){ el.classList.toggle('sel', i===selIdx); });
+  var selEl = document.querySelector('.cmdk-item.sel');
+  if(selEl) selEl.scrollIntoView({block:'nearest'});
+}
+
+function render(filterText){
+  var list = id('cmdk-list'); if(!list) return;
+  var all = collectTabs();
+  var q = (filterText||'').toLowerCase().trim();
+  items = q ? all.filter(function(it){ return it.label.toLowerCase().indexOf(q)!==-1; }) : all;
+  if(!items.length){ list.innerHTML = '<div class="cmdk-empty">Aucun résultat.</div>'; return; }
+  selIdx = 0;
+  list.innerHTML = items.map(function(it,i){
+    return '<div class="cmdk-item'+(i===0?' sel':'')+'" data-cmdk-tab="'+esc(it.tab)+'">'+esc(it.label)+'</div>';
+  }).join('');
+}
+
+function activate(tabName){
+  var t = document.querySelector('.tab[data-tab="'+tabName+'"]');
+  closePalette();
+  if(t) t.click();
+}
+
+function openPalette(){
+  var modal = id('cmdk-modal'); if(!modal) return;
+  modal.classList.add('open');
+  var input = id('cmdk-input');
+  if(input){ input.value=''; setTimeout(function(){ input.focus(); }, 30); }
+  render('');
+}
+function closePalette(){
+  var modal = id('cmdk-modal'); if(modal) modal.classList.remove('open');
+}
+function isOpen(){
+  var modal = id('cmdk-modal'); return modal && modal.classList.contains('open');
+}
+
+document.addEventListener('keydown', function(e){
+  if(e.ctrlKey && (e.key==='k' || e.key==='K')){
+    e.preventDefault();
+    if(isOpen()) closePalette(); else openPalette();
+    return;
+  }
+  if(!isOpen()) return;
+  if(e.key==='ArrowDown'){ e.preventDefault(); if(selIdx < items.length-1){ selIdx++; updateSelClass(); } return; }
+  if(e.key==='ArrowUp'){ e.preventDefault(); if(selIdx > 0){ selIdx--; updateSelClass(); } return; }
+  if(e.key==='Enter'){ e.preventDefault(); if(items[selIdx]) activate(items[selIdx].tab); return; }
+});
+
+document.addEventListener('input', function(e){
+  if(e.target && e.target.id==='cmdk-input') render(e.target.value);
+});
+document.addEventListener('click', function(e){
+  var it = e.target.closest('[data-cmdk-tab]');
+  if(it) activate(it.dataset.cmdkTab);
+  if(e.target && e.target.id==='cmdk-modal') closePalette(); // clic sur le fond
+});
 })();
 </script>
 

@@ -6398,9 +6398,9 @@ function loadSuiviList(){
 }
 function renderNotes(){
   var b=id('hpe-notes-list'); if(!b) return;
-  b.innerHTML = notes.length ? notes.map(function(n){
+  b.innerHTML = notes.length ? notes.slice().reverse().map(function(n){
     return '<div class="hpe-note"><div class="hpe-note-meta">'+esc(n.date)+' — '+esc(n.auteur)+'</div>'+esc(n.note)+'</div>';
-  }).join('') : '<div style="color:var(--text3);font-size:11px">Aucune note.</div>';
+  }).join('') : '<div class="hpe-empty">Aucune note.</div>';
 }
 function loadDossier(){
   var dossier = id('hpe-suivi-dossier').value.trim().toUpperCase();

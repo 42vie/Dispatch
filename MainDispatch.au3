@@ -119,6 +119,13 @@ Func DispatchInitialize()
     $gsContactsFile = @ScriptDir & "\contacts.tsv"
     $gsConfigFile = @ScriptDir & "\config.ini"
     $gsHtmlFile = @ScriptDir & "\ui\index.html"
+    ; Le dossier Config + les regles SP (transporteur -> destinataires/modele
+    ; mail) sont normalement crees par l'ecran _Main() historique du CMR, qui
+    ; n'est plus utilise depuis le passage a l'interface web. On les
+    ; garantit ici pour que $INI_PATH existe des le premier lancement, meme
+    ; si aucune fenetre CMR classique n'est jamais ouverte.
+    DirCreate(@ScriptDir & "\Config")
+    _SP_InitDefaultsIfNeeded()
     AuditLog("Dispatch initialisation")
 EndFunc
 

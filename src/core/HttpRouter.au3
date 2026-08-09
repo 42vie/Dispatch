@@ -436,6 +436,21 @@ Func HttpServer_HandleClient($iSocket)
                 $sData_a = _GetJsonValue($sBody, "index")
                 _RebuildPdfByIndex(Number($sData_a))
 
+            Case "SP_LIST"
+                ; Liste des regles transporteur (destinataires + modele mail),
+                ; editables depuis l'interface web.
+                _SendHttpResponse($iSocket, 200, "application/json", _SP_ListJSON())
+                TCPCloseSocket($iSocket)
+                Return
+            Case "SP_SAVE"
+                _SendHttpResponse($iSocket, 200, "application/json", _SP_SaveFromJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "SP_DELETE"
+                _SendHttpResponse($iSocket, 200, "application/json", _SP_DeleteFromJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+
             Case "EDOC_MASTER_OPEN"
                 _EDOCMasterGUI()
             Case "EDOC_MASTER_STATUS"

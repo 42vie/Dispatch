@@ -133,3 +133,51 @@ Func _SP_ApplyTemplate($tpl, ByRef $vars)
     Return $s
 EndFunc
 
+
+; ============================================================================
+; Expose les regles SP (transporteur -> destinataires/modele mail) a
+; l'interface web, pour que ce soit editable depuis l'app plutot que
+; seulement depuis l'ecran _Main() historique (non utilise en HTTP).
+; ============================================================================
+
+Func _SP_ListJSON()
+    _SP_InitDefaultsIfNeeded()
+    Local $sections = IniReadSectionNames($INI_PATH)
+    Local $sJson = "["
+    Local $bFirst = True
+    If Not @error Then
+        For $i = 1 To $sections[0]
+            If StringLeft($sections[$i], 3) = "SP:" Then
+                If Not $bFirst Then $sJson &= ","
+                $bFirst = False
+                Local $c = IniRead($INI_PATH, $sections[$i], "CARRIER", StringTrimLeft($sections[$i], 3))
+                $sJson &= '{"carrier":"' & _JsonEscape($c) & '"' & _
+                        ',"to":"' & _JsonEscape(IniRead($INI_PATH, $sections[$i], "TO", "")) & '"' & _
+                        ',"cc":"' & _JsonEscape(IniRead($INI_PATH, $sections[$i], "CC", "")) & '"' & _
+                        ',"bcc":"' & _JsonEscape(IniRead($INI_PATH, $sections[$i], "BCC", "")) & '"' & _
+                        ',"subject":"' & _JsonEscape(IniRead($INI_PATH, $sections[$i], "SUBJECT", "{J_SUBJECT}")) & '"' & _
+                        ',"pdf":"' & _JsonEscape(IniRead($INI_PATH, $sections[$i], "PDF", "{J_FILE}_Delivery Order")) & '"' & _
+                        ',"body":"' & _JsonEscape(_Dec(IniRead($INI_PATH, $sections[$i], "BODY", ""))) & '"' & _
+                        ',"signature":"' & _JsonEscape(_Dec(IniRead($INI_PATH, $sections[$i], "SIGNATURE", ""))) & '"}'
+            EndIf
+        Next
+    EndIf
+    $sJson &= "]"
+    Return '{"status":"ok","rules":' & $sJson & '}'
+EndFunc
+
+Func _SP_SaveFromJSON($sBody)
+    Local $carrier = StringStripWS(_GetJsonValue($sBody, "carrier"), 3)
+    If $carrier = "" Then Return '{"status":"error","message":"carrier_vide"}'
+    _SP_WriteRule($carrier, _GetJsonValue($sBody, "to"), _GetJsonValue($sBody, "cc"), _GetJsonValue($sBody, "bcc"), _
+            _GetJsonValue($sBody, "subject"), _GetJsonValue($sBody, "pdf"), _GetJsonValue($sBody, "body"), _GetJsonValue($sBody, "signature"))
+    Return '{"status":"ok"}'
+EndFunc
+
+Func _SP_DeleteFromJSON($sBody)
+    Local $carrier = StringStripWS(_GetJsonValue($sBody, "carrier"), 3)
+    If $carrier = "" Then Return '{"status":"error","message":"carrier_vide"}'
+    _SP_Delete($carrier)
+    Return '{"status":"ok"}'
+EndFunc
+

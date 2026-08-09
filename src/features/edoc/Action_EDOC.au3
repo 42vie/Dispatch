@@ -297,18 +297,17 @@ EndFunc
 ; ==================================================================================================
 
 Func _EDOC_EnsureOutlook()
-    ; Lecture prealable de chaque globale avant le test combine ci-dessous --
-    ; meme contournement que pour les ReDim dans StateService.au3/JobService.au3 :
-    ; la toute premiere reference a une variable Global a l'interieur d'une
-    ; Func peut echouer a se lier correctement si elle apparait directement
-    ; dans une expression composee ; une lecture simple juste avant regle le
-    ; probleme de facon fiable.
-    Local $bOutlookOk = IsObj($g_oOutlook)
-    Local $bNamespaceOk = IsObj($g_oNamespace)
-    If $bOutlookOk And $bNamespaceOk Then Return True
+    ; Le 1er correctif (lire $g_oOutlook/$g_oNamespace dans une variable
+    ; locale avant de les tester) n'a pas suffi -- l'erreur "Variable used
+    ; without being declared" s'est deplacee sur cette lecture elle-meme.
+    ; Contournement plus radical : on ne LIT plus jamais ces globales comme
+    ; toute premiere reference dans cette fonction, on les REASSIGNE direct
+    ; a chaque appel (ObjGet reussit immediatement si Outlook tourne deja,
+    ; donc pas de perte reelle de fonctionnalite).
     _InitConfig()
-    $g_oOutlook = ObjGet("", "Outlook.Application")
-    If @error Or Not IsObj($g_oOutlook) Then Return False
+    Local $oApp = ObjGet("", "Outlook.Application")
+    If @error Or Not IsObj($oApp) Then Return False
+    $g_oOutlook = $oApp
     $g_oNamespace = $g_oOutlook.GetNamespace("MAPI")
     Return IsObj($g_oNamespace)
 EndFunc

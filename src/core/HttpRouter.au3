@@ -74,173 +74,51 @@ Func HttpServer_HandleClient($iSocket)
         _SendHttpResponse($iSocket, 200, "text/html", $g_sHTML)
 
     ElseIf $sURL = "/api/ping" Then
-        _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
+        _ApiPing_Handle($iSocket)
 
     ElseIf $sURL = "/api/load" Then
-        Local $sJson = "{}"
-        If FileExists($g_sSaveFile) Then
-            Local $hJsonRead = FileOpen($g_sSaveFile, 256) ; 256 = UTF-8 sans BOM
-            If $hJsonRead <> -1 Then
-                $sJson = FileRead($hJsonRead)
-                FileClose($hJsonRead)
-            EndIf
-        EndIf
-        _SendHttpResponse($iSocket, 200, "application/json", $sJson)
+        _ApiState_Load($iSocket)
 
     ElseIf $sURL = "/api/save" Then
-        Local $hFile = FileOpen($g_sSaveFile, 2 + 256) ; 256 = UTF-8 sans BOM
-        FileWrite($hFile, $sBody)
-        FileClose($hFile)
-        _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
+        _ApiState_Save($iSocket, $sBody)
 
     ; ── Fichiers séparés : STATUS ──
     ElseIf $sURL = "/api/save-status" Then
-        _AuditLog("SAVE", "status — " & StringLen($sBody) & " bytes")
-        Local $hFileS = FileOpen($g_sStatusFile, 2 + 256)
-        FileWrite($hFileS, $sBody)
-        FileClose($hFileS)
-        _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
+        _ApiState_SaveStatus($iSocket, $sBody)
 
     ElseIf $sURL = "/api/load-status" Then
-        Local $sJsonS = "[]"
-        If FileExists($g_sStatusFile) Then
-            Local $hReadS = FileOpen($g_sStatusFile, 256)
-            If $hReadS <> -1 Then
-                $sJsonS = FileRead($hReadS)
-                FileClose($hReadS)
-            EndIf
-        EndIf
-        _SendHttpResponse($iSocket, 200, "application/json", $sJsonS)
+        _ApiState_LoadStatus($iSocket)
 
     ; ── Fichiers séparés : DATA ──
     ElseIf $sURL = "/api/save-data" Then
-        _AuditLog("SAVE", "data — " & StringLen($sBody) & " bytes")
-        _BackupRotate($g_sDataFile, 5)
-        Local $hFileD = FileOpen($g_sDataFile, 2 + 256)
-        FileWrite($hFileD, $sBody)
-        FileClose($hFileD)
-        _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
+        _ApiState_SaveData($iSocket, $sBody)
 
     ElseIf $sURL = "/api/load-data" Then
-        Local $sJsonD = "{}"
-        If FileExists($g_sDataFile) Then
-            Local $hReadD = FileOpen($g_sDataFile, 256)
-            If $hReadD <> -1 Then
-                $sJsonD = FileRead($hReadD)
-                FileClose($hReadD)
-            EndIf
-        EndIf
-        _SendHttpResponse($iSocket, 200, "application/json", $sJsonD)
+        _ApiState_LoadData($iSocket)
 
     ; ── CONTACTS TSV : sauvegarde stable depuis Interface.html ──
     ElseIf $sURL = "/api/save-contacts" Then
-        _BackupRotate($g_sContactsFile, 10)
-        Local $hFileC = FileOpen($g_sContactsFile, 2 + 256)
-        If $hFileC = -1 Then
-            _SendHttpResponse($iSocket, 500, "application/json", '{"status":"error","reason":"cannot_write_contacts_tsv"}')
-        Else
-            FileWrite($hFileC, $sBody)
-            FileClose($hFileC)
-            _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok","format":"tsv"}')
-        EndIf
+        _ApiContacts_Save($iSocket, $sBody)
 
     ElseIf $sURL = "/api/load-contacts" Then
-        Local $sContacts = ""
-        If FileExists($g_sContactsFile) Then
-            Local $hReadC = FileOpen($g_sContactsFile, 256)
-            If $hReadC <> -1 Then
-                $sContacts = FileRead($hReadC)
-                FileClose($hReadC)
-            EndIf
-        ElseIf FileExists($g_sContactsLegacyFile) Then
-            Local $hOldC = FileOpen($g_sContactsLegacyFile, 256)
-            If $hOldC <> -1 Then
-                $sContacts = FileRead($hOldC)
-                FileClose($hOldC)
-            EndIf
-        EndIf
-        If $sContacts = "" Then $sContacts = "#DISPATCH_CONTACTS_TSV" & @LF
-        _SendHttpResponse($iSocket, 200, "text/plain", $sContacts)
+        _ApiContacts_Load($iSocket)
 
     ElseIf StringLeft($sURL, 13) = "/api/net-save" Then
-        ; /api/net-save?path=F:\...\state.json — le body EST le JSON à écrire
-        Local $sNetPath = StringMid($sURL, 20) ; après "/api/net-save?path="
-        $sNetPath = _URIDecode($sNetPath)
-        If $sNetPath <> "" Then
-            _Net_SaveState($sNetPath, $sBody)
-            _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
-        Else
-            _SendHttpResponse($iSocket, 400, "application/json", '{"error":"missing path"}')
-        EndIf
+        _ApiNetwork_Save($iSocket, $sURL, $sBody)
 
     ElseIf StringLeft($sURL, 13) = "/api/net-load" Then
-        ; /api/net-load?path=F:\...\state.json — retourne le contenu du fichier
-        Local $sNetPath2 = StringMid($sURL, 20) ; après "/api/net-load?path="
-        $sNetPath2 = _URIDecode($sNetPath2)
-        Local $sNetJSON = _Net_LoadState($sNetPath2)
-        _SendHttpResponse($iSocket, 200, "application/json", $sNetJSON)
+        _ApiNetwork_Load($iSocket, $sURL)
 
     ElseIf StringLeft($sURL, 13) = "/api/net-list" Then
-        ; /api/net-list?pattern=F:\...\dispatch_state_*.json — liste les fichiers correspondants
-        Local $sPattern = StringMid($sURL, 22) ; après "/api/net-list?pattern="
-        $sPattern = _URIDecode($sPattern)
-        Local $sDir = StringRegExpReplace($sPattern, "\\[^\\]*$", "")
-        Local $sGlob = StringRegExpReplace($sPattern, "^.*\\", "")
-        Local $sFileList = '["' ; on construit un array JSON
-        Local $hSearch2 = FileFindFirstFile($sDir & "\" & $sGlob)
-        Local $bFirst = True
-        If $hSearch2 <> -1 Then
-            While True
-                Local $sFound = FileFindNextFile($hSearch2)
-                If @error Then ExitLoop
-                If Not $bFirst Then $sFileList &= ',"'
-                $sFileList &= StringReplace($sDir & "\" & $sFound, "\", "\\") & '"'
-                $bFirst = False
-            WEnd
-            FileClose($hSearch2)
-        EndIf
-        If $bFirst Then
-            $sFileList = "[]"
-        Else
-            $sFileList &= "]"
-        EndIf
-        _SendHttpResponse($iSocket, 200, "application/json", $sFileList)
+        _ApiNetwork_List($iSocket, $sURL)
 
     ; ── BKD CONFIG : sauvegarde globale BKD depuis Interface.html ──
     ElseIf $sURL = "/api/save-bkd-config" Then
-        Local $sIniBKD = @ScriptDir & "\dispatch_config.ini"
-        Local $sModeBKD = _GetJsonValue($sBody, "mode")
-        Local $sCutoffBKD = _GetJsonValue($sBody, "cutoff")
-        Local $sCustomBKD = _GetJsonValue($sBody, "customDate")
-
-        If $sModeBKD = "" Then $sModeBKD = "auto"
-        If $sCutoffBKD = "" Then $sCutoffBKD = "14:30"
-
-        Local $bOkBKD = True
-        If IniWrite($sIniBKD, "BKD", "Mode", $sModeBKD) = 0 Then $bOkBKD = False
-        If IniWrite($sIniBKD, "BKD", "Cutoff", $sCutoffBKD) = 0 Then $bOkBKD = False
-        If IniWrite($sIniBKD, "BKD", "CustomDate", $sCustomBKD) = 0 Then $bOkBKD = False
-
-        If $bOkBKD Then
-            _AuditLog("SAVE", "BKD config - mode=" & $sModeBKD & " cutoff=" & $sCutoffBKD & " custom=" & $sCustomBKD)
-            _SendHttpResponse($iSocket, 200, "application/json", '{"status":"ok"}')
-        Else
-            _AuditLog("ERROR", "BKD config - impossible d'ecrire dispatch_config.ini")
-            _SendHttpResponse($iSocket, 500, "application/json", '{"status":"error","reason":"cannot_write_bkd_config"}')
-        EndIf
+        _ApiConfig_SaveBkd($iSocket, $sBody)
 
     ; ── BKD CONFIG : chargement global BKD vers Interface.html ──
     ElseIf $sURL = "/api/load-bkd-config" Then
-        Local $sIniBKD2 = @ScriptDir & "\dispatch_config.ini"
-        Local $sModeBKD2 = IniRead($sIniBKD2, "BKD", "Mode", "auto")
-        Local $sCutoffBKD2 = IniRead($sIniBKD2, "BKD", "Cutoff", "14:30")
-        Local $sCustomBKD2 = IniRead($sIniBKD2, "BKD", "CustomDate", "")
-
-        Local $sRespBKD = '{"mode":"' & _JsonEscape($sModeBKD2) & _
-                          '","cutoff":"' & _JsonEscape($sCutoffBKD2) & _
-                          '","customDate":"' & _JsonEscape($sCustomBKD2) & '"}'
-
-        _SendHttpResponse($iSocket, 200, "application/json", $sRespBKD)
+        _ApiConfig_LoadBkd($iSocket)
 
     ElseIf $sURL = "/api/action" Then
         Local $sAction = _GetJsonValue($sBody, "action")

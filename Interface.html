@@ -5997,7 +5997,7 @@ function renderResults(){var body=id('edoc-results');body.innerHTML=edocState.it
 function setChecks(v){document.querySelectorAll('.edoc-row-check').forEach(function(c){c.checked=v})}
 function checkMode(mode){document.querySelectorAll('#edoc-results tr[data-idx]').forEach(function(tr){var idx=Number(tr.dataset.idx);var it=edocState.items.find(function(x){return x.index===idx});if(!it)return;tr.querySelector('.edoc-row-check').checked=mode==='mail'?!!it.mail:!!it.pj;});}
 function uploadEdoc(){var idx=Array.from(document.querySelectorAll('#edoc-results tr[data-idx]')).filter(function(tr){return tr.querySelector('.edoc-row-check').checked}).map(function(tr){return tr.dataset.idx}).join('|');if(!idx){toastMsg('Aucune ligne cochée.');return;}live('Upload EDOC en cours...');apiAction({action:'EDOC_WEB_UPLOAD',mailbox:id('edoc-mailbox').value,indexes:idx}).then(function(r){live(r.status==='ok'?'Upload terminé : '+r.uploaded+' élément(s).':'Erreur upload : '+(r.reason||'inconnue'));}).catch(function(e){live('Erreur upload : '+(e.message||e));});}
-function ensureToolsPanel(){var dash=document.querySelector('#tab-dashboard .cr-page');if(!dash||id('cr-tools-panel'))return;var panel=document.createElement('section');panel.id='cr-tools-panel';panel.innerHTML='<div class="cr-tool-card"><div class="cr-tool-title">🛠 Infos manquantes</div><div class="cr-tool-sub">Email, contact, téléphone, transporteur.</div><button class="btn btn-purple-out btn-sm" data-cr-open="both">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">📦 CMR / BL</div><div class="cr-tool-sub">Queue CMR, BL/PDF, mail, EDOC.</div><button class="btn btn-blue-out btn-sm" id="tool-cmr">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">📤 EDOC Master</div><div class="cr-tool-sub">Scan Outlook + upload EDOC dans HTML.</div><button class="btn btn-success btn-sm" id="tool-edoc">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">🧭 Workflow</div><div class="cr-tool-sub">Kanban + filtres transporteur.</div><button class="btn btn-ghost btn-sm" id="tool-workflow">Ouvrir</button></div>';var a=id('cr-dashboard-actions');if(a)a.insertAdjacentElement('afterend',panel);else dash.insertBefore(panel,dash.firstChild);id('tool-cmr').onclick=function(){switchTabClean('cmr')};id('tool-edoc').onclick=function(){switchTabClean('edocmaster')};id('tool-workflow').onclick=function(){switchTabClean('workflow')};}
+function ensureToolsPanel(){var dash=document.querySelector('#tab-dashboard .cr-page');if(!dash||id('cr-tools-panel'))return;var panel=document.createElement('section');panel.id='cr-tools-panel';panel.innerHTML='<div class="cr-tool-card"><div class="cr-tool-title">🛠 Infos manquantes</div><div class="cr-tool-sub">Email, contact, téléphone, transporteur.</div><button class="btn btn-purple-out btn-sm" data-cr-open="both">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">📦 CMR / BL</div><div class="cr-tool-sub">Queue CMR, BL/PDF, mail, EDOC.</div><button class="btn btn-blue-out btn-sm" id="tool-cmr">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">📤 EDOC Master</div><div class="cr-tool-sub">Scan Outlook + upload EDOC dans HTML.</div><button class="btn btn-success btn-sm" id="tool-edoc">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">🧭 Workflow</div><div class="cr-tool-sub">Kanban + filtres transporteur.</div><button class="btn btn-ghost btn-sm" id="tool-workflow">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">🎫 HPE</div><div class="cr-tool-sub">Lien INC/FXC/ARN ↔ dossier, suivi + notes.</div><button class="btn btn-orange-out btn-sm" id="tool-hpe">Ouvrir</button></div>';var a=id('cr-dashboard-actions');if(a)a.insertAdjacentElement('afterend',panel);else dash.insertBefore(panel,dash.firstChild);id('tool-cmr').onclick=function(){switchTabClean('cmr')};id('tool-edoc').onclick=function(){switchTabClean('edocmaster')};id('tool-workflow').onclick=function(){switchTabClean('workflow')};id('tool-hpe').onclick=function(){var t=document.querySelector('.tab[data-tab="hpe"]');if(t)t.click();};}
 function patchTabs(){document.addEventListener('click',function(e){var t=e.target.closest('.tab[data-tab="edocmaster"]');if(!t)return;e.preventDefault();e.stopPropagation();switchTabClean('edocmaster');},true)}
 function initEdocHtml(){ensureEdocTab();bindEdocHtml();if(!edocState.stores.length)loadEdocConfig();}
 function init(){ensureEdocTab();ensureToolsPanel();patchTabs();setInterval(function(){if(id('tab-dashboard')&&id('tab-dashboard').classList.contains('active'))ensureToolsPanel();},1000)}
@@ -6224,6 +6224,215 @@ function init(){ ensureTab(); }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(init,650); });
 else setTimeout(init,650);
 window.addEventListener('load', function(){ setTimeout(init,1250); });
+})();
+</script>
+
+<!-- ============================================================
+     HPE_UI_V1 - onglet HPE (mapping INC/FXC/ARN <-> dossier + suivi)
+     ============================================================ -->
+<style id="hpe-ui-v1-style">
+#tab-hpe{height:100%;overflow:auto;background:var(--bg);}
+.hpe-page{padding:12px;display:grid;grid-template-columns:380px 1fr;gap:12px;min-height:100%;}
+.hpe-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-sm);padding:13px;min-width:0;}
+.hpe-card h3{margin:0 0 8px;font-size:13px;font-weight:900;color:var(--text);}
+.hpe-card h4{margin:14px 0 8px;font-size:12px;font-weight:800;color:var(--text);border-top:1px solid var(--border);padding-top:12px;}
+.hpe-sub{font-size:11px;color:var(--text3);line-height:1.35;margin-bottom:9px;}
+.hpe-field{margin-bottom:8px;}
+.hpe-field input,.hpe-field textarea{width:100%;border:1px solid var(--border2);border-radius:8px;background:var(--surface2);color:var(--text);font-size:12px;padding:8px 9px;outline:none;box-sizing:border-box;font-family:var(--mono);}
+.hpe-field textarea{min-height:60px;resize:vertical;font-family:inherit;}
+.hpe-row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.hpe-actions{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;}
+.hpe-hint{font-size:11px;margin-top:6px;min-height:16px;line-height:1.4;}
+.hpe-table-wrap{max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:10px;margin-top:8px;}
+.hpe-table{width:100%;border-collapse:collapse;font-size:11px;}
+.hpe-table th{position:sticky;top:0;background:var(--surface2);text-align:left;padding:6px 7px;border-bottom:1px solid var(--border);color:var(--text2);white-space:nowrap;}
+.hpe-table td{padding:5px 7px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.hpe-table tr:hover{background:var(--blue-bg);cursor:pointer;}
+.hpe-note{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 9px;margin-bottom:6px;font-size:11px;}
+.hpe-note-meta{color:var(--text3);font-size:10px;margin-bottom:2px;}
+@media(max-width:1000px){.hpe-page{grid-template-columns:1fr}}
+</style>
+<script id="hpe-ui-v1-script">
+(function(){
+'use strict';
+var mapping=[], suivi=[], notes=[], curDossier='';
+function id(x){return document.getElementById(x)}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function toastMsg(s){if(typeof toast==='function')toast(s);else console.log(s)}
+function apiAction(payload){if(typeof apiCall==='function')return apiCall('action',payload);return fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json().catch(function(){return {status:r.ok?'ok':'error'}});});}
+
+function extractRef(s){
+  var m = String(s||'').match(/\b(INC|FXC|ARN)[- ]?(\d{4,})\b/i);
+  if(!m) return '';
+  return m[1].toUpperCase() + m[2];
+}
+function quickSearch(){
+  var raw = id('hpe-quick-ref').value;
+  var ref = extractRef(raw);
+  var out = id('hpe-quick-result');
+  if(!ref){ out.innerHTML = '<span style="color:var(--orange)">Aucune référence INC/FXC/ARN reconnue.</span>'; return; }
+  var field = document.getElementById('hdr-file');
+  if(field){ field.value = 'R#'+ref; field.focus(); }
+  out.innerHTML = '<span style="color:var(--green);font-weight:700">✓ R#'+esc(ref)+'</span> prêt dans le champ de recherche en haut — clique LOG / NOTES / DIMS...';
+  apiAction({action:'HPE_MAPPING_LOOKUP', value:ref}).then(function(r){
+    if(r && r.status==='ok' && r.found){
+      out.innerHTML += '<br><span style="color:var(--blue)">↔ Lié au dossier <b>'+esc(r.dossier)+'</b></span> — <a href="#" id="hpe-quick-load-dossier" style="color:var(--blue)">charger son suivi</a>';
+      var link = id('hpe-quick-load-dossier');
+      if(link) link.onclick=function(ev){ ev.preventDefault(); id('hpe-suivi-dossier').value=r.dossier; loadDossier(); };
+    }
+  }).catch(function(){});
+}
+
+function renderMapping(){
+  var b=id('hpe-map-body'); if(!b) return;
+  b.innerHTML = mapping.length ? mapping.map(function(m){
+    return '<tr><td><b>'+esc(m.reference)+'</b></td><td>'+esc(m.dossier)+'</td><td>'+esc(m.dateAjout)+'</td>'+
+      '<td><button class="btn btn-ghost hpe-mini" data-map-del="'+esc(m.reference)+'" style="height:22px;padding:0 7px;font-size:10px">🗑</button></td></tr>';
+  }).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:14px">Aucun lien.</td></tr>';
+}
+function loadMapping(){
+  apiAction({action:'HPE_MAPPING_LIST'}).then(function(r){
+    mapping = (r && r.mapping) || [];
+    renderMapping();
+  }).catch(function(e){ toastMsg('Erreur mapping : '+(e.message||e)); });
+}
+function addMapping(){
+  var ref = id('hpe-map-ref').value.trim();
+  var dossier = id('hpe-map-dossier').value.trim();
+  if(!ref || !dossier){ toastMsg('Référence et dossier obligatoires.'); return; }
+  apiAction({action:'HPE_MAPPING_ADD', reference:ref, dossier:dossier}).then(function(r){
+    if(r && r.status==='ok'){ id('hpe-map-ref').value=''; id('hpe-map-dossier').value=''; toastMsg('Lien enregistré.'); loadMapping(); }
+    else toastMsg('Erreur : '+((r&&r.message)||'inconnue'));
+  }).catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
+}
+function delMapping(ref){
+  apiAction({action:'HPE_MAPPING_DELETE', reference:ref}).then(function(){ toastMsg('Lien supprimé.'); loadMapping(); })
+    .catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
+}
+
+function renderSuiviList(){
+  var b=id('hpe-suivi-body'); if(!b) return;
+  b.innerHTML = suivi.length ? suivi.map(function(s){
+    return '<tr data-dossier="'+esc(s.dossier)+'"><td><b>'+esc(s.dossier)+'</b></td><td>'+esc(s.owner)+'</td><td>'+esc(s.status)+'</td><td>'+esc(s.maj)+'</td></tr>';
+  }).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:14px">Aucun dossier suivi.</td></tr>';
+}
+function loadSuiviList(){
+  apiAction({action:'HPE_SUIVI_LIST'}).then(function(r){
+    suivi = (r && r.suivi) || [];
+    renderSuiviList();
+  }).catch(function(e){ toastMsg('Erreur suivi : '+(e.message||e)); });
+}
+function renderNotes(){
+  var b=id('hpe-notes-list'); if(!b) return;
+  b.innerHTML = notes.length ? notes.map(function(n){
+    return '<div class="hpe-note"><div class="hpe-note-meta">'+esc(n.date)+' — '+esc(n.auteur)+'</div>'+esc(n.note)+'</div>';
+  }).join('') : '<div style="color:var(--text3);font-size:11px">Aucune note.</div>';
+}
+function loadDossier(){
+  var dossier = id('hpe-suivi-dossier').value.trim().toUpperCase();
+  if(!dossier){ toastMsg('Saisir un numéro de dossier.'); return; }
+  curDossier = dossier;
+  apiAction({action:'HPE_SUIVI_LIST'}).then(function(r){
+    suivi = (r && r.suivi) || [];
+    renderSuiviList();
+    var row = suivi.find(function(s){ return String(s.dossier).toUpperCase()===dossier; });
+    id('hpe-suivi-owner').value = row ? row.owner : '';
+    id('hpe-suivi-status').value = row ? row.status : '';
+  }).catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
+  apiAction({action:'HPE_NOTES_LIST', dossier:dossier}).then(function(r){
+    notes = (r && r.notes) || [];
+    renderNotes();
+  }).catch(function(e){ toastMsg('Erreur notes : '+(e.message||e)); });
+}
+function saveSuivi(){
+  if(!curDossier){ toastMsg('Charge d\'abord un dossier.'); return; }
+  apiAction({action:'HPE_SUIVI_SAVE', dossier:curDossier, owner:id('hpe-suivi-owner').value, status:id('hpe-suivi-status').value}).then(function(r){
+    if(r && r.status==='ok'){ toastMsg('Suivi enregistré.'); loadSuiviList(); }
+    else toastMsg('Erreur : '+((r&&r.message)||'inconnue'));
+  }).catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
+}
+function addNote(){
+  if(!curDossier){ toastMsg('Charge d\'abord un dossier.'); return; }
+  var note = id('hpe-note-text').value.trim();
+  if(!note){ return; }
+  apiAction({action:'HPE_NOTE_ADD', dossier:curDossier, note:note}).then(function(r){
+    if(r && r.status==='ok'){ id('hpe-note-text').value=''; toastMsg('Note ajoutée.'); loadDossier(); }
+    else toastMsg('Erreur : '+((r&&r.message)||'inconnue'));
+  }).catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
+}
+
+function ensureTab(){
+  var tabbar=id('tabbar'), content=id('content'); if(!tabbar||!content) return;
+  var tab=document.querySelector('.tab[data-tab="hpe"]');
+  if(!tab){ tab=document.createElement('div'); tab.className='tab'; tab.dataset.tab='hpe'; tab.textContent='HPE';
+    var opt=document.querySelector('.tab[data-tab="options"]'); tabbar.insertBefore(tab, opt||null); }
+  var pane=id('tab-hpe');
+  if(!pane){
+    pane=document.createElement('div'); pane.className='tabpane'; pane.id='tab-hpe';
+    pane.innerHTML = '<div class="hpe-page">' +
+      '<section class="hpe-card">' +
+      '<h3>Recherche rapide E.TMS</h3>' +
+      '<div class="hpe-sub">Colle une référence HPE (INC/FXC/ARN...) : prépare "R#..." dans le champ de recherche E.TMS en haut de l\'écran.</div>' +
+      '<div class="hpe-field"><input id="hpe-quick-ref" type="text" placeholder="Ex: FXC123456 ou un texte contenant la reference"></div>' +
+      '<button class="btn btn-blue-out btn-sm" id="hpe-quick-go">Préparer recherche E.TMS</button>' +
+      '<div id="hpe-quick-result" class="hpe-hint"></div>' +
+      '<h4>Mapping HPE ↔ Dossier</h4>' +
+      '<div class="hpe-sub">Lien entre une référence HPE et un dossier J1A/H1A.</div>' +
+      '<div class="hpe-row2"><input id="hpe-map-ref" type="text" placeholder="Référence (FXC123456)"><input id="hpe-map-dossier" type="text" placeholder="Dossier (J1A...)"></div>' +
+      '<div class="hpe-actions"><button class="btn btn-success btn-sm" id="hpe-map-add">+ Lier</button><button class="btn btn-ghost btn-sm" id="hpe-map-reload">Rafraîchir</button></div>' +
+      '<div class="hpe-table-wrap"><table class="hpe-table"><thead><tr><th>Référence</th><th>Dossier</th><th>Ajouté</th><th></th></tr></thead><tbody id="hpe-map-body"></tbody></table></div>' +
+      '</section>' +
+      '<section class="hpe-card">' +
+      '<h3>Suivi dossier</h3>' +
+      '<div class="hpe-sub">Propriétaire, statut libre et notes horodatées, par dossier J1A/H1A.</div>' +
+      '<div class="hpe-row2"><input id="hpe-suivi-dossier" type="text" placeholder="N° Dossier (J1A/H1A)"><button class="btn btn-blue-out btn-sm" id="hpe-suivi-load">Charger</button></div>' +
+      '<div class="hpe-row2" style="margin-top:8px"><input id="hpe-suivi-owner" type="text" placeholder="Propriétaire"><input id="hpe-suivi-status" type="text" placeholder="Statut (libre)"></div>' +
+      '<div class="hpe-actions"><button class="btn btn-primary btn-sm" id="hpe-suivi-save">💾 Enregistrer</button></div>' +
+      '<h4>Notes</h4>' +
+      '<div id="hpe-notes-list"></div>' +
+      '<div class="hpe-field"><textarea id="hpe-note-text" placeholder="Nouvelle note..."></textarea></div>' +
+      '<button class="btn btn-success btn-sm" id="hpe-note-add">+ Ajouter note</button>' +
+      '<h4>Tous les dossiers suivis</h4>' +
+      '<div class="hpe-table-wrap"><table class="hpe-table"><thead><tr><th>Dossier</th><th>Propriétaire</th><th>Statut</th><th>MAJ</th></tr></thead><tbody id="hpe-suivi-body"></tbody></table></div>' +
+      '</section></div>';
+    content.appendChild(pane);
+    id('hpe-quick-go').onclick=quickSearch;
+    id('hpe-quick-ref').addEventListener('keydown', function(e){ if(e.key==='Enter') quickSearch(); });
+    id('hpe-map-add').onclick=addMapping;
+    id('hpe-map-reload').onclick=loadMapping;
+    id('hpe-map-body').addEventListener('click', function(e){
+      var d=e.target.closest('[data-map-del]'); if(!d) return;
+      if(confirm('Supprimer le lien "'+d.dataset.mapDel+'" ?')) delMapping(d.dataset.mapDel);
+    });
+    id('hpe-suivi-load').onclick=loadDossier;
+    id('hpe-suivi-dossier').addEventListener('keydown', function(e){ if(e.key==='Enter') loadDossier(); });
+    id('hpe-suivi-save').onclick=saveSuivi;
+    id('hpe-note-add').onclick=addNote;
+    id('hpe-suivi-body').addEventListener('click', function(e){
+      var tr=e.target.closest('tr[data-dossier]'); if(!tr) return;
+      id('hpe-suivi-dossier').value = tr.dataset.dossier;
+      loadDossier();
+    });
+  }
+}
+
+function switchToHpe(){
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active')});
+  document.querySelectorAll('.tabpane').forEach(function(p){p.classList.remove('active')});
+  var t=document.querySelector('.tab[data-tab="hpe"]'), p=id('tab-hpe');
+  if(t) t.classList.add('active'); if(p) p.classList.add('active');
+  loadMapping(); loadSuiviList();
+}
+
+document.addEventListener('click', function(e){
+  var tab=e.target.closest('.tab[data-tab="hpe"]');
+  if(tab){ e.preventDefault(); e.stopPropagation(); ensureTab(); switchToHpe(); }
+}, true);
+
+function init(){ ensureTab(); }
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(init,700); });
+else setTimeout(init,700);
+window.addEventListener('load', function(){ setTimeout(init,1300); });
 })();
 </script>
 

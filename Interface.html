@@ -6332,6 +6332,7 @@ window.addEventListener('load', function(){ setTimeout(init,1250); });
 .hpe-kpi-lbl{font-size:11px;color:var(--text3);margin-top:5px;font-weight:700;}
 .hpe-card{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--border2);border-radius:14px;box-shadow:var(--shadow-sm);padding:18px;}
 .hpe-card--alerts{border-left-color:var(--orange);}
+.hpe-card--unmapped{border-left-color:var(--red);}
 .hpe-card--search{border-left-color:var(--blue);}
 .hpe-card--mapping{border-left-color:var(--purple);}
 .hpe-card--suivi{border-left-color:var(--teal);}
@@ -6365,6 +6366,7 @@ window.addEventListener('load', function(){ setTimeout(init,1250); });
 'use strict';
 var mapping=[], suivi=[], notes=[], curDossier='';
 var lastMappingCount=0, lastSuiviCount=0;
+var lastUnmapped=[];
 function id(x){return document.getElementById(x)}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function toastMsg(s){if(typeof toast==='function')toast(s);else console.log(s)}
@@ -6385,10 +6387,12 @@ function statusPill(s){
 function renderKpis(){
   var el=id('hpe-kpis'); if(!el) return;
   var active=lastAlerts.filter(function(a){ return !isDismissed(a); }).length;
+  var newRefs=lastUnmapped.filter(function(a){ return !isDismissedUnmapped(a); }).length;
   var nSuivi = suivi.length || lastSuiviCount;
   var nMap = mapping.length || lastMappingCount;
   el.innerHTML =
     '<div class="hpe-kpi" style="border-left-color:var(--orange)"><div class="hpe-kpi-val" style="color:var(--orange)">'+active+'</div><div class="hpe-kpi-lbl">Alerte'+(active>1?'s':'')+' active'+(active>1?'s':'')+'</div></div>'+
+    '<div class="hpe-kpi" style="border-left-color:var(--red)"><div class="hpe-kpi-val" style="color:var(--red)">'+newRefs+'</div><div class="hpe-kpi-lbl">Nouvelle'+(newRefs>1?'s':'')+' réf'+(newRefs>1?'s':'')+' à lier</div></div>'+
     '<div class="hpe-kpi" style="border-left-color:var(--teal)"><div class="hpe-kpi-val" style="color:var(--teal)">'+nSuivi+'</div><div class="hpe-kpi-lbl">Dossier'+(nSuivi>1?'s':'')+' suivi'+(nSuivi>1?'s':'')+'</div></div>'+
     '<div class="hpe-kpi" style="border-left-color:var(--purple)"><div class="hpe-kpi-val" style="color:var(--purple)">'+nMap+'</div><div class="hpe-kpi-lbl">Lien'+(nMap>1?'s':'')+' mapping</div></div>';
 }
@@ -6507,6 +6511,32 @@ function dismissAlert(a){
   if(d.indexOf(k)===-1){ d.push(k); try{ localStorage.setItem(LS_DISMISS, JSON.stringify(d)); }catch(e){} }
 }
 
+var LS_DISMISS_UNMAPPED = 'dispatch_hpe_unmapped_dismissed';
+function getDismissedUnmapped(){ try{ return JSON.parse(localStorage.getItem(LS_DISMISS_UNMAPPED)||'[]'); }catch(e){ return []; } }
+function isDismissedUnmapped(a){ return getDismissedUnmapped().indexOf(dismissKey(a))!==-1; }
+function dismissUnmapped(a){
+  var d=getDismissedUnmapped(), k=dismissKey(a);
+  if(d.indexOf(k)===-1){ d.push(k); try{ localStorage.setItem(LS_DISMISS_UNMAPPED, JSON.stringify(d)); }catch(e){} }
+}
+
+function renderUnmapped(list){
+  var b=id('hpe-unmapped-list'); if(!b) return;
+  var visible=list.filter(function(a){ return !isDismissedUnmapped(a); });
+  var badge=id('hpe-unmapped-badge'); if(badge){ badge.textContent=visible.length; badge.style.color=visible.length?'var(--red)':'var(--text2)'; badge.style.background=visible.length?'var(--red-bg)':'var(--surface2)'; }
+  if(!visible.length){ b.innerHTML='<div class="hpe-empty">✓ Aucune nouvelle référence en attente.</div>'; return; }
+  b.innerHTML=visible.map(function(a){
+    var replyBadge = a.reply ? ' <span style="color:var(--text3);font-size:10px">(réponse)</span>' : '';
+    var threadBadge = a.threadCount>1 ? ' <span style="color:var(--blue);font-size:10px">· '+a.threadCount+' mails</span>' : '';
+    return '<div class="hpe-note" data-um-ref="'+esc(a.reference)+'" data-um-date="'+esc(a.date)+'">' +
+      '<div class="hpe-note-meta">'+esc(a.date)+' — '+esc(a.sender)+threadBadge+replyBadge+'</div>' +
+      '<div><b style="color:var(--red)">'+esc(a.reference)+'</b> — pas encore liée à un dossier</div>' +
+      '<div style="color:var(--text2)">'+esc(a.subject)+'</div>' +
+      '<div class="hpe-row-btn" style="margin-top:8px"><div class="hpe-field" style="margin-bottom:0"><input type="text" data-um-dossier placeholder="N° Dossier (J1A/H1A)" style="font-size:11.5px;padding:7px 9px"></div><button class="btn btn-success hpe-mini" data-um-link="1" style="height:30px;padding:0 10px;font-size:11px">+ Lier</button></div>' +
+      '<div class="hpe-actions" style="margin:6px 0 0"><button class="btn btn-ghost hpe-mini" data-um-dismiss="1" style="height:22px;padding:0 7px;font-size:10px">✕ Ignorer</button></div>' +
+      '</div>';
+  }).join('');
+}
+
 function renderAlerts(list){
   var b=id('hpe-alerts-list'); if(!b) return;
   var visible=list.filter(function(a){ return !isDismissed(a); });
@@ -6539,10 +6569,12 @@ function scanMail(){
   apiAction({action:'HPE_MAIL_SCAN', mailbox:mailbox}).then(function(r){
     if(!r || r.status!=='ok'){ if(st) st.textContent='Erreur : '+((r&&r.message)||'inconnue'); return; }
     lastAlerts = r.alerts || [];
+    lastUnmapped = r.unmapped || [];
     lastMappingCount = r.mappingCount || 0;
     lastSuiviCount = r.suiviCount || 0;
     if(st) st.textContent = lastAlerts.length ? (lastAlerts.length+' fil(s) détecté(s).') : 'Aucun mail lié trouvé.';
     renderAlerts(lastAlerts);
+    renderUnmapped(lastUnmapped);
     renderDashboardBanner(lastAlerts);
     renderDashPreview();
   }).catch(function(e){ if(st) st.textContent='Erreur : '+(e.message||e); });
@@ -6551,11 +6583,13 @@ function scanMail(){
 function renderDashPreview(){
   var el=id('hpe-dash-preview'); if(!el) return;
   var active=lastAlerts.filter(function(a){ return !isDismissed(a); }).length;
+  var newRefs=lastUnmapped.filter(function(a){ return !isDismissedUnmapped(a); }).length;
   var nSuivi=suivi.length||lastSuiviCount, nMap=mapping.length||lastMappingCount;
   var alertLine = active>0
     ? '<span style="color:var(--orange);font-weight:800">⚠ '+active+' alerte'+(active>1?'s':'')+'</span>'
     : '<span style="color:var(--green);font-weight:700">✓ Aucune alerte</span>';
-  el.innerHTML = alertLine+'<br>📁 '+nSuivi+' dossier'+(nSuivi>1?'s':'')+' suivi'+(nSuivi>1?'s':'')+' · 🔗 '+nMap+' lien'+(nMap>1?'s':'');
+  var newRefLine = newRefs>0 ? ' · <span style="color:var(--red);font-weight:800">🆕 '+newRefs+' réf. à lier</span>' : '';
+  el.innerHTML = alertLine+newRefLine+'<br>📁 '+nSuivi+' dossier'+(nSuivi>1?'s':'')+' suivi'+(nSuivi>1?'s':'')+' · 🔗 '+nMap+' lien'+(nMap>1?'s':'');
 }
 
 function ensureDashboardBanner(){
@@ -6571,14 +6605,22 @@ function ensureDashboardBanner(){
 function renderDashboardBanner(list){
   var el=ensureDashboardBanner(); if(!el) return;
   var visible=list.filter(function(a){ return !isDismissed(a); });
-  if(!visible.length){ el.style.display='none'; el.innerHTML=''; return; }
+  var visibleNew=lastUnmapped.filter(function(a){ return !isDismissedUnmapped(a); });
+  if(!visible.length && !visibleNew.length){ el.style.display='none'; el.innerHTML=''; return; }
   el.style.display='block';
-  el.innerHTML='<div style="font-weight:800;color:var(--orange);font-size:12px;margin-bottom:6px">⚠ '+visible.length+' mail(s) HPE lié(s) à un dossier suivi</div>' +
-    visible.slice(0,5).map(function(a){
-      var ownerTxt = a.owner ? (' (Propriétaire : '+esc(a.owner)+')') : '';
-      return '<div style="font-size:11px;margin-bottom:3px">'+esc(a.reference)+' → <b>'+esc(a.dossier)+'</b>'+ownerTxt+' — '+esc(a.subject)+' <a href="#" data-dash-hpe-open="'+esc(a.dossier)+'" style="color:var(--blue)">ouvrir</a></div>';
-    }).join('') +
-    (visible.length>5 ? '<div style="font-size:10px;color:var(--text3)">+ '+(visible.length-5)+' autre(s) — voir onglet HPE</div>' : '');
+  var html='';
+  if(visible.length){
+    html += '<div style="font-weight:800;color:var(--orange);font-size:12px;margin-bottom:6px">⚠ '+visible.length+' mail(s) HPE lié(s) à un dossier suivi</div>' +
+      visible.slice(0,5).map(function(a){
+        var ownerTxt = a.owner ? (' (Propriétaire : '+esc(a.owner)+')') : '';
+        return '<div style="font-size:11px;margin-bottom:3px">'+esc(a.reference)+' → <b>'+esc(a.dossier)+'</b>'+ownerTxt+' — '+esc(a.subject)+' <a href="#" data-dash-hpe-open="'+esc(a.dossier)+'" style="color:var(--blue)">ouvrir</a></div>';
+      }).join('') +
+      (visible.length>5 ? '<div style="font-size:10px;color:var(--text3)">+ '+(visible.length-5)+' autre(s) — voir onglet HPE</div>' : '');
+  }
+  if(visibleNew.length){
+    html += '<div style="font-weight:800;color:var(--red);font-size:12px;margin:'+(visible.length?'10px':'0')+' 0 6px">🆕 '+visibleNew.length+' nouvelle(s) référence(s) HPE sans dossier lié — <a href="#" data-dash-hpe-tab="1" style="color:var(--blue)">voir onglet HPE</a></div>';
+  }
+  el.innerHTML = html;
 }
 document.addEventListener('click', function(e){
   var link=e.target.closest('[data-dash-hpe-open]');
@@ -6588,6 +6630,13 @@ document.addEventListener('click', function(e){
   var t=document.querySelector('.tab[data-tab="hpe"]');
   if(t) t.click();
   setTimeout(function(){ var f=id('hpe-suivi-dossier'); if(f){ f.value=dossier; loadDossier(); } }, 300);
+}, true);
+document.addEventListener('click', function(e){
+  var link=e.target.closest('[data-dash-hpe-tab]');
+  if(!link) return;
+  e.preventDefault();
+  var t=document.querySelector('.tab[data-tab="hpe"]');
+  if(t) t.click();
 }, true);
 
 function ensureTab(){
@@ -6607,6 +6656,12 @@ function ensureTab(){
       '<div class="hpe-field"><label>Boîte mail à scanner</label><input id="hpe-mailbox" type="text" placeholder="ex: CDG-Transcon-HPE@expeditors.com"></div>' +
       '<div class="hpe-actions"><button class="btn btn-orange-out btn-sm" id="hpe-scan-btn">🔄 Scanner les mails</button><span id="hpe-scan-status" class="hpe-hint"></span></div>' +
       '<div id="hpe-alerts-list"></div>' +
+      '</section>' +
+
+      '<section class="hpe-card hpe-card--unmapped">' +
+      '<div class="hpe-card-head"><div class="hpe-card-title">🆕 <span>Nouvelles références non liées</span></div><span id="hpe-unmapped-badge" class="hpe-badge">0</span></div>' +
+      '<div class="hpe-sub">Références HPE détectées dans l\'objet des mails (14 derniers jours) mais qui ne correspondent à aucun dossier suivi pour l\'instant. Renseigne le dossier ci-dessous pour créer le lien immédiatement.</div>' +
+      '<div id="hpe-unmapped-list"></div>' +
       '</section>' +
 
       '<section class="hpe-card hpe-card--search">' +
@@ -6650,6 +6705,32 @@ function ensureTab(){
       if(dismissBtn){
         var a=lastAlerts.find(function(x){ return x.reference===card.dataset.alertRef && x.date===card.dataset.alertDate; });
         if(a){ dismissAlert(a); renderAlerts(lastAlerts); renderDashboardBanner(lastAlerts); }
+      }
+    });
+    id('hpe-unmapped-list').addEventListener('click', function(e){
+      var card=e.target.closest('[data-um-ref]'); if(!card) return;
+      var dismissBtn=e.target.closest('[data-um-dismiss]');
+      if(dismissBtn){
+        var a=lastUnmapped.find(function(x){ return x.reference===card.dataset.umRef && x.date===card.dataset.umDate; });
+        if(a){ dismissUnmapped(a); renderUnmapped(lastUnmapped); renderKpis(); renderDashPreview(); renderDashboardBanner(lastAlerts); }
+        return;
+      }
+      var linkBtn=e.target.closest('[data-um-link]');
+      if(linkBtn){
+        var input=card.querySelector('[data-um-dossier]');
+        var dossier=input ? input.value.trim() : '';
+        if(!dossier){ toastMsg('Saisis un numéro de dossier.'); if(input) input.focus(); return; }
+        var ref=card.dataset.umRef;
+        apiAction({action:'HPE_MAPPING_ADD', reference:ref, dossier:dossier}).then(function(r){
+          if(r && r.status==='ok'){
+            toastMsg('Référence '+ref+' liée au dossier '+dossier+'.');
+            var a=lastUnmapped.find(function(x){ return x.reference===ref && x.date===card.dataset.umDate; });
+            if(a) dismissUnmapped(a);
+            renderUnmapped(lastUnmapped);
+            loadMapping();
+            renderKpis(); renderDashPreview(); renderDashboardBanner(lastAlerts);
+          } else toastMsg('Erreur : '+((r&&r.message)||'inconnue'));
+        }).catch(function(e2){ toastMsg('Erreur : '+(e2.message||e2)); });
       }
     });
     id('hpe-quick-go').onclick=quickSearch;

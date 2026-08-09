@@ -6630,5 +6630,75 @@ window.addEventListener('load', function(){ setTimeout(init,1300); });
 })();
 </script>
 
+<!-- ============================================================
+     SUBNAV_V1 - regroupe Transporteurs sous BL, COMAT sous Workflow
+     via un sous-menu horizontal (au lieu d'onglets separes dans la
+     sidebar). N'altere aucun contenu existant : ajoute juste une barre
+     de navigation en haut de chaque onglet concerne, et masque les
+     entrees devenues redondantes dans la sidebar.
+     ============================================================ -->
+<style id="subnav-v1-style">
+.subnav{display:flex;gap:6px;padding:9px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;}
+.subnav-btn{padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;color:var(--text2);cursor:pointer;background:var(--surface2);border:1px solid var(--border2);transition:all .15s;white-space:nowrap;}
+.subnav-btn:hover{color:var(--text);}
+.subnav-btn.active{color:var(--blue);background:var(--blue-bg);border-color:var(--blue);}
+.tab.subtab-hidden{display:none;}
+</style>
+<script id="subnav-v1-script">
+(function(){
+'use strict';
+function id(x){return document.getElementById(x)}
+
+var GROUPS = {
+  'tab-cmr':      [{label:'📄 BL', tab:'cmr'}, {label:'🚛 Transporteurs', tab:'sp'}],
+  'tab-sp':       [{label:'📄 BL', tab:'cmr'}, {label:'🚛 Transporteurs', tab:'sp'}],
+  'tab-workflow': [{label:'🧭 Workflow', tab:'workflow'}, {label:'📦 COMAT', tab:'comat'}],
+  'tab-comat':    [{label:'🧭 Workflow', tab:'workflow'}, {label:'📦 COMAT', tab:'comat'}]
+};
+
+function hideSidebarEntry(tabName){
+  var t = document.querySelector('.tab[data-tab="'+tabName+'"]');
+  if(t) t.classList.add('subtab-hidden');
+}
+
+function subnavEl(items, activeTab){
+  var nav = document.createElement('div');
+  nav.className = 'subnav';
+  nav.innerHTML = items.map(function(it){
+    return '<div class="subnav-btn'+(it.tab===activeTab?' active':'')+'" data-subnav-goto="'+it.tab+'">'+it.label+'</div>';
+  }).join('');
+  return nav;
+}
+
+function ensureSubnav(paneId, activeTab){
+  var pane = id(paneId);
+  if(!pane) return;
+  if(pane.querySelector(':scope > .subnav')) return; // deja present
+  pane.insertBefore(subnavEl(GROUPS[paneId], activeTab), pane.firstChild);
+}
+
+function tick(){
+  ensureSubnav('tab-cmr', 'cmr');
+  ensureSubnav('tab-sp', 'sp');
+  ensureSubnav('tab-workflow', 'workflow');
+  ensureSubnav('tab-comat', 'comat');
+  hideSidebarEntry('sp');
+  hideSidebarEntry('comat');
+}
+
+document.addEventListener('click', function(e){
+  var b=e.target.closest('[data-subnav-goto]');
+  if(b){ e.preventDefault(); e.stopPropagation(); var t=document.querySelector('.tab[data-tab="'+b.dataset.subnavGoto+'"]'); if(t) t.click(); return; }
+  var t2=e.target.closest('.tab[data-tab="cmr"], .tab[data-tab="sp"], .tab[data-tab="workflow"], .tab[data-tab="comat"]');
+  if(t2) setTimeout(tick, 50);
+}, true);
+
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(tick,650); });
+else setTimeout(tick,650);
+window.addEventListener('load', function(){ setTimeout(tick,1300); });
+setInterval(tick, 1500);
+})();
+</script>
+
 </body>
 </html>

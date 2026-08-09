@@ -226,12 +226,14 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
 .tab:hover { color: var(--text); background: var(--surface2); }
 .tab.active { color: var(--blue); border-left-color: var(--blue); background: var(--blue-bg); font-weight: 600; }
 #tabbar-toggle {
-  height: 30px; display: flex; align-items: center; justify-content: center;
-  color: var(--text3); cursor: pointer; border-radius: 6px; font-size: 11px;
-  margin-top: 6px; border-top: 1px solid var(--border); padding-top: 8px;
+  height: 34px; display: flex; align-items: center; gap: 8px;
+  color: var(--text2); cursor: pointer; border-radius: 6px; font-size: 12px; font-weight: 700;
+  margin-bottom: 8px; padding: 0 10px;
+  background: var(--surface2); border: 1px solid var(--border2);
 }
-#tabbar-toggle:hover { color: var(--text); background: var(--surface2); }
-#tabbar.collapsed #tabbar-toggle { transform: rotate(180deg); }
+#tabbar-toggle:hover { color: var(--blue); background: var(--blue-bg); border-color: var(--blue); }
+#tabbar.collapsed #tabbar-toggle { justify-content: center; padding: 0; }
+#tabbar.collapsed #tabbar-toggle .ttx { display: none; }
 
 /* ── CONTENT ── */
 #content { flex: 1; overflow: hidden; min-width: 0; }
@@ -639,6 +641,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
 <!-- ══ TABS + CONTENT (rangée horizontale : sidebar verticale à gauche) ══ -->
 <div id="app-row" style="display:flex;flex:1;overflow:hidden;min-height:0;">
 <div id="tabbar">
+  <div id="tabbar-toggle" title="Réduire / agrandir le menu"><span class="tic">◀</span><span class="ttx">Réduire</span></div>
   <div class="tab active" data-tab="dispatch">📋 Dispatch</div>
   <div class="tab" data-tab="workflow">🧭 Workflow</div>
   <div class="tab" data-tab="cp">🤝 Channel Partners</div>
@@ -647,7 +650,6 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
   <div class="tab" data-tab="comat">📦 COMAT</div>
   <div class="tab" data-tab="nto">⛽ NTO</div>
   <div class="tab" data-tab="options">⚙️ Options</div>
-  <div id="tabbar-toggle" title="Réduire / agrandir le menu">◀</div>
 </div>
 <script>
 (function(){
@@ -655,9 +657,10 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
   var tb = document.getElementById('tabbar');
   var tg = document.getElementById('tabbar-toggle');
   if(!tb || !tg) return;
+  var ic = tg.querySelector('.tic');
   function apply(collapsed){
     tb.classList.toggle('collapsed', collapsed);
-    tg.textContent = collapsed ? '▶' : '◀';
+    if(ic) ic.textContent = collapsed ? '▶' : '◀';
   }
   var saved = false;
   try{ saved = localStorage.getItem(LS_KEY) === '1'; }catch(e){}

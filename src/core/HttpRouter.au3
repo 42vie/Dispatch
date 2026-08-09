@@ -425,6 +425,16 @@ Func HttpServer_HandleClient($iSocket)
             Case "CMR_EDOC"
                 $sData_a = _GetJsonValue($sBody, "index")
                 _CMR_EdocByIndex(Number($sData_a))
+            Case "CMR_EDIT"
+                ; Ouvre la fenetre d'apercu/edition (mise en forme Expeditors
+                ; deja integree au HTML genere, champs contenteditable). Le
+                ; bouton "Enregistrer" de cette fenetre sauvegarde le HTML
+                ; modifie et regenere le PDF sur le disque.
+                $sData_a = _GetJsonValue($sBody, "index")
+                _OpenPreviewEditorByIndex(Number($sData_a))
+            Case "CMR_REBUILD_PDF"
+                $sData_a = _GetJsonValue($sBody, "index")
+                _RebuildPdfByIndex(Number($sData_a))
 
             Case "EDOC_MASTER_OPEN"
                 _EDOCMasterGUI()

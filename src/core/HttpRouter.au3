@@ -455,6 +455,39 @@ Func HttpServer_HandleClient($iSocket)
                 TCPCloseSocket($iSocket)
                 Return
 
+            Case "HPE_MAPPING_LIST"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_MappingListJSON())
+                TCPCloseSocket($iSocket)
+                Return
+            Case "HPE_MAPPING_ADD"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_MappingAddJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "HPE_MAPPING_DELETE"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_MappingDeleteJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "HPE_MAPPING_LOOKUP"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_MappingLookupJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "HPE_SUIVI_LIST"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_SuiviListJSON())
+                TCPCloseSocket($iSocket)
+                Return
+            Case "HPE_SUIVI_SAVE"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_SuiviSaveJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "HPE_NOTES_LIST"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_NotesListJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "HPE_NOTE_ADD"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_NoteAddJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+
             Case "EDOC_MASTER_OPEN"
                 _EDOCMasterGUI()
             Case "EDOC_MASTER_STATUS"

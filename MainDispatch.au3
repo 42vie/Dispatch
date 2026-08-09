@@ -49,6 +49,7 @@ Opt("GUIOnEventMode", 0)
 #include "src\features\cmr\CMR_Mail.au3"
 #include "src\features\cmr\CMR_EDOC.au3"
 #include "src\features\cmr\CMR_PDF.au3"
+#include "src\features\hpe\HPE_Tool.au3"
 #include "src\features\edoc\Action_EDOC.au3"
 #include "src\features\edoc\EDOC_Web.au3"
 #include "src\features\edoc\EDOC_Master.au3"

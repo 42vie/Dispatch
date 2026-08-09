@@ -204,7 +204,7 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
 .etms-btn.warn:hover { background: var(--orange-bg); border-color: var(--orange); }
 .etms-sep { width: 1px; height: 18px; background: var(--border); }
 
-/* ── TABS (barre latérale verticale) ── */
+/* ── TABS (barre latérale verticale, rétractable) ── */
 #tabbar {
   background: var(--surface);
   border-right: 1px solid var(--border);
@@ -212,16 +212,26 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   padding: 8px 8px;
   width: 190px; flex-shrink: 0;
   overflow-y: auto; overflow-x: hidden;
+  transition: width .18s ease;
 }
+#tabbar.collapsed { width: 46px; padding: 8px 4px; }
 .tab {
   height: 36px; padding: 0 12px; display: flex; align-items: center;
   font-size: 12px; font-weight: 500; cursor: pointer;
   color: var(--text2); border-left: 3px solid transparent; border-radius: 6px;
   transition: all .15s; white-space: nowrap; letter-spacing: 0.1px;
-  margin-bottom: 2px;
+  margin-bottom: 2px; overflow: hidden;
 }
+#tabbar.collapsed .tab { padding: 0 0 0 10px; }
 .tab:hover { color: var(--text); background: var(--surface2); }
 .tab.active { color: var(--blue); border-left-color: var(--blue); background: var(--blue-bg); font-weight: 600; }
+#tabbar-toggle {
+  height: 30px; display: flex; align-items: center; justify-content: center;
+  color: var(--text3); cursor: pointer; border-radius: 6px; font-size: 11px;
+  margin-top: 6px; border-top: 1px solid var(--border); padding-top: 8px;
+}
+#tabbar-toggle:hover { color: var(--text); background: var(--surface2); }
+#tabbar.collapsed #tabbar-toggle { transform: rotate(180deg); }
 
 /* ── CONTENT ── */
 #content { flex: 1; overflow: hidden; min-width: 0; }
@@ -629,15 +639,36 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
 <!-- ══ TABS + CONTENT (rangée horizontale : sidebar verticale à gauche) ══ -->
 <div id="app-row" style="display:flex;flex:1;overflow:hidden;min-height:0;">
 <div id="tabbar">
-  <div class="tab active" data-tab="dispatch">Dispatch</div>
-  <div class="tab" data-tab="workflow">Workflow</div>
-  <div class="tab" data-tab="cp">Channel Partners</div>
-  <div class="tab" data-tab="contacts">Contacts Clients</div>
+  <div class="tab active" data-tab="dispatch">📋 Dispatch</div>
+  <div class="tab" data-tab="workflow">🧭 Workflow</div>
+  <div class="tab" data-tab="cp">🤝 Channel Partners</div>
+  <div class="tab" data-tab="contacts">👥 Contacts Clients</div>
 
-  <div class="tab" data-tab="comat">COMAT</div>
-  <div class="tab" data-tab="nto">NTO</div>
-  <div class="tab" data-tab="options">Options</div>
+  <div class="tab" data-tab="comat">📦 COMAT</div>
+  <div class="tab" data-tab="nto">⛽ NTO</div>
+  <div class="tab" data-tab="options">⚙️ Options</div>
+  <div id="tabbar-toggle" title="Réduire / agrandir le menu">◀</div>
 </div>
+<script>
+(function(){
+  var LS_KEY = 'dispatch_tabbar_collapsed';
+  var tb = document.getElementById('tabbar');
+  var tg = document.getElementById('tabbar-toggle');
+  if(!tb || !tg) return;
+  function apply(collapsed){
+    tb.classList.toggle('collapsed', collapsed);
+    tg.textContent = collapsed ? '▶' : '◀';
+  }
+  var saved = false;
+  try{ saved = localStorage.getItem(LS_KEY) === '1'; }catch(e){}
+  apply(saved);
+  tg.addEventListener('click', function(){
+    var next = !tb.classList.contains('collapsed');
+    apply(next);
+    try{ localStorage.setItem(LS_KEY, next ? '1' : '0'); }catch(e){}
+  });
+})();
+</script>
 
 <!-- ══ CONTENT ══ -->
 <div id="content">
@@ -5737,13 +5768,13 @@ function apiAction(payload){ if(typeof apiCall === 'function') return apiCall('a
 function createTabs(){
   var tabbar = id('tabbar'), content = id('content'); if(!tabbar || !content) return;
   if(!document.querySelector('.tab[data-tab="dashboard"]')){
-    var t = document.createElement('div'); t.className = 'tab'; t.dataset.tab = 'dashboard'; t.textContent = 'Dashboard'; tabbar.insertBefore(t, tabbar.firstChild);
+    var t = document.createElement('div'); t.className = 'tab'; t.dataset.tab = 'dashboard'; t.textContent = '📊 Dashboard'; tabbar.insertBefore(t, tabbar.firstChild);
   }
   if(!id('tab-dashboard')){
     var p = document.createElement('div'); p.className = 'tabpane'; p.id = 'tab-dashboard'; p.innerHTML = '<div id="cr-dashboard"><div class="cr-page"><div class="cr-actions" id="cr-dashboard-actions"><button class="btn btn-purple-out btn-sm" data-cr-open="both">🛠 Compléter les infos manquantes</button></div><div class="cr-grid" id="cr-dashboard-grid"></div><section class="cr-card cr-full" id="cr-edit-panel"></section></div></div>'; content.insertBefore(p, content.firstChild);
   }
   if(!document.querySelector('.tab[data-tab="cmr"]')){
-    var t2 = document.createElement('div'); t2.className = 'tab'; t2.dataset.tab = 'cmr'; t2.textContent = 'CMR / BL'; var opt = document.querySelector('.tab[data-tab="options"]'); tabbar.insertBefore(t2, opt || null);
+    var t2 = document.createElement('div'); t2.className = 'tab'; t2.dataset.tab = 'cmr'; t2.textContent = '📄 CMR / BL'; var opt = document.querySelector('.tab[data-tab="options"]'); tabbar.insertBefore(t2, opt || null);
   }
   if(!id('tab-cmr')){
     var c = document.createElement('div'); c.className = 'tabpane'; c.id = 'tab-cmr'; c.innerHTML = '<div id="cr-cmr"><div class="cr-page"><div class="cr-cmr-layout"><section class="cr-card"><h3>CMR / BL</h3><div class="cr-sub">Colle des J. Ligne vide ou --- = nouveau BL. Tu peux aussi envoyer la sélection Kanban.</div><textarea id="cr-cmr-manual" class="cr-textarea" placeholder="J1A0040247\nJ1A0040248\n\n---\nJ1A0040300"></textarea><div class="cr-actions" style="margin-top:10px"><button class="btn btn-success btn-sm" id="cr-cmr-add">➕ Ajouter</button><button class="btn btn-blue-out btn-sm" id="cr-cmr-kanban-one">Kanban = 1 BL</button><button class="btn btn-ghost btn-sm" id="cr-cmr-clear">🗑 Vider</button></div><div class="cr-actions" style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px"><button class="btn btn-primary" id="cr-cmr-generate">🚀 Générer CMR / BL / PDF</button><button class="btn btn-ghost" id="cr-cmr-status">🔄 Statut</button></div><div class="cr-live" id="cr-cmr-live" style="margin-top:10px">Prêt.</div></section><section class="cr-card"><h3>Queue CMR</h3><div class="cr-table-wrap"><table class="cr-table"><thead><tr><th>#</th><th>BL / dossiers</th><th>Nb</th><th>Action</th></tr></thead><tbody id="cr-cmr-body"></tbody></table></div></section></div></div></div>'; content.appendChild(c);
@@ -5976,7 +6007,7 @@ function switchTabClean(name){document.querySelectorAll('.tab').forEach(function
 function live(s){var el=id('cr-edoc-live');if(el)el.textContent=s;}
 function ensureEdocTab(){
  var tabbar=id('tabbar'),content=id('content');if(!tabbar||!content)return;
- if(!document.querySelector('.tab[data-tab="edocmaster"]')){var t=document.createElement('div');t.className='tab';t.dataset.tab='edocmaster';t.textContent='EDOC Master';var opt=document.querySelector('.tab[data-tab="options"]');tabbar.insertBefore(t,opt||null);}
+ if(!document.querySelector('.tab[data-tab="edocmaster"]')){var t=document.createElement('div');t.className='tab';t.dataset.tab='edocmaster';t.textContent='📤 EDOC Master';var opt=document.querySelector('.tab[data-tab="options"]');tabbar.insertBefore(t,opt||null);}
  if(!id('tab-edocmaster')){var p=document.createElement('div');p.className='tabpane';p.id='tab-edocmaster';p.innerHTML=`<div class="cr-edoc-page"><section class="cr-edoc-card"><h3>EDOC Master HTML</h3><p>Interface intégrée dans le HTML. AutoIt ne sert que de pont Outlook / EDOC.</p><div class="cr-edoc-field"><label>Boîte mail</label><select id="edoc-mailbox" class="cr-edoc-select"></select></div><div class="cr-edoc-field"><label>Profil client</label><select id="edoc-profile" class="cr-edoc-select"></select></div><div class="cr-edoc-field"><label>Actions à scanner</label><div class="cr-edoc-actions-list" id="edoc-actions-list"></div></div><div class="cr-edoc-field"><label>Période</label><select id="edoc-period" class="cr-edoc-select"><option>Dernier upload (Automatique)</option><option>Aujourd'hui</option><option>Il y a 1h</option><option>Personnalisé</option></select></div><div class="cr-edoc-field"><label>Du</label><input id="edoc-start" class="cr-edoc-input" placeholder="yyyy/mm/dd hh:mm:ss"></div><div class="cr-edoc-field"><label>Au</label><input id="edoc-end" class="cr-edoc-input" placeholder="yyyy/mm/dd hh:mm:ss"></div><div class="cr-edoc-toolbar"><button class="btn btn-primary" id="edoc-scan">🔎 Scanner</button><button class="btn btn-ghost" id="edoc-refresh">🔄 Recharger config</button></div><div class="cr-edoc-live" id="cr-edoc-live">Prêt.</div></section><section class="cr-edoc-card"><div class="cr-edoc-toolbar"><button class="btn btn-success" id="edoc-upload">🚀 Uploader sélection</button><button class="btn btn-blue-out" id="edoc-check-all">Tout cocher</button><button class="btn btn-ghost" id="edoc-uncheck-all">Tout décocher</button><button class="btn btn-purple-out" id="edoc-mail-only">Cocher mails</button><button class="btn btn-purple-out" id="edoc-pj-only">Cocher PJ</button></div><div class="cr-edoc-table-wrap"><table class="cr-edoc-table"><thead><tr><th></th><th>Action</th><th>Date</th><th>Dossiers</th><th>Mail</th><th>PJ</th><th>Fichiers PJ</th><th>Objet</th></tr></thead><tbody id="edoc-results"></tbody></table></div></section></div>`;content.appendChild(p);bindEdocHtml();}
 }
 function bindEdocHtml(){
@@ -5997,7 +6028,7 @@ function renderResults(){var body=id('edoc-results');body.innerHTML=edocState.it
 function setChecks(v){document.querySelectorAll('.edoc-row-check').forEach(function(c){c.checked=v})}
 function checkMode(mode){document.querySelectorAll('#edoc-results tr[data-idx]').forEach(function(tr){var idx=Number(tr.dataset.idx);var it=edocState.items.find(function(x){return x.index===idx});if(!it)return;tr.querySelector('.edoc-row-check').checked=mode==='mail'?!!it.mail:!!it.pj;});}
 function uploadEdoc(){var idx=Array.from(document.querySelectorAll('#edoc-results tr[data-idx]')).filter(function(tr){return tr.querySelector('.edoc-row-check').checked}).map(function(tr){return tr.dataset.idx}).join('|');if(!idx){toastMsg('Aucune ligne cochée.');return;}live('Upload EDOC en cours...');apiAction({action:'EDOC_WEB_UPLOAD',mailbox:id('edoc-mailbox').value,indexes:idx}).then(function(r){live(r.status==='ok'?'Upload terminé : '+r.uploaded+' élément(s).':'Erreur upload : '+(r.reason||'inconnue'));}).catch(function(e){live('Erreur upload : '+(e.message||e));});}
-function ensureToolsPanel(){var dash=document.querySelector('#tab-dashboard .cr-page');if(!dash||id('cr-tools-panel'))return;var panel=document.createElement('section');panel.id='cr-tools-panel';panel.innerHTML='<div class="cr-tool-card"><div class="cr-tool-title">🛠 Infos manquantes</div><div class="cr-tool-sub">Email, contact, téléphone, transporteur.</div><button class="btn btn-purple-out btn-sm" data-cr-open="both">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">📦 CMR / BL</div><div class="cr-tool-sub">Queue CMR, BL/PDF, mail, EDOC.</div><button class="btn btn-blue-out btn-sm" id="tool-cmr">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">📤 EDOC Master</div><div class="cr-tool-sub">Scan Outlook + upload EDOC dans HTML.</div><button class="btn btn-success btn-sm" id="tool-edoc">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">🧭 Workflow</div><div class="cr-tool-sub">Kanban + filtres transporteur.</div><button class="btn btn-ghost btn-sm" id="tool-workflow">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">🎫 HPE</div><div class="cr-tool-sub">Lien INC/FXC/ARN ↔ dossier, suivi + notes.</div><button class="btn btn-orange-out btn-sm" id="tool-hpe">Ouvrir</button></div>';var a=id('cr-dashboard-actions');if(a)a.insertAdjacentElement('afterend',panel);else dash.insertBefore(panel,dash.firstChild);id('tool-cmr').onclick=function(){switchTabClean('cmr')};id('tool-edoc').onclick=function(){switchTabClean('edocmaster')};id('tool-workflow').onclick=function(){switchTabClean('workflow')};id('tool-hpe').onclick=function(){var t=document.querySelector('.tab[data-tab="hpe"]');if(t)t.click();};}
+function ensureToolsPanel(){var dash=document.querySelector('#tab-dashboard .cr-page');if(!dash||id('cr-tools-panel'))return;var panel=document.createElement('section');panel.id='cr-tools-panel';panel.innerHTML='<div class="cr-tool-card"><div class="cr-tool-title">🛠 Infos manquantes</div><div class="cr-tool-sub">Email, contact, téléphone, transporteur.</div><button class="btn btn-purple-out btn-sm" data-cr-open="both">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">📦 CMR / BL</div><div class="cr-tool-sub">Queue CMR, BL/PDF, mail, EDOC.</div><button class="btn btn-blue-out btn-sm" id="tool-cmr">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">📤 EDOC Master</div><div class="cr-tool-sub">Scan Outlook + upload EDOC dans HTML.</div><button class="btn btn-success btn-sm" id="tool-edoc">Ouvrir</button></div><div class="cr-tool-card"><div class="cr-tool-title">🧭 Workflow</div><div class="cr-tool-sub">Kanban + filtres transporteur.</div><button class="btn btn-ghost btn-sm" id="tool-workflow">Ouvrir</button></div><div class="cr-tool-card" id="hpe-dash-card" style="cursor:pointer"><div class="cr-tool-title">🎫 HPE</div><div id="hpe-dash-preview" class="cr-tool-sub">Chargement...</div></div>';var a=id('cr-dashboard-actions');if(a)a.insertAdjacentElement('afterend',panel);else dash.insertBefore(panel,dash.firstChild);id('tool-cmr').onclick=function(){switchTabClean('cmr')};id('tool-edoc').onclick=function(){switchTabClean('edocmaster')};id('tool-workflow').onclick=function(){switchTabClean('workflow')};id('hpe-dash-card').onclick=function(){var t=document.querySelector('.tab[data-tab="hpe"]');if(t)t.click();};}
 function patchTabs(){document.addEventListener('click',function(e){var t=e.target.closest('.tab[data-tab="edocmaster"]');if(!t)return;e.preventDefault();e.stopPropagation();switchTabClean('edocmaster');},true)}
 function initEdocHtml(){ensureEdocTab();bindEdocHtml();if(!edocState.stores.length)loadEdocConfig();}
 function init(){ensureEdocTab();ensureToolsPanel();patchTabs();setInterval(function(){if(id('tab-dashboard')&&id('tab-dashboard').classList.contains('active'))ensureToolsPanel();},1000)}
@@ -6048,7 +6079,7 @@ function checkedQueue(){return queue.filter(function(q){return q.checked!==false
 function renderQueue(){var b=id('cmr4-qbody');if(!b)return;b.innerHTML=queue.length?queue.map(function(q,i){var cls=q.status==='OK'?'cmr4-ok':q.status==='KO'?'cmr4-ko':q.status==='En cours'?'cmr4-run':'';return '<tr data-q="'+i+'"><td><input type="checkbox" class="cmr4-qchk" '+(q.checked!==false?'checked':'')+'></td><td><b>BL '+(i+1)+'</b></td><td class="cmr4-file">'+esc(q.files.join(' / '))+'</td><td>'+q.files.length+'</td><td><span class="cmr4-status '+cls+'">'+esc(q.status||'Prêt')+'</span></td><td><button class="btn btn-ghost cmr4-mini" data-q-remove="'+i+'">Retirer</button></td></tr>'}).join(''):'<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:22px">Queue vide.</td></tr>'}
 function renderResults(){var b=id('cmr4-rbody');if(!b)return;b.innerHTML=results.length?results.map(function(r,i){var idx=(r.index!=null?r.index:i);var spBadge=r.spFallback?' <span style="color:var(--orange);font-weight:800;font-size:10px" title="Aucune regle specifique pour ce transporteur : mail envoye avec le modele generique Autre">⚠ Autre</span>':'';return '<tr data-r="'+idx+'"><td><input type="checkbox" class="cmr4-rchk"></td><td><b>#'+(i+1)+'</b></td><td><div class="cmr4-file">'+esc(r.bl||'')+'</div><div class="cmr4-sub">'+esc(r.company||'')+'</div></td><td>'+esc(r.carrier||'')+spBadge+'</td><td>'+esc(r.delivery||'')+'</td><td><button class="btn btn-ghost cmr4-mini" data-pdf="'+esc(r.pdf||'')+'">PDF</button> <button class="btn btn-ghost cmr4-mini" data-html="'+esc(r.html||'')+'">HTML</button> <button class="btn btn-blue-out cmr4-mini" data-edit="'+idx+'">Edit</button> <button class="btn btn-green-out cmr4-mini" data-rebuild="'+idx+'">Rebuild PDF</button> <button class="btn btn-blue-out cmr4-mini" data-mail="'+idx+'">Mail</button> <button class="btn btn-purple-out cmr4-mini" data-edoc="'+idx+'">EDOC</button></td></tr>'}).join(''):'<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:22px">Aucun résultat.</td></tr>'}
 function live(s){var el=id('cmr4-live');if(el)el.textContent=s}
-function ensureTab(){var tabbar=id('tabbar'),content=id('content');if(!tabbar||!content)return;var tab=document.querySelector('.tab[data-tab="cmr"]');if(!tab){tab=document.createElement('div');tab.className='tab';tab.dataset.tab='cmr';tab.textContent='CMR / BL';var opt=document.querySelector('.tab[data-tab="options"]');tabbar.insertBefore(tab,opt||null)}var pane=id('tab-cmr');if(!pane){pane=document.createElement('div');pane.className='tabpane';pane.id='tab-cmr';content.appendChild(pane)}pane.innerHTML='<div class="cmr4-page"><section class="cmr4-card"><h3>CMR / BL complet</h3><div class="cmr4-sub">Colle tes J. Ligne vide ou --- = nouveau BL. Tu peux aussi envoyer la sélection Kanban.</div><textarea id="cmr4-manual" class="cmr4-text" placeholder="J1A0040247\nJ1A0040248\n\n---\nJ1A0040300"></textarea><div class="cmr4-actions"><button class="btn btn-success btn-sm" id="cmr4-add">Ajouter</button><button class="btn btn-blue-out btn-sm" id="cmr4-kanban-one">Kanban = 1 BL</button><button class="btn btn-blue-out btn-sm" id="cmr4-kanban-split">Kanban = BL séparés</button><button class="btn btn-ghost btn-sm" id="cmr4-q-all">Tout cocher</button><button class="btn btn-ghost btn-sm" id="cmr4-q-none">Tout décocher</button><button class="btn btn-danger btn-sm" id="cmr4-clear">Vider</button></div><div class="cmr4-actions" style="border-top:1px solid var(--border);padding-top:9px"><button class="btn btn-primary" id="cmr4-generate">Générer sélection</button><button class="btn btn-ghost" id="cmr4-status">Statut</button><button class="btn btn-orange-out" id="cmr4-force">Forcer output</button><button class="btn btn-danger" id="cmr4-stop">Stop queue</button></div><div class="cmr4-live" id="cmr4-live">Prêt.</div><div class="cmr4-table-wrap" style="margin-top:10px;max-height:320px"><table class="cmr4-table"><thead><tr><th></th><th>#</th><th>BL / dossiers</th><th>Nb</th><th>Statut</th><th>Action</th></tr></thead><tbody id="cmr4-qbody"></tbody></table></div></section><section class="cmr4-card"><div class="cmr4-toolbar"><div><h3>Résultats CMR</h3><div class="cmr4-sub">Actions unitaires ou groupées sur les lignes cochées.</div></div><div class="cmr4-actions"><button class="btn btn-ghost btn-sm" id="cmr4-refresh">Rafraîchir</button><button class="btn btn-blue-out btn-sm" id="cmr4-r-all">Tout cocher</button><button class="btn btn-ghost btn-sm" id="cmr4-r-none">Tout décocher</button><button class="btn btn-blue-out btn-sm" id="cmr4-mail-many">Mail sélection</button><button class="btn btn-purple-out btn-sm" id="cmr4-edoc-many">EDOC sélection</button><button class="btn btn-success btn-sm" id="cmr4-both-many">EDOC + mail</button><button class="btn btn-danger btn-sm" id="cmr4-results-clear">Clear</button></div></div><div class="cmr4-table-wrap"><table class="cmr4-table"><thead><tr><th></th><th>#</th><th>BL / société</th><th>SP</th><th>Livraison</th><th>Actions</th></tr></thead><tbody id="cmr4-rbody"></tbody></table></div></section></div>';bind();renderQueue();renderResults()}
+function ensureTab(){var tabbar=id('tabbar'),content=id('content');if(!tabbar||!content)return;var tab=document.querySelector('.tab[data-tab="cmr"]');if(!tab){tab=document.createElement('div');tab.className='tab';tab.dataset.tab='cmr';tab.textContent='📄 CMR / BL';var opt=document.querySelector('.tab[data-tab="options"]');tabbar.insertBefore(tab,opt||null)}var pane=id('tab-cmr');if(!pane){pane=document.createElement('div');pane.className='tabpane';pane.id='tab-cmr';content.appendChild(pane)}pane.innerHTML='<div class="cmr4-page"><section class="cmr4-card"><h3>CMR / BL complet</h3><div class="cmr4-sub">Colle tes J. Ligne vide ou --- = nouveau BL. Tu peux aussi envoyer la sélection Kanban.</div><textarea id="cmr4-manual" class="cmr4-text" placeholder="J1A0040247\nJ1A0040248\n\n---\nJ1A0040300"></textarea><div class="cmr4-actions"><button class="btn btn-success btn-sm" id="cmr4-add">Ajouter</button><button class="btn btn-blue-out btn-sm" id="cmr4-kanban-one">Kanban = 1 BL</button><button class="btn btn-blue-out btn-sm" id="cmr4-kanban-split">Kanban = BL séparés</button><button class="btn btn-ghost btn-sm" id="cmr4-q-all">Tout cocher</button><button class="btn btn-ghost btn-sm" id="cmr4-q-none">Tout décocher</button><button class="btn btn-danger btn-sm" id="cmr4-clear">Vider</button></div><div class="cmr4-actions" style="border-top:1px solid var(--border);padding-top:9px"><button class="btn btn-primary" id="cmr4-generate">Générer sélection</button><button class="btn btn-ghost" id="cmr4-status">Statut</button><button class="btn btn-orange-out" id="cmr4-force">Forcer output</button><button class="btn btn-danger" id="cmr4-stop">Stop queue</button></div><div class="cmr4-live" id="cmr4-live">Prêt.</div><div class="cmr4-table-wrap" style="margin-top:10px;max-height:320px"><table class="cmr4-table"><thead><tr><th></th><th>#</th><th>BL / dossiers</th><th>Nb</th><th>Statut</th><th>Action</th></tr></thead><tbody id="cmr4-qbody"></tbody></table></div></section><section class="cmr4-card"><div class="cmr4-toolbar"><div><h3>Résultats CMR</h3><div class="cmr4-sub">Actions unitaires ou groupées sur les lignes cochées.</div></div><div class="cmr4-actions"><button class="btn btn-ghost btn-sm" id="cmr4-refresh">Rafraîchir</button><button class="btn btn-blue-out btn-sm" id="cmr4-r-all">Tout cocher</button><button class="btn btn-ghost btn-sm" id="cmr4-r-none">Tout décocher</button><button class="btn btn-blue-out btn-sm" id="cmr4-mail-many">Mail sélection</button><button class="btn btn-purple-out btn-sm" id="cmr4-edoc-many">EDOC sélection</button><button class="btn btn-success btn-sm" id="cmr4-both-many">EDOC + mail</button><button class="btn btn-danger btn-sm" id="cmr4-results-clear">Clear</button></div></div><div class="cmr4-table-wrap"><table class="cmr4-table"><thead><tr><th></th><th>#</th><th>BL / société</th><th>SP</th><th>Livraison</th><th>Actions</th></tr></thead><tbody id="cmr4-rbody"></tbody></table></div></section></div>';bind();renderQueue();renderResults()}
 function switchToCmr(){document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active')});document.querySelectorAll('.tabpane').forEach(function(p){p.classList.remove('active')});var t=document.querySelector('.tab[data-tab="cmr"]'),p=id('tab-cmr');if(t)t.classList.add('active');if(p)p.classList.add('active');renderQueue();renderResults()}
 function selectedResultIndexes(){return Array.from(document.querySelectorAll('#cmr4-rbody tr[data-r]')).filter(function(tr){var c=tr.querySelector('.cmr4-rchk');return c&&c.checked}).map(function(tr){return tr.dataset.r})}
 function setResultChecks(v){document.querySelectorAll('.cmr4-rchk').forEach(function(c){c.checked=v})}
@@ -6152,7 +6183,7 @@ function newRule(){ selected=-1; renderList(); renderForm(); }
 function ensureTab(){
   var tabbar=id('tabbar'), content=id('content'); if(!tabbar||!content) return;
   var tab=document.querySelector('.tab[data-tab="sp"]');
-  if(!tab){ tab=document.createElement('div'); tab.className='tab'; tab.dataset.tab='sp'; tab.textContent='Transporteurs';
+  if(!tab){ tab=document.createElement('div'); tab.className='tab'; tab.dataset.tab='sp'; tab.textContent='🚛 Transporteurs';
     var opt=document.querySelector('.tab[data-tab="options"]'); tabbar.insertBefore(tab, opt||null); }
   var pane=id('tab-sp');
   if(!pane){
@@ -6232,34 +6263,73 @@ window.addEventListener('load', function(){ setTimeout(init,1250); });
      ============================================================ -->
 <style id="hpe-ui-v1-style">
 #tab-hpe{height:100%;overflow:auto;background:var(--bg);}
-.hpe-page{padding:12px;display:grid;grid-template-columns:380px 1fr;gap:12px;min-height:100%;}
-.hpe-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-sm);padding:13px;min-width:0;}
-.hpe-card h3{margin:0 0 8px;font-size:13px;font-weight:900;color:var(--text);}
-.hpe-card h4{margin:14px 0 8px;font-size:12px;font-weight:800;color:var(--text);border-top:1px solid var(--border);padding-top:12px;}
-.hpe-sub{font-size:11px;color:var(--text3);line-height:1.35;margin-bottom:9px;}
-.hpe-field{margin-bottom:8px;}
-.hpe-field input,.hpe-field textarea{width:100%;border:1px solid var(--border2);border-radius:8px;background:var(--surface2);color:var(--text);font-size:12px;padding:8px 9px;outline:none;box-sizing:border-box;font-family:var(--mono);}
-.hpe-field textarea{min-height:60px;resize:vertical;font-family:inherit;}
-.hpe-row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
-.hpe-actions{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;}
-.hpe-hint{font-size:11px;margin-top:6px;min-height:16px;line-height:1.4;}
-.hpe-table-wrap{max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:10px;margin-top:8px;}
-.hpe-table{width:100%;border-collapse:collapse;font-size:11px;}
-.hpe-table th{position:sticky;top:0;background:var(--surface2);text-align:left;padding:6px 7px;border-bottom:1px solid var(--border);color:var(--text2);white-space:nowrap;}
-.hpe-table td{padding:5px 7px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.hpe-page{padding:18px;display:flex;flex-direction:column;gap:14px;max-width:920px;margin:0 auto;}
+.hpe-kpis{display:flex;gap:10px;flex-wrap:wrap;}
+.hpe-kpi{flex:1;min-width:150px;background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--border2);border-radius:12px;padding:12px 16px;box-shadow:var(--shadow-sm);}
+.hpe-kpi-val{font-size:26px;font-weight:900;line-height:1;}
+.hpe-kpi-lbl{font-size:11px;color:var(--text3);margin-top:5px;font-weight:700;}
+.hpe-card{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--border2);border-radius:14px;box-shadow:var(--shadow-sm);padding:18px;}
+.hpe-card--alerts{border-left-color:var(--orange);}
+.hpe-card--search{border-left-color:var(--blue);}
+.hpe-card--mapping{border-left-color:var(--purple);}
+.hpe-card--suivi{border-left-color:var(--teal);}
+.hpe-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;}
+.hpe-card-title{font-size:15px;font-weight:900;color:var(--text);display:flex;align-items:center;gap:9px;}
+.hpe-badge{font-size:11px;font-weight:800;padding:3px 10px;border-radius:999px;background:var(--surface2);color:var(--text2);white-space:nowrap;}
+.hpe-card h4{margin:16px 0 8px;font-size:12px;font-weight:800;color:var(--text);border-top:1px solid var(--border);padding-top:14px;}
+.hpe-sub{font-size:11.5px;color:var(--text3);line-height:1.45;margin-bottom:12px;}
+.hpe-field{margin-bottom:10px;}
+.hpe-field label{display:block;font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;}
+.hpe-field input,.hpe-field textarea{width:100%;border:1px solid var(--border2);border-radius:9px;background:var(--surface2);color:var(--text);font-size:12.5px;padding:9px 10px;outline:none;box-sizing:border-box;font-family:var(--mono);transition:border-color .15s;}
+.hpe-field input:focus,.hpe-field textarea:focus{border-color:var(--blue);}
+.hpe-field textarea{min-height:64px;resize:vertical;font-family:inherit;}
+.hpe-row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.hpe-row-btn{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;}
+.hpe-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 2px;}
+.hpe-hint{font-size:11.5px;margin-top:8px;min-height:16px;line-height:1.5;}
+.hpe-table-wrap{max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:12px;margin-top:10px;}
+.hpe-table{width:100%;border-collapse:collapse;font-size:11.5px;}
+.hpe-table th{position:sticky;top:0;background:var(--surface2);text-align:left;padding:8px 9px;border-bottom:1px solid var(--border);color:var(--text2);white-space:nowrap;}
+.hpe-table td{padding:7px 9px;border-bottom:1px solid var(--border);vertical-align:middle;}
 .hpe-table tr:hover{background:var(--blue-bg);cursor:pointer;}
-.hpe-note{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 9px;margin-bottom:6px;font-size:11px;}
-.hpe-note-meta{color:var(--text3);font-size:10px;margin-bottom:2px;}
-@media(max-width:1000px){.hpe-page{grid-template-columns:1fr}}
+.hpe-note{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12px;}
+.hpe-note-meta{color:var(--text3);font-size:10.5px;margin-bottom:4px;}
+.hpe-empty{color:var(--text3);font-size:11.5px;text-align:center;padding:18px;}
+.hpe-pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:800;border:1px solid currentColor;}
+@media(max-width:640px){.hpe-row2,.hpe-row-btn{grid-template-columns:1fr}}
 </style>
 <script id="hpe-ui-v1-script">
 (function(){
 'use strict';
 var mapping=[], suivi=[], notes=[], curDossier='';
+var lastMappingCount=0, lastSuiviCount=0;
 function id(x){return document.getElementById(x)}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function toastMsg(s){if(typeof toast==='function')toast(s);else console.log(s)}
 function apiAction(payload){if(typeof apiCall==='function')return apiCall('action',payload);return fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json().catch(function(){return {status:r.ok?'ok':'error'}});});}
+function statusColor(s){
+  var t=String(s||'').toLowerCase();
+  if(!t) return {c:'var(--text3)',bg:'var(--surface2)'};
+  if(/bloq|probl|urgent|litige/.test(t)) return {c:'var(--red)',bg:'var(--red-bg)'};
+  if(/cours|attente|pending/.test(t)) return {c:'var(--orange)',bg:'var(--orange-bg)'};
+  if(/termin|clotur|resolu|done|ok/.test(t)) return {c:'var(--green)',bg:'var(--green-bg)'};
+  return {c:'var(--blue)',bg:'var(--blue-bg)'};
+}
+function statusPill(s){
+  if(!s) return '<span style="color:var(--text3);font-size:10.5px">—</span>';
+  var c=statusColor(s);
+  return '<span class="hpe-pill" style="color:'+c.c+';background:'+c.bg+'">'+esc(s)+'</span>';
+}
+function renderKpis(){
+  var el=id('hpe-kpis'); if(!el) return;
+  var active=lastAlerts.filter(function(a){ return !isDismissed(a); }).length;
+  var nSuivi = suivi.length || lastSuiviCount;
+  var nMap = mapping.length || lastMappingCount;
+  el.innerHTML =
+    '<div class="hpe-kpi" style="border-left-color:var(--orange)"><div class="hpe-kpi-val" style="color:var(--orange)">'+active+'</div><div class="hpe-kpi-lbl">Alerte'+(active>1?'s':'')+' active'+(active>1?'s':'')+'</div></div>'+
+    '<div class="hpe-kpi" style="border-left-color:var(--teal)"><div class="hpe-kpi-val" style="color:var(--teal)">'+nSuivi+'</div><div class="hpe-kpi-lbl">Dossier'+(nSuivi>1?'s':'')+' suivi'+(nSuivi>1?'s':'')+'</div></div>'+
+    '<div class="hpe-kpi" style="border-left-color:var(--purple)"><div class="hpe-kpi-val" style="color:var(--purple)">'+nMap+'</div><div class="hpe-kpi-lbl">Lien'+(nMap>1?'s':'')+' mapping</div></div>';
+}
 
 function extractRef(s){
   var m = String(s||'').match(/\b(INC|FXC|ARN)[- ]?(\d{4,})\b/i);
@@ -6285,10 +6355,12 @@ function quickSearch(){
 
 function renderMapping(){
   var b=id('hpe-map-body'); if(!b) return;
+  var badge=id('hpe-map-badge'); if(badge) badge.textContent=mapping.length;
   b.innerHTML = mapping.length ? mapping.map(function(m){
     return '<tr><td><b>'+esc(m.reference)+'</b></td><td>'+esc(m.dossier)+'</td><td>'+esc(m.dateAjout)+'</td>'+
       '<td><button class="btn btn-ghost hpe-mini" data-map-del="'+esc(m.reference)+'" style="height:22px;padding:0 7px;font-size:10px">🗑</button></td></tr>';
-  }).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:14px">Aucun lien.</td></tr>';
+  }).join('') : '<tr><td colspan="4" class="hpe-empty">Aucun lien.</td></tr>';
+  renderKpis(); renderDashPreview();
 }
 function loadMapping(){
   apiAction({action:'HPE_MAPPING_LIST'}).then(function(r){
@@ -6312,9 +6384,11 @@ function delMapping(ref){
 
 function renderSuiviList(){
   var b=id('hpe-suivi-body'); if(!b) return;
+  var badge=id('hpe-suivi-badge'); if(badge) badge.textContent=suivi.length;
   b.innerHTML = suivi.length ? suivi.map(function(s){
-    return '<tr data-dossier="'+esc(s.dossier)+'"><td><b>'+esc(s.dossier)+'</b></td><td>'+esc(s.owner)+'</td><td>'+esc(s.status)+'</td><td>'+esc(s.maj)+'</td></tr>';
-  }).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:14px">Aucun dossier suivi.</td></tr>';
+    return '<tr data-dossier="'+esc(s.dossier)+'"><td><b>'+esc(s.dossier)+'</b></td><td>'+esc(s.owner)+'</td><td>'+statusPill(s.status)+'</td><td>'+esc(s.maj)+'</td></tr>';
+  }).join('') : '<tr><td colspan="4" class="hpe-empty">Aucun dossier suivi.</td></tr>';
+  renderKpis(); renderDashPreview();
 }
 function loadSuiviList(){
   apiAction({action:'HPE_SUIVI_LIST'}).then(function(r){
@@ -6374,7 +6448,8 @@ function dismissAlert(a){
 function renderAlerts(list){
   var b=id('hpe-alerts-list'); if(!b) return;
   var visible=list.filter(function(a){ return !isDismissed(a); });
-  if(!visible.length){ b.innerHTML='<div style="color:var(--text3);font-size:11px">Aucune alerte.</div>'; return; }
+  var badge=id('hpe-alerts-badge'); if(badge){ badge.textContent=visible.length; badge.style.color=visible.length?'var(--orange)':'var(--text2)'; badge.style.background=visible.length?'var(--orange-bg)':'var(--surface2)'; }
+  if(!visible.length){ b.innerHTML='<div class="hpe-empty">✓ Aucune alerte active.</div>'; renderKpis(); return; }
   b.innerHTML=visible.map(function(a){
     var replyBadge = a.reply ? ' <span style="color:var(--text3);font-size:10px">(réponse)</span>' : '';
     var threadBadge = a.threadCount>1 ? ' <span style="color:var(--blue);font-size:10px">· '+a.threadCount+' mails</span>' : '';
@@ -6386,18 +6461,39 @@ function renderAlerts(list){
       '<div class="hpe-actions" style="margin:6px 0 0"><button class="btn btn-blue-out hpe-mini" data-alert-open="'+esc(a.dossier)+'" style="height:22px;padding:0 7px;font-size:10px">Ouvrir suivi</button><button class="btn btn-ghost hpe-mini" data-alert-dismiss="1" style="height:22px;padding:0 7px;font-size:10px">✕ Ignorer</button></div>' +
       '</div>';
   }).join('');
+  renderKpis();
 }
+
+var LS_MAILBOX = 'dispatch_hpe_mailbox';
+var DEFAULT_MAILBOX = 'CDG-Transcon-HPE@expeditors.com';
+function getMailbox(){ try{ return localStorage.getItem(LS_MAILBOX) || DEFAULT_MAILBOX; }catch(e){ return DEFAULT_MAILBOX; } }
+function setMailbox(v){ try{ localStorage.setItem(LS_MAILBOX, v||DEFAULT_MAILBOX); }catch(e){} }
 
 function scanMail(){
   var st=id('hpe-scan-status');
+  var mbField=id('hpe-mailbox');
+  var mailbox = mbField ? mbField.value.trim() : getMailbox();
   if(st) st.textContent='Scan en cours...';
-  apiAction({action:'HPE_MAIL_SCAN'}).then(function(r){
+  apiAction({action:'HPE_MAIL_SCAN', mailbox:mailbox}).then(function(r){
     if(!r || r.status!=='ok'){ if(st) st.textContent='Erreur : '+((r&&r.message)||'inconnue'); return; }
     lastAlerts = r.alerts || [];
+    lastMappingCount = r.mappingCount || 0;
+    lastSuiviCount = r.suiviCount || 0;
     if(st) st.textContent = lastAlerts.length ? (lastAlerts.length+' fil(s) détecté(s).') : 'Aucun mail lié trouvé.';
     renderAlerts(lastAlerts);
     renderDashboardBanner(lastAlerts);
+    renderDashPreview();
   }).catch(function(e){ if(st) st.textContent='Erreur : '+(e.message||e); });
+}
+
+function renderDashPreview(){
+  var el=id('hpe-dash-preview'); if(!el) return;
+  var active=lastAlerts.filter(function(a){ return !isDismissed(a); }).length;
+  var nSuivi=suivi.length||lastSuiviCount, nMap=mapping.length||lastMappingCount;
+  var alertLine = active>0
+    ? '<span style="color:var(--orange);font-weight:800">⚠ '+active+' alerte'+(active>1?'s':'')+'</span>'
+    : '<span style="color:var(--green);font-weight:700">✓ Aucune alerte</span>';
+  el.innerHTML = alertLine+'<br>📁 '+nSuivi+' dossier'+(nSuivi>1?'s':'')+' suivi'+(nSuivi>1?'s':'')+' · 🔗 '+nMap+' lien'+(nMap>1?'s':'');
 }
 
 function ensureDashboardBanner(){
@@ -6435,44 +6531,54 @@ document.addEventListener('click', function(e){
 function ensureTab(){
   var tabbar=id('tabbar'), content=id('content'); if(!tabbar||!content) return;
   var tab=document.querySelector('.tab[data-tab="hpe"]');
-  if(!tab){ tab=document.createElement('div'); tab.className='tab'; tab.dataset.tab='hpe'; tab.textContent='HPE';
+  if(!tab){ tab=document.createElement('div'); tab.className='tab'; tab.dataset.tab='hpe'; tab.textContent='🎫 HPE';
     var opt=document.querySelector('.tab[data-tab="options"]'); tabbar.insertBefore(tab, opt||null); }
   var pane=id('tab-hpe');
   if(!pane){
     pane=document.createElement('div'); pane.className='tabpane'; pane.id='tab-hpe';
     pane.innerHTML = '<div class="hpe-page">' +
-      '<section class="hpe-card" style="grid-column:1 / -1">' +
-      '<h3>🎫 Alertes mail HPE</h3>' +
+      '<div class="hpe-kpis" id="hpe-kpis"></div>' +
+
+      '<section class="hpe-card hpe-card--alerts">' +
+      '<div class="hpe-card-head"><div class="hpe-card-title">📧 <span>Alertes mail HPE</span></div><span id="hpe-alerts-badge" class="hpe-badge">0</span></div>' +
       '<div class="hpe-sub">Mails reçus (14 derniers jours) dont la référence (objet du mail) est liée à un dossier suivi. Les réponses (RE:/TR:...) du même fil sont regroupées en une seule alerte.</div>' +
-      '<div class="hpe-actions"><button class="btn btn-orange-out btn-sm" id="hpe-scan-btn">📧 Scanner les mails</button><span id="hpe-scan-status" class="hpe-hint"></span></div>' +
+      '<div class="hpe-field"><label>Boîte mail à scanner</label><input id="hpe-mailbox" type="text" placeholder="ex: CDG-Transcon-HPE@expeditors.com"></div>' +
+      '<div class="hpe-actions"><button class="btn btn-orange-out btn-sm" id="hpe-scan-btn">🔄 Scanner les mails</button><span id="hpe-scan-status" class="hpe-hint"></span></div>' +
       '<div id="hpe-alerts-list"></div>' +
       '</section>' +
-      '<section class="hpe-card">' +
-      '<h3>Recherche rapide E.TMS</h3>' +
+
+      '<section class="hpe-card hpe-card--search">' +
+      '<div class="hpe-card-head"><div class="hpe-card-title">🔎 <span>Recherche rapide E.TMS</span></div></div>' +
       '<div class="hpe-sub">Colle une référence HPE (INC/FXC/ARN...) : prépare "R#..." dans le champ de recherche E.TMS en haut de l\'écran.</div>' +
-      '<div class="hpe-field"><input id="hpe-quick-ref" type="text" placeholder="Ex: FXC123456 ou un texte contenant la reference"></div>' +
-      '<button class="btn btn-blue-out btn-sm" id="hpe-quick-go">Préparer recherche E.TMS</button>' +
+      '<div class="hpe-row-btn"><div class="hpe-field" style="margin-bottom:0"><input id="hpe-quick-ref" type="text" placeholder="Ex: FXC123456 ou un texte contenant la référence"></div><button class="btn btn-blue-out btn-sm" id="hpe-quick-go">Préparer</button></div>' +
       '<div id="hpe-quick-result" class="hpe-hint"></div>' +
-      '<h4>Mapping HPE ↔ Dossier</h4>' +
-      '<div class="hpe-sub">Lien entre une référence HPE et un dossier J1A/H1A.</div>' +
+      '</section>' +
+
+      '<section class="hpe-card hpe-card--mapping">' +
+      '<div class="hpe-card-head"><div class="hpe-card-title">🔗 <span>Mapping HPE ↔ Dossier</span></div><span id="hpe-map-badge" class="hpe-badge">0</span></div>' +
+      '<div class="hpe-sub">Une référence HPE (INC/FXC/ARN) est unique ; plusieurs références différentes peuvent pointer vers le même dossier J1A/H1A.</div>' +
       '<div class="hpe-row2"><input id="hpe-map-ref" type="text" placeholder="Référence (FXC123456)"><input id="hpe-map-dossier" type="text" placeholder="Dossier (J1A...)"></div>' +
       '<div class="hpe-actions"><button class="btn btn-success btn-sm" id="hpe-map-add">+ Lier</button><button class="btn btn-ghost btn-sm" id="hpe-map-reload">Rafraîchir</button></div>' +
       '<div class="hpe-table-wrap"><table class="hpe-table"><thead><tr><th>Référence</th><th>Dossier</th><th>Ajouté</th><th></th></tr></thead><tbody id="hpe-map-body"></tbody></table></div>' +
       '</section>' +
-      '<section class="hpe-card">' +
-      '<h3>Suivi dossier</h3>' +
+
+      '<section class="hpe-card hpe-card--suivi">' +
+      '<div class="hpe-card-head"><div class="hpe-card-title">📁 <span>Suivi dossier</span></div><span id="hpe-suivi-badge" class="hpe-badge">0</span></div>' +
       '<div class="hpe-sub">Propriétaire, statut libre et notes horodatées, par dossier J1A/H1A.</div>' +
-      '<div class="hpe-row2"><input id="hpe-suivi-dossier" type="text" placeholder="N° Dossier (J1A/H1A)"><button class="btn btn-blue-out btn-sm" id="hpe-suivi-load">Charger</button></div>' +
-      '<div class="hpe-row2" style="margin-top:8px"><input id="hpe-suivi-owner" type="text" placeholder="Propriétaire"><input id="hpe-suivi-status" type="text" placeholder="Statut (libre)"></div>' +
+      '<div class="hpe-row-btn"><div class="hpe-field" style="margin-bottom:0"><input id="hpe-suivi-dossier" type="text" placeholder="N° Dossier (J1A/H1A)"></div><button class="btn btn-blue-out btn-sm" id="hpe-suivi-load">Charger</button></div>' +
+      '<div class="hpe-row2" style="margin-top:10px"><div class="hpe-field" style="margin-bottom:0"><label>Propriétaire</label><input id="hpe-suivi-owner" type="text"></div><div class="hpe-field" style="margin-bottom:0"><label>Statut</label><input id="hpe-suivi-status" type="text" placeholder="En cours, Bloqué, Terminé..."></div></div>' +
       '<div class="hpe-actions"><button class="btn btn-primary btn-sm" id="hpe-suivi-save">💾 Enregistrer</button></div>' +
-      '<h4>Notes</h4>' +
+      '<h4>📝 Notes</h4>' +
       '<div id="hpe-notes-list"></div>' +
       '<div class="hpe-field"><textarea id="hpe-note-text" placeholder="Nouvelle note..."></textarea></div>' +
       '<button class="btn btn-success btn-sm" id="hpe-note-add">+ Ajouter note</button>' +
-      '<h4>Tous les dossiers suivis</h4>' +
+      '<h4>📚 Tous les dossiers suivis</h4>' +
       '<div class="hpe-table-wrap"><table class="hpe-table"><thead><tr><th>Dossier</th><th>Propriétaire</th><th>Statut</th><th>MAJ</th></tr></thead><tbody id="hpe-suivi-body"></tbody></table></div>' +
       '</section></div>';
     content.appendChild(pane);
+    var mbField=id('hpe-mailbox');
+    if(mbField){ mbField.value=getMailbox(); mbField.addEventListener('change', function(){ setMailbox(mbField.value.trim()); }); }
+    renderKpis();
     id('hpe-scan-btn').onclick=scanMail;
     id('hpe-alerts-list').addEventListener('click', function(e){
       var card=e.target.closest('[data-alert-ref]'); if(!card) return;
@@ -6509,7 +6615,7 @@ function switchToHpe(){
   document.querySelectorAll('.tabpane').forEach(function(p){p.classList.remove('active')});
   var t=document.querySelector('.tab[data-tab="hpe"]'), p=id('tab-hpe');
   if(t) t.classList.add('active'); if(p) p.classList.add('active');
-  loadMapping(); loadSuiviList();
+  loadMapping(); loadSuiviList(); renderKpis(); renderDashPreview();
 }
 
 document.addEventListener('click', function(e){
@@ -6517,7 +6623,7 @@ document.addEventListener('click', function(e){
   if(tab){ e.preventDefault(); e.stopPropagation(); ensureTab(); switchToHpe(); }
 }, true);
 
-function init(){ ensureTab(); scanMail(); setInterval(scanMail, 300000); }
+function init(){ ensureTab(); scanMail(); setInterval(scanMail, 300000); setTimeout(renderDashPreview, 2000); setTimeout(renderDashPreview, 5000); }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(init,700); });
 else setTimeout(init,700);
 window.addEventListener('load', function(){ setTimeout(init,1300); });

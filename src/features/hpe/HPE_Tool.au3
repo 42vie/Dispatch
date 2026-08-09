@@ -272,3 +272,101 @@ Func _HPE_NoteAddJSON($sBody)
     _HPE_Close($h, True)
     Return '{"status":"ok"}'
 EndFunc
+
+; ============================================================================
+; SCAN MAIL (Outlook) -- detecte les references INC/FXC/ARN dans l'objet des
+; mails recents, les relie au dossier via le Mapping. Les references HPE
+; sont dans l'objet du mail, et les reponses ("RE:", "TR:"...) portent le
+; meme objet/reference -- donc on regroupe par reference : une seule alerte
+; par conversation (la plus recente, les mails etant parcourus du plus
+; recent au plus ancien), avec le nombre de mails du fil.
+; ============================================================================
+
+Func _HPE_MailScanJSON()
+    If Not _EDOC_EnsureOutlook() Then Return '{"status":"error","message":"outlook_indisponible","alerts":[]}'
+
+    Local $h = _HPE_Open()
+    If @error Or Not IsObj($h) Then Return '{"status":"error","message":"excel_indisponible","alerts":[]}'
+    Local $oMap = $h.Item("book").Sheets("Mapping")
+    Local $iMapLast = _HPE_NextRow($oMap) - 1
+    Local $oSuivi = $h.Item("book").Sheets("Suivi")
+    Local $iSuiviLast = _HPE_NextRow($oSuivi) - 1
+
+    Local $oInbox = $g_oNamespace.GetDefaultFolder(6) ; olFolderInbox
+    Local $oItems = $oInbox.Items
+    $oItems.Sort("[ReceivedTime]", True) ; plus recent d'abord
+    Local $sDateLimit = _FmtDate(_DateAdd('d', -14, _NowCalc()))
+
+    Local $oThreadData = ObjCreate("Scripting.Dictionary")  ; reference -> champs (packe)
+    Local $oThreadCount = ObjCreate("Scripting.Dictionary") ; reference -> nb de mails du fil
+    Local $oNoMatch = ObjCreate("Scripting.Dictionary")     ; references confirmees sans dossier lie
+
+    Local $iScanned = 0
+    For $oItem In $oItems
+        If $iScanned >= 500 Then ExitLoop
+        If $oItem.Class <> 43 Then ContinueLoop ; olMail uniquement
+        Local $itemDate = _FmtDate($oItem.ReceivedTime)
+        If $itemDate < $sDateLimit Then ExitLoop
+        $iScanned += 1
+
+        Local $sSubj = $oItem.Subject
+        Local $sRef = _HPE_ExtractRef($sSubj)
+        If $sRef = "" Then ContinueLoop
+
+        If $oThreadData.Exists($sRef) Then
+            ; Mail plus ancien du meme fil (ex: le message initial sous la
+            ; reponse la plus recente deja enregistree) : incremente juste
+            ; le compteur, ne cree pas de 2e alerte.
+            $oThreadCount.Item($sRef) = $oThreadCount.Item($sRef) + 1
+            ContinueLoop
+        EndIf
+        If $oNoMatch.Exists($sRef) Then ContinueLoop
+
+        Local $sDossier = ""
+        For $i = 2 To $iMapLast
+            If StringUpper($oMap.Cells($i, 1).Value) = $sRef Then
+                $sDossier = StringUpper($oMap.Cells($i, 3).Value)
+                ExitLoop
+            EndIf
+        Next
+        If $sDossier = "" Then
+            $oNoMatch.Add($sRef, True)
+            ContinueLoop
+        EndIf
+
+        Local $sOwner = "", $sStatus = ""
+        For $j = 2 To $iSuiviLast
+            If StringUpper($oSuivi.Cells($j, 1).Value) = $sDossier Then
+                $sOwner = $oSuivi.Cells($j, 2).Value
+                $sStatus = $oSuivi.Cells($j, 3).Value
+                ExitLoop
+            EndIf
+        Next
+
+        Local $sReply = "false"
+        If StringRegExp($sSubj, "(?i)^(RE|TR|FW|FWD)\s*:") Then $sReply = "true"
+
+        $oThreadData.Add($sRef, $oItem.EntryID & Chr(31) & $sDossier & Chr(31) & $sSubj & Chr(31) & $oItem.SenderName & Chr(31) & $itemDate & Chr(31) & $sOwner & Chr(31) & $sStatus & Chr(31) & $sReply)
+        $oThreadCount.Add($sRef, 1)
+    Next
+
+    _HPE_Close($h, False)
+
+    Local $sJson = "["
+    For $sKey In $oThreadData.Keys
+        Local $a = StringSplit($oThreadData.Item($sKey), Chr(31), 2)
+        If $sJson <> "[" Then $sJson &= ","
+        $sJson &= '{"reference":"' & _JsonEscape($sKey) & '"' & _
+                ',"entryId":"' & _JsonEscape($a[0]) & '"' & _
+                ',"dossier":"' & _JsonEscape($a[1]) & '"' & _
+                ',"subject":"' & _JsonEscape($a[2]) & '"' & _
+                ',"sender":"' & _JsonEscape($a[3]) & '"' & _
+                ',"date":"' & _JsonEscape($a[4]) & '"' & _
+                ',"owner":"' & _JsonEscape($a[5]) & '"' & _
+                ',"status":"' & _JsonEscape($a[6]) & '"' & _
+                ',"reply":' & $a[7] & _
+                ',"threadCount":' & $oThreadCount.Item($sKey) & '}'
+    Next
+    $sJson &= "]"
+    Return '{"status":"ok","alerts":' & $sJson & '}'
+EndFunc

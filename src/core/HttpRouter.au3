@@ -450,6 +450,10 @@ Func HttpServer_HandleClient($iSocket)
                 _SendHttpResponse($iSocket, 200, "application/json", _SP_DeleteFromJSON($sBody))
                 TCPCloseSocket($iSocket)
                 Return
+            Case "SP_TEST_MATCH"
+                _SendHttpResponse($iSocket, 200, "application/json", _SP_TestMatchJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
 
             Case "EDOC_MASTER_OPEN"
                 _EDOCMasterGUI()

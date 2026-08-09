@@ -101,7 +101,13 @@ Func _CMR_BuildResultsJSON($bOk)
     Local $s = '{"status":"' & ($bOk ? "done" : "partial") & '","running":' & ($g_bCMRRunning ? "true" : "false") & ',"message":"' & _JsonEscape($g_sCMRStatus) & '","queuePath":"' & _JsonEscape($g_sCMRQueueFile) & '","results":['
     For $i = 0 To UBound($g_aBL) - 1
         If $i > 0 Then $s &= ','
-        $s &= '{"index":' & $i & ',"bl":"' & _JsonEscape($g_aBL[$i]) & '","company":"' & _JsonEscape($g_aCompany[$i]) & '","carrier":"' & _JsonEscape($g_aCarrier[$i]) & '","delivery":"' & _JsonEscape($g_aDelivery[$i]) & '","html":"' & _JsonEscape($g_aHTML[$i]) & '","pdf":"' & _JsonEscape($g_aPDF[$i]) & '"}'
+        ; Regle SP (transporteur) qui sera utilisee pour le mail de ce BL --
+        ; permet a l'interface de signaler si on tombe sur le modele
+        ; generique "Autre" faute de regle specifique pour ce transporteur.
+        Local $sSpSec = _SP_MatchSection($g_aCarrier[$i])
+        Local $sSpFallback = "false"
+        If $sSpSec = "SP:AUTRE" Then $sSpFallback = "true"
+        $s &= '{"index":' & $i & ',"bl":"' & _JsonEscape($g_aBL[$i]) & '","company":"' & _JsonEscape($g_aCompany[$i]) & '","carrier":"' & _JsonEscape($g_aCarrier[$i]) & '","delivery":"' & _JsonEscape($g_aDelivery[$i]) & '","html":"' & _JsonEscape($g_aHTML[$i]) & '","pdf":"' & _JsonEscape($g_aPDF[$i]) & '","spFallback":' & $sSpFallback & '}'
     Next
     $s &= ']}'
     Return $s

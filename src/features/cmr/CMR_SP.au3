@@ -94,14 +94,27 @@ EndFunc
 Func _SP_MatchSection($carrier)
     Local $c = StringUpper(StringStripWS($carrier, 3))
     Local $sections = IniReadSectionNames($INI_PATH)
-    If Not @error Then
-        For $i = 1 To $sections[0]
-            If StringLeft($sections[$i], 3) = "SP:" Then
-                Local $ruleCarrier = IniRead($INI_PATH, $sections[$i], "CARRIER", "")
-                If $ruleCarrier <> "" And StringInStr($c, StringUpper($ruleCarrier)) Then Return $sections[$i]
-            EndIf
-        Next
-    EndIf
+    If @error Then Return "SP:AUTRE"
+    Local $ruleCarrier = ""
+
+    ; Passe 1 : correspondance exacte, prioritaire sur les sous-chaines pour
+    ; eviter qu'un transporteur au nom "englobant" (ex: "TRANSPORT") ne vole
+    ; le match d'un autre transporteur plus specifique.
+    For $i = 1 To $sections[0]
+        If StringLeft($sections[$i], 3) = "SP:" Then
+            $ruleCarrier = IniRead($INI_PATH, $sections[$i], "CARRIER", "")
+            If $ruleCarrier <> "" And StringUpper(StringStripWS($ruleCarrier, 3)) = $c Then Return $sections[$i]
+        EndIf
+    Next
+
+    ; Passe 2 : repli sur la premiere sous-chaine trouvee (comportement historique)
+    For $i = 1 To $sections[0]
+        If StringLeft($sections[$i], 3) = "SP:" Then
+            $ruleCarrier = IniRead($INI_PATH, $sections[$i], "CARRIER", "")
+            If $ruleCarrier <> "" And StringInStr($c, StringUpper($ruleCarrier)) Then Return $sections[$i]
+        EndIf
+    Next
+
     Return "SP:AUTRE"
 EndFunc
 
@@ -179,5 +192,17 @@ Func _SP_DeleteFromJSON($sBody)
     If $carrier = "" Then Return '{"status":"error","message":"carrier_vide"}'
     _SP_Delete($carrier)
     Return '{"status":"ok"}'
+EndFunc
+
+; Permet de tester, sans generer de mail, quelle regle un nom de transporteur
+; donne va reellement matcher (aide a reperer les transporteurs qui tombent
+; silencieusement sur le modele generique "Autre").
+Func _SP_TestMatchJSON($sBody)
+    Local $carrier = _GetJsonValue($sBody, "carrier")
+    Local $sec = _SP_MatchSection($carrier)
+    Local $sFallback = "false"
+    If $sec = "SP:AUTRE" Then $sFallback = "true"
+    Local $matchedCarrier = IniRead($INI_PATH, $sec, "CARRIER", "")
+    Return '{"status":"ok","matchedCarrier":"' & _JsonEscape($matchedCarrier) & '","fallback":' & $sFallback & '}'
 EndFunc
 

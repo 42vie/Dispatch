@@ -607,7 +607,8 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
   <div id="header-actions">
     <span style="font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.5px;margin-right:4px">E.TMS</span>
     <!-- Champ N° dossier rapide pour les boutons du header -->
-    <input id="hdr-file" type="text" placeholder="N° dossier J…"
+    <div class="hpe-ac-wrap">
+    <input id="hdr-file" type="text" placeholder="N° dossier J…" autocomplete="off"
       style="width:130px;height:26px;border:1px solid var(--border2);background:var(--surface2);
              color:var(--text);font-family:var(--mono);font-size:11px;padding:0 8px;
              border-radius:4px;outline:none;transition:border-color .15s;"
@@ -615,6 +616,8 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
       onblur="this.style.borderColor='var(--border2)'"
       onkeydown="if(event.key==='Enter'){ document.getElementById('hdr-btn-log').click(); }"
       title="Saisir le N° de dossier puis cliquer sur un bouton E.TMS">
+    <div class="hpe-ac-list" id="hdr-file-ac"></div>
+    </div>
     <div class="etms-sep"></div>
     <button class="etms-btn" onclick="sendActionHeader('ETMS_CMD','EDOC')">EDOC</button>
     <button class="etms-btn" id="hdr-btn-log" onclick="sendActionHeader('ETMS_CMD','LOG')">LOG</button>
@@ -1346,6 +1349,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
         <button class="btn btn-orange-out btn-sm" style="margin-left:6px" onclick="recalcTranspAdd()">↺ Auto</button>
       </div>
       <div class="form-row"><label>Transporteur</label><input id="add-transp" type="text"></div>
+      <div class="form-row"><label>Opérateur</label><select id="add-operator"><option value="">— Non assigné —</option></select></div>
     </div>
     <div class="modal-ft">
       <button class="btn btn-ghost" onclick="closeModal('modal-add')">Annuler</button>
@@ -1542,6 +1546,51 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     <div class="modal-ft">
       <button class="btn btn-ghost" onclick="closeModal('modal-kab-status')">Annuler</button>
       <button class="btn btn-success" onclick="kabApplyStatus()">✓ Appliquer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL BL RAPIDE ══ -->
+<div class="overlay" id="modal-bl-rapide">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-hd">
+      <h2>📄 BL rapide</h2>
+      <button class="modal-close" onclick="closeModal('modal-bl-rapide')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Colle un ou plusieurs numéros de dossier (J1A/H1A...) — un BL groupé sera généré pour l'ensemble.</div>
+      <textarea id="bl-rapide-input" placeholder="J1A0040247&#10;J1A0040248" style="width:100%;min-height:90px;resize:vertical;border:1px solid var(--border2);border-radius:8px;background:var(--surface2);color:var(--text);font-family:var(--mono);font-size:12px;padding:9px;outline:none;box-sizing:border-box"></textarea>
+      <div class="modal-ft" style="padding:12px 0 0;border-top:none;justify-content:flex-start;gap:8px">
+        <button class="btn btn-blue-out" id="bl-rapide-go">📄 Générer BL</button>
+        <button class="btn btn-purple-out" id="bl-rapide-edoc-go">📄➜📤 BL + EDOC</button>
+      </div>
+      <div id="bl-rapide-status" class="cmr4-live" style="display:none;margin-top:10px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL HPE RAPIDE ══ -->
+<div class="overlay" id="modal-hpe-rapide">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-hd">
+      <h2>🎫 HPE rapide</h2>
+      <button class="modal-close" onclick="closeModal('modal-hpe-rapide')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Cherche une référence HPE (INC/FXC/ARN), un numéro de dossier ou de tracking.</div>
+      <div class="hpe-ac-wrap">
+        <input id="hpe-rapide-search" type="text" autocomplete="off" placeholder="Ex: FXC123456, J1A0051246..." style="width:100%;height:34px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:12.5px;padding:0 10px;border-radius:7px;outline:none;box-sizing:border-box">
+        <div class="hpe-ac-list" id="hpe-rapide-search-ac"></div>
+      </div>
+      <div id="hpe-rapide-result" style="margin-top:10px;font-size:12px"></div>
+      <div class="form-section" style="margin-top:14px">Pas trouvé ? Lier maintenant</div>
+      <div class="form-row"><label>Référence</label><input id="hpe-rapide-ref" type="text" placeholder="FXC123456"></div>
+      <div class="form-row"><label>Dossier</label><input id="hpe-rapide-dossier" type="text" placeholder="J1A..."></div>
+      <div class="form-row"><label>Tracking</label><input id="hpe-rapide-tracking" type="text" placeholder="Optionnel"></div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="closeModal('modal-hpe-rapide')">Fermer</button>
+      <button class="btn btn-success" id="hpe-rapide-link">+ Lier</button>
     </div>
   </div>
 </div>
@@ -2769,6 +2818,12 @@ function openEdit(idx) {
   openModal('modal-edit');
 }
 
+function openEditByFile(file) {
+  const idx = g_master.findIndex(r => r.file === file);
+  if (idx === -1) { toast('Dossier introuvable dans le tableau principal.'); return; }
+  openEdit(idx);
+}
+
 function autoRecalcTaxable() {
   const p=parseFloat(document.getElementById('ed-poids').value)||0;
   const v=parseFloat(document.getElementById('ed-vol').value)||0;
@@ -3069,6 +3124,10 @@ document.getElementById('btn-add-manual').onclick = () => {
   ['add-file','add-client','add-svct','add-dept','add-transp'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('add-poids').value='0';
   document.getElementById('add-vol').value='0';
+  const opSel=document.getElementById('add-operator');
+  const names=[...new Set(g_master.map(r=>r.operator||'').filter(Boolean))].sort();
+  opSel.innerHTML='<option value="">— Non assigné —</option>'+names.map(n=>'<option value="'+n+'">'+n+'</option>').join('');
+  opSel.value = g_operatorFilter || '';
   openModal('modal-add');
 };
 
@@ -3092,9 +3151,10 @@ function saveManual() {
   const t=calcTaxable(p,v);
   const dept=document.getElementById('add-dept').value;
   let transp=document.getElementById('add-transp').value||calcTransp(svct,t,dept,isCP(client));
+  const operator=document.getElementById('add-operator').value;
   const today=new Date().toISOString().slice(0,10);
   g_master.push({file,client,rdl:'',svct,transp,poids:p,vol:v,taxable:t,
-    dept,contact:'',tel:'',email:'',cc:'Non',comment:'',statut:'1',operator:'',_dateCreated:today});
+    dept,contact:'',tel:'',email:'',cc:'Non',comment:'',statut:'1',operator,_dateCreated:today});
   storeRaw(file,client,svct,p,v,t,dept,'');
   autoFillContact(file,client);
   closeModal('modal-add');
@@ -4579,7 +4639,6 @@ function optsUpdateMyName() {
 function showIdentityModal() {
   const saved = localStorage.getItem('dispatch_operator') || '';
   const names = [...new Set(g_master.map(r => r.operator || '').filter(Boolean))].sort();
-  if (!names.length) return; // pas de noms dans le CSV
   const sel = document.getElementById('identity-select');
   if (sel) {
     sel.innerHTML = '<option value="">— Voir tous les dossiers —</option>'
@@ -4939,8 +4998,50 @@ window.addEventListener('load', () => {
     // Charger l'état réseau au démarrage (contacts inclus dans le même fichier)
     const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
     if (path) reseauForceLoad();
+    wireHpeAutocomplete('hdr-file', 'hdr-file-ac');
   }, 800); // après que g_master soit peuplé depuis AutoIt
 });
+
+// ── Menu déroulant de suggestions (référence/dossier HPE + dossiers du
+// tableau principal) partagé entre le champ "N° dossier" du header et le
+// champ de recherche rapide de l'onglet HPE. La liste vient de
+// window.hpeSearchSuggestions (exposée par HPE_UI_V1) ; cliquer une
+// suggestion remplit le champ, cliquer 📁/🧭 ouvre le suivi ou saute au
+// Kanban sans quitter la recherche. ──
+function wireHpeAutocomplete(inputId, listId) {
+  const inp = document.getElementById(inputId), list = document.getElementById(listId);
+  if (!inp || !list) return;
+  const esc2 = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  function render() {
+    const sugg = (typeof window.hpeSearchSuggestions === 'function') ? window.hpeSearchSuggestions(inp.value) : [];
+    if (!sugg.length) { list.classList.remove('open'); list.innerHTML = ''; return; }
+    list.innerHTML = sugg.map(s => `<div class="hpe-ac-item" data-ac-fill="${esc2(s.dossier)}" data-ac-source="${s.source}">` +
+      `<span><b>${esc2(s.dossier)}</b>${s.sub ? ' <span style="color:var(--text3);font-weight:400">' + esc2(s.sub) + '</span>' : ''}${s.source === 'main' ? ' <span style="color:var(--orange);font-size:10px">(pas encore lié HPE)</span>' : ''}</span>` +
+      `<span class="hpe-ac-actions">` +
+        (s.source === 'main' ? `<a href="#" data-ac-edit="${esc2(s.dossier)}" title="Compléter la fiche dossier">✏️</a>` : '') +
+        `<a href="#" data-ac-suivi="${esc2(s.dossier)}" title="Ouvrir le suivi">📁</a><a href="#" data-ac-kanban="${esc2(s.dossier)}" title="Voir dans le Kanban">🧭</a></span>` +
+      `</div>`).join('');
+    list.classList.add('open');
+  }
+  inp.addEventListener('input', render);
+  inp.addEventListener('focus', render);
+  inp.addEventListener('keydown', e => { if (e.key === 'Escape') list.classList.remove('open'); });
+  list.addEventListener('click', e => {
+    const ed = e.target.closest('[data-ac-edit]');
+    if (ed) { e.preventDefault(); e.stopPropagation(); if (typeof window.openEditByFile === 'function') window.openEditByFile(ed.dataset.acEdit); list.classList.remove('open'); return; }
+    const sv = e.target.closest('[data-ac-suivi]');
+    if (sv) { e.preventDefault(); e.stopPropagation(); if (typeof window.openHpeSuivi === 'function') window.openHpeSuivi(sv.dataset.acSuivi); list.classList.remove('open'); return; }
+    const kb = e.target.closest('[data-ac-kanban]');
+    if (kb) { e.preventDefault(); e.stopPropagation(); if (typeof window.hpeJumpToKanban === 'function') window.hpeJumpToKanban(kb.dataset.acKanban); list.classList.remove('open'); return; }
+    const f = e.target.closest('[data-ac-fill]');
+    if (f) {
+      inp.value = f.dataset.acFill; list.classList.remove('open');
+      if (f.dataset.acSource === 'main' && typeof window.openEditByFile === 'function') { window.openEditByFile(f.dataset.acFill); }
+      else { inp.focus(); }
+    }
+  });
+  document.addEventListener('click', e => { if (e.target !== inp && !list.contains(e.target)) list.classList.remove('open'); });
+}
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -5886,18 +5987,21 @@ function updateDashboard(){
     '<section class="cr-card"><h3>Terminés</h3><div class="cr-kpi">'+m.done+'</div><div class="cr-sub">Statut 8</div></section>'+
     '<section class="cr-card cr-full"><h3>Actions rapides</h3><div class="cr-actions"><button class="cr-alert-chip cr-warn" data-cr-open="both">🛠 Compléter infos manquantes <b>'+(m.noEmail+m.noContact)+'</b></button><button class="cr-alert-chip cr-danger" data-filter="late">⚠ Retard <b>'+m.late+'</b></button><button class="cr-alert-chip cr-danger" data-filter="rdl">📅 RDL dépassée <b>'+m.rdl+'</b></button><button class="cr-alert-chip cr-good" data-filter="groupable">🔗 Groupables <b>'+m.groupable+'</b></button></div>' +
       '<div class="cr-actions" style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;flex-wrap:wrap">' +
-      '<input id="qa-bl-input" type="text" placeholder="N° dossier (J1A...)" style="flex:1;min-width:160px;height:32px;border:1px solid var(--border2);border-radius:8px;background:var(--surface2);color:var(--text);padding:0 10px;font-family:var(--mono);font-size:12px">' +
-      '<button class="btn btn-blue-out btn-sm" id="qa-bl-go">📄 BL rapide</button>' +
-      '<button class="btn btn-purple-out btn-sm" id="qa-bl-edoc-go">📄➜📤 BL + EDOC rapide</button>' +
-      '</div><div id="qa-bl-hint" class="cr-sub" style="margin-top:4px"></div></section>'+
+      '<button class="btn btn-blue-out btn-sm" id="qa-bl-open">📄 BL rapide</button>' +
+      '</div></section>'+
     '<section class="cr-card cr-wide"><h3>Top transporteurs</h3>'+barRows(m.byTransp)+'</section>'+
     '<section class="cr-card cr-wide"><h3>Focus manquant</h3><div class="cr-sub">Clique sur Sans email / Sans contact pour compléter directement les informations.</div></section>';
 }
-// ── Actions rapides Dashboard : BL (et BL+EDOC) directement depuis un
-// numéro de dossier, sans passer par l'onglet CMR/BL. S'appuie sur
-// window.cmrQuickBL / window.cmrQuickBLThenEdoc (exposés par l'onglet
-// CMR/BL, autre IIFE) -- si ce dossier est actuellement dans la colonne
-// Kanban BL/CMR (statut 10), il avance automatiquement vers NTO (7). ──
+// ── Modale "BL rapide" (et BL+EDOC) directement depuis un ou plusieurs
+// numéros de dossier, sans passer par l'onglet CMR/BL. Volontairement
+// autonome (appelle CMR_GENERATE/CMR_STATUS/CMR_EDOC directement) plutôt
+// que de s'appuyer sur window.cmrQuickBL : ce dernier dépend du DOM interne
+// de l'onglet CMR/BL (#cmr4-qbody etc.), qui n'existe que si cet onglet a
+// déjà été ouvert au moins une fois -- avant ça, la génération partait bien
+// côté serveur mais rien ne s'affichait nulle part, d'où l'impression que
+// "ça ne fonctionne pas". Si le dossier est dans la colonne Kanban BL/CMR
+// (statut 10), il avance automatiquement vers NTO (7). ──
+var g_blRapidePoll = null;
 function quickBLAdvanceKanban(files){
   var moved = 0;
   files.forEach(function(f){
@@ -5907,26 +6011,52 @@ function quickBLAdvanceKanban(files){
   if(moved){ try{ renderMaster(); renderKanban(); updateStats(); markDirty(); }catch(e){} }
   return moved;
 }
-function quickBL(withEdoc){
-  var inp = id('qa-bl-input'), hint = id('qa-bl-hint');
-  var v = inp ? inp.value : '';
-  if(!v || !v.trim()){ if(hint) hint.textContent = 'Saisis un ou plusieurs numéros de dossier.'; return; }
-  if(typeof window.cmrQuickBL !== 'function'){ if(hint) hint.textContent = 'Onglet CMR/BL pas encore chargé -- réessaie dans un instant.'; return; }
-  var res = withEdoc ? window.cmrQuickBLThenEdoc(v) : window.cmrQuickBL(v);
-  if(!res.ok){ if(hint) hint.textContent = res.message; return; }
-  if(inp) inp.value = '';
-  var moved = quickBLAdvanceKanban(res.files);
-  if(hint) hint.textContent = (withEdoc ? 'BL + EDOC lancés' : 'BL lancé') + ' pour ' + res.files.join(', ') + (moved ? ' — '+moved+' dossier(s) Kanban avancé(s) vers NTO.' : '.');
-  toastMsg((withEdoc ? 'BL + EDOC' : 'BL') + ' rapide lancé pour ' + res.files.length + ' dossier(s).');
+function blRapideExtractFiles(txt){
+  return Array.from(new Set((String(txt||'').match(/J[A-Z0-9]{6,}/gi) || []).map(function(s){ return s.trim().toUpperCase(); })));
+}
+function blRapideStatus(msg){ var el = id('bl-rapide-status'); if(!el) return; el.style.display = 'block'; el.textContent = msg; }
+function openBlRapideModal(){
+  var inp = id('bl-rapide-input'); if(inp) inp.value = '';
+  var st = id('bl-rapide-status'); if(st){ st.style.display = 'none'; st.textContent = ''; }
+  if(g_blRapidePoll){ clearInterval(g_blRapidePoll); g_blRapidePoll = null; }
+  openModal('modal-bl-rapide');
+}
+function blRapideGenerate(withEdoc){
+  var files = blRapideExtractFiles(id('bl-rapide-input').value);
+  if(!files.length){ blRapideStatus('Saisis un ou plusieurs numéros de dossier.'); return; }
+  blRapideStatus('Génération en cours pour ' + files.join(', ') + '...');
+  apiAction({action:'CMR_GENERATE', data: files.join(',')}).then(function(){
+    var moved = quickBLAdvanceKanban(files);
+    var extra = moved ? (' — ' + moved + ' dossier(s) Kanban avancé(s) vers NTO.') : '';
+    if(!withEdoc){ blRapideStatus('BL lancé pour ' + files.join(', ') + '.' + extra); toastMsg('BL rapide lancé pour ' + files.length + ' dossier(s).'); return; }
+    blRapideStatus('BL lancé, en attente du résultat pour lancer EDOC...' + extra);
+    var attempts = 0;
+    if(g_blRapidePoll) clearInterval(g_blRapidePoll);
+    g_blRapidePoll = setInterval(function(){
+      attempts++;
+      apiAction({action:'CMR_STATUS'}).then(function(r){
+        var match = r && Array.isArray(r.results) && r.results.find(function(res){ return files.every(function(f){ return String(res.bl||'').toUpperCase().indexOf(f)!==-1; }); });
+        if(match){
+          clearInterval(g_blRapidePoll); g_blRapidePoll = null;
+          apiAction({action:'CMR_EDOC', index: match.index}).then(function(){
+            blRapideStatus('BL + EDOC lancés pour ' + files.join(', ') + '.' + extra);
+            toastMsg('BL + EDOC rapide lancé pour ' + files.length + ' dossier(s).');
+          }).catch(function(e){ blRapideStatus('BL généré, mais erreur EDOC : ' + (e.message || e)); });
+          return;
+        }
+        if(attempts >= 40){ clearInterval(g_blRapidePoll); g_blRapidePoll = null; blRapideStatus('BL généré mais toujours pas dans les résultats après 1 min -- vérifie l\'onglet CMR/BL.'); }
+      }).catch(function(){});
+    }, 1500);
+  }).catch(function(e){ blRapideStatus('Erreur génération : ' + (e.message || e)); });
 }
 function bindDashboardActions(){
   document.addEventListener('click', function(e){
     var open = e.target.closest('[data-cr-open]'); if(open){ openMissing(open.dataset.crOpen); return; }
     var f = e.target.closest('[data-filter]'); if(f){ crFilter = f.dataset.filter; switchTab('dispatch'); setTimeout(applyFilter,100); return; }
-    var bl = e.target.closest('#qa-bl-go'); if(bl){ quickBL(false); return; }
-    var ble = e.target.closest('#qa-bl-edoc-go'); if(ble){ quickBL(true); return; }
+    var qo = e.target.closest('#qa-bl-open'); if(qo){ openBlRapideModal(); return; }
+    var bl = e.target.closest('#bl-rapide-go'); if(bl){ blRapideGenerate(false); return; }
+    var ble = e.target.closest('#bl-rapide-edoc-go'); if(ble){ blRapideGenerate(true); return; }
   });
-  document.addEventListener('keydown', function(e){ if(e.key==='Enter' && e.target && e.target.id==='qa-bl-input'){ quickBL(false); } });
 }
 
 function injectDispatchFilter(){
@@ -6172,7 +6302,7 @@ function ensureToolsPanel(){
     '<div class="cr-tool-card" style="border-left-color:var(--blue)"><div class="cr-tool-title">📦 CMR / BL</div><div id="cmr-dash-preview" class="cr-tool-sub">Chargement...</div><div class="cr-actions" style="margin:0"><button class="btn btn-blue-out btn-sm" id="cmr-dash-refresh">🔄 Statut</button><button class="btn btn-ghost btn-sm" id="tool-cmr">Queue →</button></div></div>' +
     '<div class="cr-tool-card" style="border-left-color:var(--green)"><div class="cr-tool-title">📤 EDOC Master</div><div class="cr-tool-sub">Scan Outlook + upload EDOC dans HTML.</div><div class="cr-actions" style="margin:0"><button class="btn btn-success btn-sm" id="tool-edoc">▶ Lancer un scan</button></div></div>' +
     '<div class="cr-tool-card" style="border-left-color:var(--teal)"><div class="cr-tool-title">🧭 Workflow</div><div id="wf-dash-preview" class="cr-tool-sub">Kanban + filtres transporteur.</div><div class="cr-actions" style="margin:0"><button class="btn btn-ghost btn-sm" id="tool-workflow">Voir le tableau →</button></div></div>' +
-    '<div class="cr-tool-card" style="border-left-color:var(--orange)"><div class="cr-tool-title">🎫 HPE</div><div id="hpe-dash-preview" class="cr-tool-sub">Chargement...</div><div class="cr-actions" style="margin:0"><button class="btn btn-orange-out btn-sm" id="hpe-dash-scan">🔄 Scanner</button><button class="btn btn-ghost btn-sm" id="hpe-dash-open">Ouvrir →</button></div></div>';
+    '<div class="cr-tool-card" style="border-left-color:var(--orange)"><div class="cr-tool-title">🎫 HPE</div><div id="hpe-dash-preview" class="cr-tool-sub">Chargement...</div><div class="cr-actions" style="margin:0"><button class="btn btn-orange-out btn-sm" id="hpe-dash-rapide">🎫 HPE rapide</button><button class="btn btn-orange-out btn-sm" id="hpe-dash-scan">🔄 Scanner</button><button class="btn btn-ghost btn-sm" id="hpe-dash-open">Ouvrir →</button></div></div>';
   var g=id('cr-dashboard-grid');if(g)g.insertAdjacentElement('afterend',panel);else dash.insertBefore(panel,dash.firstChild);
 
   // Infos manquantes : compte reel (meme filtre que openMissing('both'))
@@ -6211,6 +6341,7 @@ function ensureToolsPanel(){
     setTimeout(function(){ if(btn){ btn.disabled=false; btn.textContent='🔄 Scanner'; } }, 2000);
   };
   id('hpe-dash-open').onclick=function(){var t=document.querySelector('.tab[data-tab="hpe"]');if(t)t.click();};
+  id('hpe-dash-rapide').onclick=function(e){ e.stopPropagation(); if(typeof window.openHpeRapideModal==='function') window.openHpeRapideModal(); };
 }
 function patchTabs(){document.addEventListener('click',function(e){var t=e.target.closest('.tab[data-tab="edocmaster"]');if(!t)return;e.preventDefault();e.stopPropagation();switchTabClean('edocmaster');},true)}
 function initEdocHtml(){ensureEdocTab();bindEdocHtml();if(!edocState.stores.length)loadEdocConfig();}
@@ -6547,7 +6678,19 @@ window.addEventListener('load', function(){ setTimeout(init,1250); });
 @keyframes hpeKanbanPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,140,0,.55)}50%{box-shadow:0 0 0 5px rgba(255,140,0,0)}}
 .k-item{position:relative;}
 .k-item.hpe-kanban-pulse{animation:hpeKanbanPulse 1.7s ease-in-out infinite;}
-.hpe-kanban-link{position:absolute;top:5px;right:5px;font-size:13px;line-height:1;text-decoration:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35));z-index:2;}
+.hpe-kanban-link{position:absolute;top:6px;right:27px;font-size:13px;line-height:1;text-decoration:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35));z-index:2;opacity:1;}
+.hpe-kanban-link:hover{transform:scale(1.15);}
+.hpe-kanban-suivi{position:absolute;top:6px;right:47px;font-size:12px;line-height:1;text-decoration:none;z-index:2;opacity:.55;}
+.hpe-kanban-suivi:hover{opacity:1;transform:scale(1.15);}
+.hpe-ac-wrap{position:relative;}
+.hpe-ac-list{position:absolute;top:100%;left:0;right:0;margin-top:3px;background:var(--surface);border:1px solid var(--border);border-radius:7px;box-shadow:var(--shadow-lg);max-height:260px;overflow:auto;z-index:120;display:none;}
+.hpe-ac-list.open{display:block;}
+.hpe-ac-item{padding:7px 9px;font-size:11.5px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid var(--border);}
+.hpe-ac-item:last-child{border-bottom:none;}
+.hpe-ac-item:hover{background:var(--blue-bg);}
+.hpe-ac-actions{display:flex;gap:6px;flex-shrink:0;}
+.hpe-ac-actions a{text-decoration:none;font-size:12px;opacity:.7;}
+.hpe-ac-actions a:hover{opacity:1;}
 </style>
 <script id="hpe-ui-v1-script">
 (function(){
@@ -6590,6 +6733,57 @@ function extractRef(s){
   if(!m) return '';
   return m[1].toUpperCase() + m[2];
 }
+// ── Modale "HPE rapide" (Dashboard) : cherche une référence/dossier/tracking
+// sans quitter le Dashboard, avec lien direct vers le Suivi/Kanban si trouvé,
+// et un mini-formulaire pour créer le lien immédiatement si absent. ──
+function openHpeRapideModal(){
+  var s=id('hpe-rapide-search'); if(s) s.value='';
+  var out=id('hpe-rapide-result'); if(out) out.innerHTML='';
+  ['hpe-rapide-ref','hpe-rapide-dossier','hpe-rapide-tracking'].forEach(function(x){ var el=id(x); if(el) el.value=''; });
+  openModal('modal-hpe-rapide');
+}
+window.openHpeRapideModal = openHpeRapideModal;
+function hpeRapideLookup(){
+  var raw = id('hpe-rapide-search').value;
+  var ref = extractRef(raw);
+  var lookupVal = ref || String(raw||'').trim().toUpperCase();
+  var out = id('hpe-rapide-result');
+  if(!lookupVal){ out.innerHTML=''; return; }
+  out.innerHTML = 'Recherche de <b>'+esc(lookupVal)+'</b>...';
+  apiAction({action:'HPE_MAPPING_LOOKUP', value:lookupVal}).then(function(r){
+    if(r && r.status==='ok' && r.found){
+      out.innerHTML = '<span style="color:var(--blue)">↔ Lié au dossier <b>'+esc(r.dossier)+'</b></span> — '+
+        '<a href="#" data-hr-suivi="'+esc(r.dossier)+'" style="color:var(--blue)">📁 Suivi</a> · '+
+        '<a href="#" data-hr-kanban="'+esc(r.dossier)+'" style="color:var(--blue)">🧭 Kanban</a>';
+      id('hpe-rapide-ref').value = r.reference || ref || '';
+      id('hpe-rapide-dossier').value = r.dossier || '';
+      id('hpe-rapide-tracking').value = r.tracking || '';
+    } else {
+      out.innerHTML = '<span style="color:var(--orange)">Aucun lien trouvé pour "'+esc(lookupVal)+'" — complète ci-dessous pour créer le lien.</span>';
+      id('hpe-rapide-ref').value = ref || lookupVal;
+      id('hpe-rapide-dossier').value = '';
+      id('hpe-rapide-tracking').value = '';
+    }
+  }).catch(function(e){ out.innerHTML = '<span style="color:var(--red)">Erreur : '+esc(e.message||e)+'</span>'; });
+}
+function hpeRapideLink(){
+  var ref = id('hpe-rapide-ref').value.trim();
+  var dossier = id('hpe-rapide-dossier').value.trim();
+  var tracking = id('hpe-rapide-tracking').value.trim();
+  if(!ref || !dossier){ toastMsg('Référence et dossier obligatoires.'); return; }
+  apiAction({action:'HPE_MAPPING_ADD', reference:ref, dossier:dossier, tracking:tracking}).then(function(r){
+    if(r && r.status==='ok'){ toastMsg('Lien enregistré : '+ref+' → '+dossier+'.'); loadMapping(); closeModal('modal-hpe-rapide'); }
+    else toastMsg('Erreur : '+((r&&r.message)||'inconnue'));
+  }).catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
+}
+id('hpe-rapide-search').addEventListener('keydown', function(e){ if(e.key==='Enter') hpeRapideLookup(); });
+if(typeof wireHpeAutocomplete==='function') wireHpeAutocomplete('hpe-rapide-search', 'hpe-rapide-search-ac');
+id('hpe-rapide-link').onclick = hpeRapideLink;
+id('hpe-rapide-result').addEventListener('click', function(e){
+  var sv=e.target.closest('[data-hr-suivi]'); if(sv){ e.preventDefault(); closeModal('modal-hpe-rapide'); openHpeSuivi(sv.dataset.hrSuivi); return; }
+  var kb=e.target.closest('[data-hr-kanban]'); if(kb){ e.preventDefault(); closeModal('modal-hpe-rapide'); jumpToKanban(kb.dataset.hrKanban); return; }
+});
+
 // ── Recherche rapide : accepte une référence INC/FXC/ARN, mais aussi
 // directement un numéro de dossier (J1A/H1A) ou un numéro de tracking --
 // dans ce cas pas d'extraction par regex possible, on passe la saisie brute
@@ -6640,10 +6834,46 @@ function jumpToKanban(dossier){
 }
 document.addEventListener('click', function(e){
   var s=e.target.closest('[data-qs-suivi]');
-  if(s){ e.preventDefault(); id('hpe-suivi-dossier').value=s.dataset.qsSuivi; switchHpePanel('workflows'); loadDossier(); return; }
+  if(s){ e.preventDefault(); openHpeSuivi(s.dataset.qsSuivi); return; }
   var k=e.target.closest('[data-qs-kanban]');
   if(k){ e.preventDefault(); jumpToKanban(k.dataset.qsKanban); }
 });
+
+// ── Suggestions pour l'autocomplete partage (barre du haut + onglet HPE) --
+// combine mapping (ref<->dossier HPE), suivi (dossiers suivis) et g_master
+// (dossiers du tableau principal), sans appel reseau : tout est deja charge
+// en memoire cote client. Exposees sur window car l'input #hdr-file vit hors
+// de cette IIFE (HPE_UI_V1). ──
+function hpeSearchSuggestions(q){
+  q = String(q||'').trim().toUpperCase();
+  if(q.length < 2) return [];
+  var out = [], seen = {};
+  // source:'hpe' = deja suivi/mappe (infos completes) ; 'main' = trouve
+  // seulement dans le tableau principal (pas encore lie a HPE) -- utilise par
+  // wireHpeAutocomplete pour decider s'il faut ouvrir la card d'edition
+  // dossier (infos a completer) plutot que juste remplir le champ.
+  function add(dossier, sub, source){
+    dossier = String(dossier||'').trim().toUpperCase();
+    if(!dossier || seen[dossier]) return;
+    seen[dossier] = true;
+    out.push({dossier:dossier, sub:sub||'', source:source});
+  }
+  (mapping||[]).forEach(function(m){
+    if(String(m.reference||'').toUpperCase().indexOf(q)!==-1 || String(m.dossier||'').toUpperCase().indexOf(q)!==-1) add(m.dossier, m.reference, 'hpe');
+  });
+  (suivi||[]).forEach(function(s){
+    if(String(s.dossier||'').toUpperCase().indexOf(q)!==-1) add(s.dossier, s.owner||s.status||'', 'hpe');
+  });
+  if(typeof g_master!=='undefined'){
+    g_master.forEach(function(r){
+      if(String(r.file||'').toUpperCase().indexOf(q)!==-1 || String(r.client||'').toUpperCase().indexOf(q)!==-1) add(r.file, r.client||'', 'main');
+    });
+  }
+  return out.slice(0, 8);
+}
+window.hpeSearchSuggestions = hpeSearchSuggestions;
+window.openHpeSuivi = openHpeSuivi;
+window.hpeJumpToKanban = jumpToKanban;
 
 function renderMapping(){
   var b=id('hpe-map-body'); if(!b) return;
@@ -6729,20 +6959,43 @@ function markKanbanCards(){
     var key=String(a.dossier||'').trim().toUpperCase();
     if(!byDossier[key] || String(a.date) > String(byDossier[key].date)) byDossier[key]=a;
   });
+  var trackedByDossier={};
+  (suivi||[]).forEach(function(s){ trackedByDossier[String(s.dossier||'').trim().toUpperCase()]=s; });
+
   document.querySelectorAll('.k-item[data-file]').forEach(function(card){
     var parts=String(card.dataset.file||'').split(' + ');
-    var hit=null;
-    parts.some(function(p){ var k=p.trim().toUpperCase(); if(byDossier[k]){ hit=byDossier[k]; return true; } return false; });
+    var hit=null, tracked=null;
+    parts.forEach(function(p){
+      var k=p.trim().toUpperCase();
+      if(!hit && byDossier[k]) hit=byDossier[k];
+      if(!tracked && trackedByDossier[k]) tracked=trackedByDossier[k];
+    });
     var link=card.querySelector('.hpe-kanban-link');
     if(hit){
       card.classList.add('hpe-kanban-pulse');
       if(!link){ link=document.createElement('a'); link.className='hpe-kanban-link'; link.href='#'; card.appendChild(link); }
-      link.title='Nouveau mail HPE reçu — '+String(hit.subject||'').slice(0,90);
+      link.title='Nouveau mail HPE reçu — '+String(hit.subject||'').slice(0,90)+' (clic = ouvrir + marquer lu)';
       link.textContent='✉️';
-      link.onclick=function(ev){ ev.preventDefault(); ev.stopPropagation(); if(hit.entryId) openHpeMail(hit.entryId); };
+      link.onclick=function(ev){
+        ev.preventDefault(); ev.stopPropagation();
+        if(hit.entryId) openHpeMail(hit.entryId);
+        dismissAlert(hit);
+        markKanbanCards();
+        renderDashboardBanner(lastAlerts);
+      };
     } else {
       card.classList.remove('hpe-kanban-pulse');
       if(link) link.remove();
+    }
+
+    var sLink=card.querySelector('.hpe-kanban-suivi');
+    if(tracked){
+      if(!sLink){ sLink=document.createElement('a'); sLink.className='hpe-kanban-suivi'; sLink.href='#'; card.appendChild(sLink); }
+      sLink.title='Suivi HPE'+(tracked.owner?(' — '+tracked.owner):'')+(tracked.status?(' ('+tracked.status+')'):'');
+      sLink.textContent='📁';
+      sLink.onclick=function(ev){ ev.preventDefault(); ev.stopPropagation(); openHpeSuivi(tracked.dossier); };
+    } else if(sLink){
+      sLink.remove();
     }
   });
 }
@@ -6774,6 +7027,24 @@ function renderNotes(){
   b.innerHTML = notes.length ? notes.slice().reverse().map(function(n){
     return '<div class="hpe-note"><div class="hpe-note-meta">'+esc(n.date)+' — '+esc(n.auteur)+'</div>'+esc(n.note)+'</div>';
   }).join('') : '<div class="hpe-empty">Aucune note.</div>';
+}
+// Boutons ACTIONS de la modale Suivi -- reutilise le meme dispatch ETMS que
+// les boutons du header principal (sendActionHeader lit #hdr-file), en y
+// placant le J du dossier HPE ouvert le temps de l'appel.
+function hpeSuiviEtms(cmd){
+  if(!curDossier){ toastMsg('Aucun dossier chargé.'); return; }
+  var f=document.getElementById('hdr-file');
+  if(f) f.value=curDossier;
+  sendActionHeader('ETMS_CMD', cmd);
+}
+function openHpeSuivi(dossier){
+  dossier = String(dossier||'').trim().toUpperCase();
+  if(!dossier){ toastMsg('Saisir un numéro de dossier.'); return; }
+  id('hpe-suivi-dossier').value = dossier;
+  id('hpe-suivi-modal-title').textContent = '📁 ' + dossier;
+  var bar=id('hpe-suivi-etms-bar'); if(bar) bar.style.display = /^[JH]/i.test(dossier) ? 'flex' : 'none';
+  openModal('modal-hpe-suivi');
+  loadDossier();
 }
 function loadDossier(){
   var dossier = id('hpe-suivi-dossier').value.trim().toUpperCase();
@@ -7040,6 +7311,20 @@ function renderDashPreview(){
   el.innerHTML = alertLine+newRefLine+'<br>📁 '+nSuivi+' dossier'+(nSuivi>1?'s':'')+' suivi'+(nSuivi>1?'s':'')+' · 🔗 '+nMap+' lien'+(nMap>1?'s':'');
 }
 
+function ensureDashboardSearch(){
+  var dash=document.querySelector('#tab-dashboard .cr-page'); if(!dash) return null;
+  var el=id('hpe-dash-search-wrap');
+  if(!el){
+    el=document.createElement('div'); el.id='hpe-dash-search-wrap'; el.className='hpe-ac-wrap';
+    el.style.cssText='margin-bottom:10px;';
+    el.innerHTML='<input id="hpe-dash-search" type="text" autocomplete="off" placeholder="🔎 Rechercher un dossier, une référence HPE..." '+
+      'style="width:100%;height:36px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:13px;padding:0 12px;border-radius:8px;outline:none;box-sizing:border-box">'+
+      '<div class="hpe-ac-list" id="hpe-dash-search-ac"></div>';
+    dash.insertBefore(el, dash.firstChild);
+    if(typeof wireHpeAutocomplete==='function') wireHpeAutocomplete('hpe-dash-search', 'hpe-dash-search-ac');
+  }
+  return el;
+}
 function ensureDashboardBanner(){
   var dash=document.querySelector('#tab-dashboard .cr-page'); if(!dash) return null;
   var el=id('hpe-dash-banner');
@@ -7074,10 +7359,7 @@ document.addEventListener('click', function(e){
   var link=e.target.closest('[data-dash-hpe-open]');
   if(!link) return;
   e.preventDefault();
-  var dossier=link.dataset.dashHpeOpen;
-  var t=document.querySelector('.tab[data-tab="hpe"]');
-  if(t) t.click();
-  setTimeout(function(){ var f=id('hpe-suivi-dossier'); if(f){ f.value=dossier; loadDossier(); } }, 300);
+  openHpeSuivi(link.dataset.dashHpeOpen);
 }, true);
 document.addEventListener('click', function(e){
   var link=e.target.closest('[data-dash-hpe-tab]');
@@ -7100,7 +7382,9 @@ function ensureTab(){
 
       '<div class="hpe-subnav">' +
       '<div class="hpe-subnav-btn active" data-hpe-panel="nouveaux">📥 Nouveaux mails <span id="hpe-unmapped-badge" class="hpe-badge">0</span></div>' +
-      '<div class="hpe-subnav-btn" data-hpe-panel="workflows">🧭 Workflows <span id="hpe-alerts-badge" class="hpe-badge">0</span></div>' +
+      '<div class="hpe-subnav-btn" data-hpe-panel="alertes">🔔 Alertes <span id="hpe-alerts-badge" class="hpe-badge">0</span></div>' +
+      '<div class="hpe-subnav-btn" data-hpe-panel="mapping">🔗 Mapping</div>' +
+      '<div class="hpe-subnav-btn" data-hpe-panel="suivi">📁 Suivi <span id="hpe-suivi-badge" class="hpe-badge">0</span></div>' +
       '<div class="hpe-subnav-btn" data-hpe-panel="recherche">🔎 Recherche</div>' +
       '<div class="hpe-subnav-btn" data-hpe-panel="references">📋 Références</div>' +
       '<div class="hpe-subnav-btn" data-hpe-panel="import">📋 Import</div>' +
@@ -7116,13 +7400,15 @@ function ensureTab(){
       '</section>' +
       '</div>' +
 
-      '<div class="hpe-panel" id="hpe-panel-workflows">' +
+      '<div class="hpe-panel" id="hpe-panel-alertes">' +
       '<section class="hpe-card hpe-card--alerts">' +
       '<div class="hpe-card-head"><div class="hpe-card-title">📧 <span>Alertes mail HPE (dossiers suivis)</span></div></div>' +
       '<div class="hpe-sub">Mails reçus (14 derniers jours) dont la référence (objet du mail) est liée à un dossier suivi. Les réponses (RE:/TR:...) du même fil sont regroupées en une seule alerte.</div>' +
       '<div id="hpe-alerts-list"></div>' +
       '</section>' +
+      '</div>' +
 
+      '<div class="hpe-panel" id="hpe-panel-mapping">' +
       '<section class="hpe-card hpe-card--mapping">' +
       '<div class="hpe-card-head"><div class="hpe-card-title">🔗 <span>Mapping HPE ↔ Dossier</span></div><span id="hpe-map-badge" class="hpe-badge">0</span></div>' +
       '<div class="hpe-sub">Une référence HPE (INC/FXC/ARN) est unique ; plusieurs références différentes peuvent pointer vers le même dossier J1A/H1A.</div>' +
@@ -7138,22 +7424,14 @@ function ensureTab(){
       '<div class="hpe-field"><label>Noms connus (séparés par une virgule)</label><input id="hpe-names-input" type="text" placeholder="Jason, Nabil, Chloé, Abderrahman, Charles"></div>' +
       '<div class="hpe-actions"><button class="btn btn-success btn-sm" id="hpe-names-save">💾 Enregistrer</button></div>' +
       '</section>' +
+      '</div>' +
 
+      '<div class="hpe-panel" id="hpe-panel-suivi">' +
       '<section class="hpe-card hpe-card--suivi">' +
-      '<div class="hpe-card-head"><div class="hpe-card-title">📁 <span>Suivi dossier</span></div><span id="hpe-suivi-badge" class="hpe-badge">0</span></div>' +
-      '<div class="hpe-sub">Propriétaire, statut libre et notes horodatées, par dossier J1A/H1A — ton historique automatique par workflow.</div>' +
-      '<div class="hpe-row-btn"><div class="hpe-field" style="margin-bottom:0"><input id="hpe-suivi-dossier" type="text" placeholder="N° Dossier (J1A/H1A)"></div><button class="btn btn-blue-out btn-sm" id="hpe-suivi-load">Charger</button></div>' +
-      '<div class="hpe-row2" style="margin-top:10px"><div class="hpe-field" style="margin-bottom:0"><label>Propriétaire</label><input id="hpe-suivi-owner" type="text"></div><div class="hpe-field" style="margin-bottom:0"><label>Statut</label><input id="hpe-suivi-status" type="text" placeholder="En cours, Bloqué, Terminé..."></div></div>' +
-      '<div class="hpe-actions"><button class="btn btn-primary btn-sm" id="hpe-suivi-save">💾 Enregistrer</button></div>' +
-      '<h4>🕒 Chronologie <span style="font-weight:400;color:var(--text3);font-size:10.5px">(mails + notes, 60 derniers jours)</span></h4>' +
-      '<div id="hpe-timeline-hint" class="hpe-hint"></div>' +
-      '<div id="hpe-timeline-list"></div>' +
-      '<h4>📝 Notes</h4>' +
-      '<div id="hpe-notes-list"></div>' +
-      '<div class="hpe-field"><textarea id="hpe-note-text" placeholder="Nouvelle note..."></textarea></div>' +
-      '<button class="btn btn-success btn-sm" id="hpe-note-add">+ Ajouter note</button>' +
-      '<h4>📚 Tous les dossiers suivis</h4>' +
-      '<div class="hpe-table-wrap"><table class="hpe-table"><thead><tr><th>Dossier</th><th>Propriétaire</th><th>Statut</th><th>MAJ</th></tr></thead><tbody id="hpe-suivi-body"></tbody></table></div>' +
+      '<div class="hpe-card-head"><div class="hpe-card-title">📁 <span>Suivi dossier</span></div></div>' +
+      '<div class="hpe-sub">Ouvre un dossier pour voir/éditer propriétaire, statut, chronologie et notes.</div>' +
+      '<div class="hpe-row-btn"><div class="hpe-field" style="margin-bottom:0"><input id="hpe-suivi-search" type="text" placeholder="N° Dossier (J1A/H1A)"></div><button class="btn btn-blue-out btn-sm" id="hpe-suivi-search-go">Ouvrir</button></div>' +
+      '<div class="hpe-table-wrap" style="margin-top:12px"><table class="hpe-table"><thead><tr><th>Dossier</th><th>Propriétaire</th><th>Statut</th><th>MAJ</th></tr></thead><tbody id="hpe-suivi-body"></tbody></table></div>' +
       '</section>' +
       '</div>' +
 
@@ -7161,7 +7439,7 @@ function ensureTab(){
       '<section class="hpe-card hpe-card--search">' +
       '<div class="hpe-card-head"><div class="hpe-card-title">🔎 <span>Recherche rapide E.TMS</span></div></div>' +
       '<div class="hpe-sub">Colle une référence HPE (INC/FXC/ARN...) ou un numéro de dossier (J1A/H1A) : prépare "R#..." dans le champ de recherche E.TMS en haut de l\'écran et affiche le lien s\'il existe.</div>' +
-      '<div class="hpe-row-btn"><div class="hpe-field" style="margin-bottom:0"><input id="hpe-quick-ref" type="text" placeholder="Ex: FXC123456 ou un texte contenant la référence"></div><button class="btn btn-blue-out btn-sm" id="hpe-quick-go">Préparer</button></div>' +
+      '<div class="hpe-row-btn"><div class="hpe-field hpe-ac-wrap" style="margin-bottom:0"><input id="hpe-quick-ref" type="text" autocomplete="off" placeholder="Ex: FXC123456 ou un texte contenant la référence"><div class="hpe-ac-list" id="hpe-quick-ref-ac"></div></div><button class="btn btn-blue-out btn-sm" id="hpe-quick-go">Préparer</button></div>' +
       '<div id="hpe-quick-result" class="hpe-hint"></div>' +
       '</section>' +
       '</div>' +
@@ -7189,6 +7467,47 @@ function ensureTab(){
 
       '</div>';
     content.appendChild(pane);
+    if(!id('modal-hpe-suivi')){
+      var suiviModal=document.createElement('div');
+      suiviModal.className='overlay'; suiviModal.id='modal-hpe-suivi';
+      suiviModal.innerHTML = '<div class="modal">' +
+        '<div class="modal-hd"><h2 id="hpe-suivi-modal-title">📁 Suivi</h2><button class="modal-close" onclick="closeModal(\'modal-hpe-suivi\')">✕</button></div>' +
+        '<div class="modal-body">' +
+        '<input type="hidden" id="hpe-suivi-dossier">' +
+        '<div id="hpe-suivi-etms-bar" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;">' +
+        '<span style="font-size:10px;font-weight:600;color:var(--text3);margin-top:5px;margin-right:2px">ACTIONS</span>' +
+        '<button class="etms-btn" data-hpe-etms="EDOC">EDOC</button>' +
+        '<button class="etms-btn" data-hpe-etms="LOG">LOG</button>' +
+        '<button class="etms-btn" data-hpe-etms="DIMS">DIMS</button>' +
+        '<button class="etms-btn" data-hpe-etms="NOTES">NOTES</button>' +
+        '<button class="etms-btn" data-hpe-etms="HIST">HIST</button>' +
+        '<button class="etms-btn" data-hpe-etms="REFS">REFS</button>' +
+        '<button class="etms-btn" style="color:var(--orange);font-weight:700" data-hpe-etms="F8">F8</button>' +
+        '<button class="etms-btn warn" data-hpe-etms="LOG X">LOG X</button>' +
+        '</div>' +
+        '<div class="form-row"><label>Propriétaire</label><input id="hpe-suivi-owner" type="text"></div>' +
+        '<div class="form-row"><label>Statut</label><input id="hpe-suivi-status" type="text" placeholder="En cours, Bloqué, Terminé..."></div>' +
+        '<h4>🕒 Chronologie <span style="font-weight:400;color:var(--text3);font-size:10.5px">(mails + notes, 60 derniers jours)</span></h4>' +
+        '<div id="hpe-timeline-hint" class="hpe-hint"></div>' +
+        '<div id="hpe-timeline-list" style="max-height:280px;overflow:auto"></div>' +
+        '<h4>📝 Notes</h4>' +
+        '<div id="hpe-notes-list" style="max-height:180px;overflow:auto"></div>' +
+        '<div class="hpe-field"><textarea id="hpe-note-text" placeholder="Nouvelle note..."></textarea></div>' +
+        '<button class="btn btn-success btn-sm" id="hpe-note-add">+ Ajouter note</button>' +
+        '</div>' +
+        '<div class="modal-ft"><button class="btn btn-ghost" onclick="closeModal(\'modal-hpe-suivi\')">Fermer</button><button class="btn btn-primary" id="hpe-suivi-save">💾 Enregistrer</button></div>' +
+        '</div>';
+      document.body.appendChild(suiviModal);
+      id('hpe-suivi-etms-bar').addEventListener('click', function(e){
+        var b=e.target.closest('[data-hpe-etms]'); if(!b) return;
+        hpeSuiviEtms(b.dataset.hpeEtms);
+      });
+      id('hpe-suivi-save').onclick=saveSuivi;
+      id('hpe-suivi-owner').addEventListener('keydown', function(e){ if(e.key==='Enter') saveSuivi(); });
+      id('hpe-suivi-status').addEventListener('keydown', function(e){ if(e.key==='Enter') saveSuivi(); });
+      id('hpe-note-add').onclick=addNote;
+      id('hpe-note-text').addEventListener('keydown', function(e){ if(e.key==='Enter' && e.ctrlKey){ addNote(); } });
+    }
     var mbField=id('hpe-mailbox');
     if(mbField){ mbField.value=getMailbox(); mbField.addEventListener('change', function(){ setMailbox(mbField.value.trim()); }); }
     renderKpis();
@@ -7200,7 +7519,7 @@ function ensureTab(){
       var logBtn=e.target.closest('[data-log-ref]');
       if(logBtn){ logRefInEtms(logBtn.dataset.logRef); return; }
       var openBtn=e.target.closest('[data-alert-open]');
-      if(openBtn){ id('hpe-suivi-dossier').value=openBtn.dataset.alertOpen; loadDossier(); return; }
+      if(openBtn){ openHpeSuivi(openBtn.dataset.alertOpen); return; }
       var dismissBtn=e.target.closest('[data-alert-dismiss]');
       if(dismissBtn){
         var a=lastAlerts.find(function(x){ return x.reference===card.dataset.alertRef && x.date===card.dataset.alertDate; });
@@ -7246,6 +7565,7 @@ function ensureTab(){
       if(logBtn) logRefInEtms(logBtn.dataset.logRef);
     });
     id('hpe-quick-ref').addEventListener('keydown', function(e){ if(e.key==='Enter') quickSearch(); });
+    if(typeof wireHpeAutocomplete==='function') wireHpeAutocomplete('hpe-quick-ref', 'hpe-quick-ref-ac');
     id('hpe-map-add').onclick=addMapping;
     id('hpe-map-reload').onclick=loadMapping;
     if(id('hpe-names-save')) id('hpe-names-save').onclick=saveNames;
@@ -7256,17 +7576,11 @@ function ensureTab(){
       var d=e.target.closest('[data-map-del]'); if(!d) return;
       if(confirm('Supprimer le lien "'+d.dataset.mapDel+'" ?')) delMapping(d.dataset.mapDel);
     });
-    id('hpe-suivi-load').onclick=loadDossier;
-    id('hpe-suivi-dossier').addEventListener('keydown', function(e){ if(e.key==='Enter') loadDossier(); });
-    id('hpe-suivi-save').onclick=saveSuivi;
-    id('hpe-suivi-owner').addEventListener('keydown', function(e){ if(e.key==='Enter') saveSuivi(); });
-    id('hpe-suivi-status').addEventListener('keydown', function(e){ if(e.key==='Enter') saveSuivi(); });
-    id('hpe-note-add').onclick=addNote;
-    id('hpe-note-text').addEventListener('keydown', function(e){ if(e.key==='Enter' && e.ctrlKey){ addNote(); } });
+    id('hpe-suivi-search-go').onclick=function(){ openHpeSuivi(id('hpe-suivi-search').value.trim().toUpperCase()); };
+    id('hpe-suivi-search').addEventListener('keydown', function(e){ if(e.key==='Enter') openHpeSuivi(id('hpe-suivi-search').value.trim().toUpperCase()); });
     id('hpe-suivi-body').addEventListener('click', function(e){
       var tr=e.target.closest('tr[data-dossier]'); if(!tr) return;
-      id('hpe-suivi-dossier').value = tr.dataset.dossier;
-      loadDossier();
+      openHpeSuivi(tr.dataset.dossier);
     });
     id('hpe-import-preview').onclick=previewImport;
     id('hpe-import-run').onclick=runImport;
@@ -7392,7 +7706,7 @@ document.addEventListener('click', function(e){
 
 window.hpeScanMail = scanMail; // permet au bouton "Scanner" de la carte Dashboard de declencher un vrai scan sans naviguer vers l'onglet HPE
 window.hpeGetState = function(){ return { lastAlerts: lastAlerts, lastUnmapped: lastUnmapped, suivi: suivi, mapping: mapping }; }; // lu par HPE_DASHBOARD_WIDGET_V1 (autre IIFE, meme page)
-function init(){ ensureTab(); wrapMasterRender(); wrapKanbanRender(); loadMapping(); scanMail(); setInterval(scanMail, 300000); setTimeout(renderDashPreview, 2000); setTimeout(renderDashPreview, 5000); }
+function init(){ ensureTab(); ensureDashboardSearch(); wrapMasterRender(); wrapKanbanRender(); loadMapping(); scanMail(); setInterval(scanMail, 300000); setTimeout(renderDashPreview, 2000); setTimeout(renderDashPreview, 5000); }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(init,700); });
 else setTimeout(init,700);
 window.addEventListener('load', function(){ setTimeout(init,1300); });

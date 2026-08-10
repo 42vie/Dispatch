@@ -409,6 +409,26 @@ Func HttpServer_HandleClient($iSocket)
                 _SendHttpResponse($iSocket, 200, "application/json", $sEdocRespRule)
                 TCPCloseSocket($iSocket)
                 Return
+            Case "EDOC_PROFILES_LIST"
+                _SendHttpResponse($iSocket, 200, "application/json", _EDOC_ProfilesOnlyJSON())
+                TCPCloseSocket($iSocket)
+                Return
+            Case "EDOC_PROFILE_ADD"
+                _SendHttpResponse($iSocket, 200, "application/json", _EDOC_ProfileAddJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "EDOC_PROFILE_DELETE"
+                _SendHttpResponse($iSocket, 200, "application/json", _EDOC_ProfileDeleteJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "EDOC_ACTION_ADD"
+                _SendHttpResponse($iSocket, 200, "application/json", _EDOC_ActionAddJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "EDOC_ACTION_DELETE"
+                _SendHttpResponse($iSocket, 200, "application/json", _EDOC_ActionDeleteJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
             Case "DIAG"
                 _RunDiagnostic()
 

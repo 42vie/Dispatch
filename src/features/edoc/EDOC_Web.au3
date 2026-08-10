@@ -43,6 +43,13 @@ Func _EDOC_WebInit()
     Return '{"status":"ok","stores":' & _EDOC_JsonArrayFromPipe($stores) & ',"profiles":' & _EDOC_ProfilesJSON() & '}'
 EndFunc
 
+; Variante sans dependance a Outlook, pour l'onglet "Clients EDOC" (edition
+; des profils/regles) qui n'a besoin ni des boites mail ni d'une session
+; Outlook active -- juste de l'ini de config.
+Func _EDOC_ProfilesOnlyJSON()
+    Return '{"status":"ok","profiles":' & _EDOC_ProfilesJSON() & '}'
+EndFunc
+
 Func _EDOC_WebScan($sBody)
     If Not _EDOC_EnsureOutlook() Then Return '{"status":"error","reason":"outlook_not_open","items":[]}'
     Local $sCompte = _GetJsonValue($sBody, "mailbox")
@@ -180,7 +187,7 @@ EndFunc
 
 Func _EDOC_WebRuleSave($sBody)
     Local $prof = _GetJsonValue($sBody, "profile")
-    Local $act = _GetJsonValue($sBody, "action")
+    Local $act = _GetJsonValue($sBody, "actionName")
     If $prof = "" Or $act = "" Then Return '{"status":"error","reason":"missing_profile_or_action"}'
     Local $sec = $prof & "_" & $act
     IniWrite($CFG_FILE, $sec, "Folder", _GetJsonValue($sBody, "folder"))
@@ -189,5 +196,66 @@ Func _EDOC_WebRuleSave($sBody)
     IniWrite($CFG_FILE, $sec, "Length", _GetJsonValue($sBody, "length"))
     IniWrite($CFG_FILE, $sec, "Sender", _GetJsonValue($sBody, "sender"))
     IniWrite($CFG_FILE, $sec, "DocType", _GetJsonValue($sBody, "docType"))
+    Return '{"status":"ok"}'
+EndFunc
+
+; ============================================================================
+; PROFILS CLIENTS + ACTIONS -- creation/suppression, memes regles que les
+; boutons "Nouveau"/"Supprimer" de l'ecran natif _RulesGUI() (Config.au3),
+; ici exposees en JSON pour l'onglet web "EDOC Clients". Modifier les champs
+; d'une action existante reste _EDOC_WebRuleSave() ci-dessus.
+; ============================================================================
+
+Func _EDOC_ProfileAddJSON($sBody)
+    Local $sProf = StringStripWS(_GetJsonValue($sBody, "profile"), 3)
+    If $sProf = "" Then Return '{"status":"error","message":"nom_vide"}'
+    Local $sCurr = IniRead($CFG_FILE, "System", "ProfilesList", "")
+    If _PipeContains($sCurr, $sProf) Then Return '{"status":"error","message":"deja_existant"}'
+    If $sCurr = "" Then
+        $sCurr = $sProf
+    Else
+        $sCurr &= "|" & $sProf
+    EndIf
+    IniWrite($CFG_FILE, "System", "ProfilesList", $sCurr)
+    IniWrite($CFG_FILE, $sProf & "_Actions", "List", "")
+    Return '{"status":"ok"}'
+EndFunc
+
+Func _EDOC_ProfileDeleteJSON($sBody)
+    Local $sProf = StringStripWS(_GetJsonValue($sBody, "profile"), 3)
+    If $sProf = "" Then Return '{"status":"error","message":"nom_vide"}'
+    Local $sActs = IniRead($CFG_FILE, $sProf & "_Actions", "List", "")
+    Local $aActs = StringSplit($sActs, "|")
+    For $i = 1 To $aActs[0]
+        If $aActs[$i] <> "" Then IniDelete($CFG_FILE, $sProf & "_" & $aActs[$i])
+    Next
+    IniDelete($CFG_FILE, $sProf & "_Actions")
+    Local $sNewList = _RemoveFromPipeList(IniRead($CFG_FILE, "System", "ProfilesList", ""), $sProf)
+    IniWrite($CFG_FILE, "System", "ProfilesList", $sNewList)
+    Return '{"status":"ok"}'
+EndFunc
+
+Func _EDOC_ActionAddJSON($sBody)
+    Local $sProf = StringStripWS(_GetJsonValue($sBody, "profile"), 3)
+    Local $sAct = StringStripWS(_GetJsonValue($sBody, "actionName"), 3)
+    If $sProf = "" Or $sAct = "" Then Return '{"status":"error","message":"champs_vides"}'
+    Local $sCurr = IniRead($CFG_FILE, $sProf & "_Actions", "List", "")
+    If _PipeContains($sCurr, $sAct) Then Return '{"status":"error","message":"deja_existant"}'
+    If $sCurr = "" Then
+        $sCurr = $sAct
+    Else
+        $sCurr &= "|" & $sAct
+    EndIf
+    IniWrite($CFG_FILE, $sProf & "_Actions", "List", $sCurr)
+    Return '{"status":"ok"}'
+EndFunc
+
+Func _EDOC_ActionDeleteJSON($sBody)
+    Local $sProf = StringStripWS(_GetJsonValue($sBody, "profile"), 3)
+    Local $sAct = StringStripWS(_GetJsonValue($sBody, "actionName"), 3)
+    If $sProf = "" Or $sAct = "" Then Return '{"status":"error","message":"champs_vides"}'
+    Local $sNewList = _RemoveFromPipeList(IniRead($CFG_FILE, $sProf & "_Actions", "List", ""), $sAct)
+    IniWrite($CFG_FILE, $sProf & "_Actions", "List", $sNewList)
+    IniDelete($CFG_FILE, $sProf & "_" & $sAct)
     Return '{"status":"ok"}'
 EndFunc

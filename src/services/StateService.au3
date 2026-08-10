@@ -419,30 +419,30 @@ Opt("GUIOnEventMode", 0)
 ; Les HTML/PDF/mails sont générés depuis le snapshot du BL, jamais depuis OUTPUT live.
 ; ============================================================
 
-Global Const $APP_TITLE = "HPE BL Queue Snapshot"
-Global Const $BASE_PATH = "F:\Scripting\Export\EXPORT_HPE_CMR_001\"
-Global Const $INPUT_PATH = $BASE_PATH & "Database\INPUT\"
-Global Const $OUTPUT_PATH = $BASE_PATH & "Database\OUTPUT\"
-Global Const $HTML_PATH = $BASE_PATH & "Database\HTML\"
-Global Const $PDF_PATH = @ScriptDir & "\PDF\"
-Global Const $SNAPSHOT_PATH = @ScriptDir & "\Snapshots\"
-Global Const $INPUT_CSV = $INPUT_PATH & "input.csv"
-Global Const $INPUT_GEN = $INPUT_PATH & "inputGEN.csv"
-Global Const $LASTBL_MARKER = $INPUT_PATH & "last_bl_queue_snapshot.ini"
-Global Const $EDS_PATH = $BASE_PATH & "EXPORT_HPE_CMR_006.eds"
-Global Const $INI_PATH = @ScriptDir & "\Config\HPE_BL_QUEUE_SNAPSHOT.ini"
-Global Const $MAIL_AUTOSEND = False
-Global Const $OUTPUT_WAIT_MS = 180000
-Global Const $OUTPUT_STABLE_MS = 1500
+Global $APP_TITLE = "HPE BL Queue Snapshot"
+Global $BASE_PATH = "F:\Scripting\Export\EXPORT_HPE_CMR_001\"
+Global $INPUT_PATH = $BASE_PATH & "Database\INPUT\"
+Global $OUTPUT_PATH = $BASE_PATH & "Database\OUTPUT\"
+Global $HTML_PATH = $BASE_PATH & "Database\HTML\"
+Global $PDF_PATH = @ScriptDir & "\PDF\"
+Global $SNAPSHOT_PATH = @ScriptDir & "\Snapshots\"
+Global $INPUT_CSV = $INPUT_PATH & "input.csv"
+Global $INPUT_GEN = $INPUT_PATH & "inputGEN.csv"
+Global $LASTBL_MARKER = $INPUT_PATH & "last_bl_queue_snapshot.ini"
+Global $EDS_PATH = $BASE_PATH & "EXPORT_HPE_CMR_006.eds"
+Global $INI_PATH = @ScriptDir & "\Config\HPE_BL_QUEUE_SNAPSHOT.ini"
+Global $MAIL_AUTOSEND = False
+Global $OUTPUT_WAIT_MS = 180000
+Global $OUTPUT_STABLE_MS = 1500
 
-Global Const $ETMS_WINDOW = "[CLASS:TfmBrowser]"
-Global Const $ETMS_TOOLBAR = "[CLASS:TRzToolbar; INSTANCE:1]"
-Global Const $EDOC_UPLOAD_TITLE = "Upload Documents CDG"
-Global Const $EDOC_UPLOAD_BTN = "TButton2"
-Global Const $FILEOPEN_WIN = "[CLASS:TRzShellOpenSaveForm]"
-Global Const $FILEOPEN_EDIT = "[CLASS:TRzEdit; INSTANCE:1]"
-Global Const $TOOLBAR_X = 54
-Global Const $TOOLBAR_Y = 9
+Global $ETMS_WINDOW = "[CLASS:TfmBrowser]"
+Global $ETMS_TOOLBAR = "[CLASS:TRzToolbar; INSTANCE:1]"
+Global $EDOC_UPLOAD_TITLE = "Upload Documents CDG"
+Global $EDOC_UPLOAD_BTN = "TButton2"
+Global $FILEOPEN_WIN = "[CLASS:TRzShellOpenSaveForm]"
+Global $FILEOPEN_EDIT = "[CLASS:TRzEdit; INSTANCE:1]"
+Global $TOOLBAR_X = 54
+Global $TOOLBAR_Y = 9
 
 Global $g_sOperator = ""
 Global $g_bStopQueue = False
@@ -473,7 +473,7 @@ Global $g_aHoverIds[0], $g_aHoverNormal[0], $g_aHoverHover[0], $g_aHoverIsHover[
 Global $g_oCsvCache = ObjCreate("Scripting.Dictionary") ; clé = chemin fichier + date/taille, valeur = tableau de lignes non vides
 Global $g_sBrowserCache = ""
 Global $g_iLastHoverTick = 0
-Global Const $HOVER_THROTTLE_MS = 60
+Global $HOVER_THROTTLE_MS = 60
 
 
 ; (Le module CMR complet a ete deplace dans src/features/cmr/ :

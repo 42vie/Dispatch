@@ -6640,7 +6640,7 @@ function jumpToKanban(dossier){
 }
 document.addEventListener('click', function(e){
   var s=e.target.closest('[data-qs-suivi]');
-  if(s){ e.preventDefault(); id('hpe-suivi-dossier').value=s.dataset.qsSuivi; switchHpePanel('workflows'); loadDossier(); return; }
+  if(s){ e.preventDefault(); openHpeSuivi(s.dataset.qsSuivi); return; }
   var k=e.target.closest('[data-qs-kanban]');
   if(k){ e.preventDefault(); jumpToKanban(k.dataset.qsKanban); }
 });
@@ -6774,6 +6774,14 @@ function renderNotes(){
   b.innerHTML = notes.length ? notes.slice().reverse().map(function(n){
     return '<div class="hpe-note"><div class="hpe-note-meta">'+esc(n.date)+' — '+esc(n.auteur)+'</div>'+esc(n.note)+'</div>';
   }).join('') : '<div class="hpe-empty">Aucune note.</div>';
+}
+function openHpeSuivi(dossier){
+  dossier = String(dossier||'').trim().toUpperCase();
+  if(!dossier){ toastMsg('Saisir un numéro de dossier.'); return; }
+  id('hpe-suivi-dossier').value = dossier;
+  id('hpe-suivi-modal-title').textContent = '📁 ' + dossier;
+  openModal('modal-hpe-suivi');
+  loadDossier();
 }
 function loadDossier(){
   var dossier = id('hpe-suivi-dossier').value.trim().toUpperCase();
@@ -7074,10 +7082,7 @@ document.addEventListener('click', function(e){
   var link=e.target.closest('[data-dash-hpe-open]');
   if(!link) return;
   e.preventDefault();
-  var dossier=link.dataset.dashHpeOpen;
-  var t=document.querySelector('.tab[data-tab="hpe"]');
-  if(t) t.click();
-  setTimeout(function(){ var f=id('hpe-suivi-dossier'); if(f){ f.value=dossier; loadDossier(); } }, 300);
+  openHpeSuivi(link.dataset.dashHpeOpen);
 }, true);
 document.addEventListener('click', function(e){
   var link=e.target.closest('[data-dash-hpe-tab]');
@@ -7100,7 +7105,9 @@ function ensureTab(){
 
       '<div class="hpe-subnav">' +
       '<div class="hpe-subnav-btn active" data-hpe-panel="nouveaux">📥 Nouveaux mails <span id="hpe-unmapped-badge" class="hpe-badge">0</span></div>' +
-      '<div class="hpe-subnav-btn" data-hpe-panel="workflows">🧭 Workflows <span id="hpe-alerts-badge" class="hpe-badge">0</span></div>' +
+      '<div class="hpe-subnav-btn" data-hpe-panel="alertes">🔔 Alertes <span id="hpe-alerts-badge" class="hpe-badge">0</span></div>' +
+      '<div class="hpe-subnav-btn" data-hpe-panel="mapping">🔗 Mapping</div>' +
+      '<div class="hpe-subnav-btn" data-hpe-panel="suivi">📁 Suivi <span id="hpe-suivi-badge" class="hpe-badge">0</span></div>' +
       '<div class="hpe-subnav-btn" data-hpe-panel="recherche">🔎 Recherche</div>' +
       '<div class="hpe-subnav-btn" data-hpe-panel="references">📋 Références</div>' +
       '<div class="hpe-subnav-btn" data-hpe-panel="import">📋 Import</div>' +
@@ -7116,13 +7123,15 @@ function ensureTab(){
       '</section>' +
       '</div>' +
 
-      '<div class="hpe-panel" id="hpe-panel-workflows">' +
+      '<div class="hpe-panel" id="hpe-panel-alertes">' +
       '<section class="hpe-card hpe-card--alerts">' +
       '<div class="hpe-card-head"><div class="hpe-card-title">📧 <span>Alertes mail HPE (dossiers suivis)</span></div></div>' +
       '<div class="hpe-sub">Mails reçus (14 derniers jours) dont la référence (objet du mail) est liée à un dossier suivi. Les réponses (RE:/TR:...) du même fil sont regroupées en une seule alerte.</div>' +
       '<div id="hpe-alerts-list"></div>' +
       '</section>' +
+      '</div>' +
 
+      '<div class="hpe-panel" id="hpe-panel-mapping">' +
       '<section class="hpe-card hpe-card--mapping">' +
       '<div class="hpe-card-head"><div class="hpe-card-title">🔗 <span>Mapping HPE ↔ Dossier</span></div><span id="hpe-map-badge" class="hpe-badge">0</span></div>' +
       '<div class="hpe-sub">Une référence HPE (INC/FXC/ARN) est unique ; plusieurs références différentes peuvent pointer vers le même dossier J1A/H1A.</div>' +
@@ -7138,22 +7147,14 @@ function ensureTab(){
       '<div class="hpe-field"><label>Noms connus (séparés par une virgule)</label><input id="hpe-names-input" type="text" placeholder="Jason, Nabil, Chloé, Abderrahman, Charles"></div>' +
       '<div class="hpe-actions"><button class="btn btn-success btn-sm" id="hpe-names-save">💾 Enregistrer</button></div>' +
       '</section>' +
+      '</div>' +
 
+      '<div class="hpe-panel" id="hpe-panel-suivi">' +
       '<section class="hpe-card hpe-card--suivi">' +
-      '<div class="hpe-card-head"><div class="hpe-card-title">📁 <span>Suivi dossier</span></div><span id="hpe-suivi-badge" class="hpe-badge">0</span></div>' +
-      '<div class="hpe-sub">Propriétaire, statut libre et notes horodatées, par dossier J1A/H1A — ton historique automatique par workflow.</div>' +
-      '<div class="hpe-row-btn"><div class="hpe-field" style="margin-bottom:0"><input id="hpe-suivi-dossier" type="text" placeholder="N° Dossier (J1A/H1A)"></div><button class="btn btn-blue-out btn-sm" id="hpe-suivi-load">Charger</button></div>' +
-      '<div class="hpe-row2" style="margin-top:10px"><div class="hpe-field" style="margin-bottom:0"><label>Propriétaire</label><input id="hpe-suivi-owner" type="text"></div><div class="hpe-field" style="margin-bottom:0"><label>Statut</label><input id="hpe-suivi-status" type="text" placeholder="En cours, Bloqué, Terminé..."></div></div>' +
-      '<div class="hpe-actions"><button class="btn btn-primary btn-sm" id="hpe-suivi-save">💾 Enregistrer</button></div>' +
-      '<h4>🕒 Chronologie <span style="font-weight:400;color:var(--text3);font-size:10.5px">(mails + notes, 60 derniers jours)</span></h4>' +
-      '<div id="hpe-timeline-hint" class="hpe-hint"></div>' +
-      '<div id="hpe-timeline-list"></div>' +
-      '<h4>📝 Notes</h4>' +
-      '<div id="hpe-notes-list"></div>' +
-      '<div class="hpe-field"><textarea id="hpe-note-text" placeholder="Nouvelle note..."></textarea></div>' +
-      '<button class="btn btn-success btn-sm" id="hpe-note-add">+ Ajouter note</button>' +
-      '<h4>📚 Tous les dossiers suivis</h4>' +
-      '<div class="hpe-table-wrap"><table class="hpe-table"><thead><tr><th>Dossier</th><th>Propriétaire</th><th>Statut</th><th>MAJ</th></tr></thead><tbody id="hpe-suivi-body"></tbody></table></div>' +
+      '<div class="hpe-card-head"><div class="hpe-card-title">📁 <span>Suivi dossier</span></div></div>' +
+      '<div class="hpe-sub">Ouvre un dossier pour voir/éditer propriétaire, statut, chronologie et notes.</div>' +
+      '<div class="hpe-row-btn"><div class="hpe-field" style="margin-bottom:0"><input id="hpe-suivi-search" type="text" placeholder="N° Dossier (J1A/H1A)"></div><button class="btn btn-blue-out btn-sm" id="hpe-suivi-search-go">Ouvrir</button></div>' +
+      '<div class="hpe-table-wrap" style="margin-top:12px"><table class="hpe-table"><thead><tr><th>Dossier</th><th>Propriétaire</th><th>Statut</th><th>MAJ</th></tr></thead><tbody id="hpe-suivi-body"></tbody></table></div>' +
       '</section>' +
       '</div>' +
 
@@ -7189,6 +7190,32 @@ function ensureTab(){
 
       '</div>';
     content.appendChild(pane);
+    if(!id('modal-hpe-suivi')){
+      var suiviModal=document.createElement('div');
+      suiviModal.className='overlay'; suiviModal.id='modal-hpe-suivi';
+      suiviModal.innerHTML = '<div class="modal">' +
+        '<div class="modal-hd"><h2 id="hpe-suivi-modal-title">📁 Suivi</h2><button class="modal-close" onclick="closeModal(\'modal-hpe-suivi\')">✕</button></div>' +
+        '<div class="modal-body">' +
+        '<input type="hidden" id="hpe-suivi-dossier">' +
+        '<div class="form-row"><label>Propriétaire</label><input id="hpe-suivi-owner" type="text"></div>' +
+        '<div class="form-row"><label>Statut</label><input id="hpe-suivi-status" type="text" placeholder="En cours, Bloqué, Terminé..."></div>' +
+        '<h4>🕒 Chronologie <span style="font-weight:400;color:var(--text3);font-size:10.5px">(mails + notes, 60 derniers jours)</span></h4>' +
+        '<div id="hpe-timeline-hint" class="hpe-hint"></div>' +
+        '<div id="hpe-timeline-list" style="max-height:280px;overflow:auto"></div>' +
+        '<h4>📝 Notes</h4>' +
+        '<div id="hpe-notes-list" style="max-height:180px;overflow:auto"></div>' +
+        '<div class="hpe-field"><textarea id="hpe-note-text" placeholder="Nouvelle note..."></textarea></div>' +
+        '<button class="btn btn-success btn-sm" id="hpe-note-add">+ Ajouter note</button>' +
+        '</div>' +
+        '<div class="modal-ft"><button class="btn btn-ghost" onclick="closeModal(\'modal-hpe-suivi\')">Fermer</button><button class="btn btn-primary" id="hpe-suivi-save">💾 Enregistrer</button></div>' +
+        '</div>';
+      document.body.appendChild(suiviModal);
+      id('hpe-suivi-save').onclick=saveSuivi;
+      id('hpe-suivi-owner').addEventListener('keydown', function(e){ if(e.key==='Enter') saveSuivi(); });
+      id('hpe-suivi-status').addEventListener('keydown', function(e){ if(e.key==='Enter') saveSuivi(); });
+      id('hpe-note-add').onclick=addNote;
+      id('hpe-note-text').addEventListener('keydown', function(e){ if(e.key==='Enter' && e.ctrlKey){ addNote(); } });
+    }
     var mbField=id('hpe-mailbox');
     if(mbField){ mbField.value=getMailbox(); mbField.addEventListener('change', function(){ setMailbox(mbField.value.trim()); }); }
     renderKpis();
@@ -7200,7 +7227,7 @@ function ensureTab(){
       var logBtn=e.target.closest('[data-log-ref]');
       if(logBtn){ logRefInEtms(logBtn.dataset.logRef); return; }
       var openBtn=e.target.closest('[data-alert-open]');
-      if(openBtn){ id('hpe-suivi-dossier').value=openBtn.dataset.alertOpen; loadDossier(); return; }
+      if(openBtn){ openHpeSuivi(openBtn.dataset.alertOpen); return; }
       var dismissBtn=e.target.closest('[data-alert-dismiss]');
       if(dismissBtn){
         var a=lastAlerts.find(function(x){ return x.reference===card.dataset.alertRef && x.date===card.dataset.alertDate; });
@@ -7256,17 +7283,11 @@ function ensureTab(){
       var d=e.target.closest('[data-map-del]'); if(!d) return;
       if(confirm('Supprimer le lien "'+d.dataset.mapDel+'" ?')) delMapping(d.dataset.mapDel);
     });
-    id('hpe-suivi-load').onclick=loadDossier;
-    id('hpe-suivi-dossier').addEventListener('keydown', function(e){ if(e.key==='Enter') loadDossier(); });
-    id('hpe-suivi-save').onclick=saveSuivi;
-    id('hpe-suivi-owner').addEventListener('keydown', function(e){ if(e.key==='Enter') saveSuivi(); });
-    id('hpe-suivi-status').addEventListener('keydown', function(e){ if(e.key==='Enter') saveSuivi(); });
-    id('hpe-note-add').onclick=addNote;
-    id('hpe-note-text').addEventListener('keydown', function(e){ if(e.key==='Enter' && e.ctrlKey){ addNote(); } });
+    id('hpe-suivi-search-go').onclick=function(){ openHpeSuivi(id('hpe-suivi-search').value.trim().toUpperCase()); };
+    id('hpe-suivi-search').addEventListener('keydown', function(e){ if(e.key==='Enter') openHpeSuivi(id('hpe-suivi-search').value.trim().toUpperCase()); });
     id('hpe-suivi-body').addEventListener('click', function(e){
       var tr=e.target.closest('tr[data-dossier]'); if(!tr) return;
-      id('hpe-suivi-dossier').value = tr.dataset.dossier;
-      loadDossier();
+      openHpeSuivi(tr.dataset.dossier);
     });
     id('hpe-import-preview').onclick=previewImport;
     id('hpe-import-run').onclick=runImport;

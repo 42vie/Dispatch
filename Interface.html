@@ -7016,9 +7016,11 @@ function copyReferencesList(){
     .concat(lastUnmapped.map(function(u){ return {reference:u.reference, dossier:''}; }));
   if(!rows.length){ toastMsg('Aucune référence à copier -- lance un scan.'); return; }
   // Colle direct dans le tableau ETMS File(B)/Events(C)/Refs(D)/Log(E) :
-  // B = R#reference, E = dossier (equivalent SHPMNT_REF) quand connu --
-  // 3 tabs pour sauter Events/Refs et ne pas les ecraser si vides.
-  var text = rows.map(function(r){ var ref='R#'+r.reference; return r.dossier ? (ref+'\t\t\t'+r.dossier) : ref; }).join('\n');
+  // B = R#reference sur chaque ligne ; E rempli uniquement sur les 2
+  // premieres lignes avec les cles fixes SHPMNT_REF / SP_TRACKING_NUM
+  // qu'attend l'outil externe (config, pas une donnee par reference).
+  var eFixed = ['SHPMNT_REF', 'SP_TRACKING_NUM'];
+  var text = rows.map(function(r, i){ var ref='R#'+r.reference; return (i<eFixed.length) ? (ref+'\t\t\t'+eFixed[i]) : ref; }).join('\n');
   if(navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(text).then(function(){ toastMsg(rows.length+' référence(s) copiée(s).'); }, function(){ toastMsg('Copie impossible (permissions navigateur).'); });
   } else {

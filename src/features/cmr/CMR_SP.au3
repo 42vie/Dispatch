@@ -107,11 +107,18 @@ Func _SP_MatchSection($carrier)
         EndIf
     Next
 
-    ; Passe 2 : repli sur la premiere sous-chaine trouvee (comportement historique)
+    ; Passe 2 : repli sur sous-chaine, dans les DEUX sens -- les regles SP
+    ; stockent le nom legal complet ("CARTAGE FLEX TRANSPORT") alors que le
+    ; champ transporteur des dossiers contient generalement un nom court
+    ; informel ("FLEX", "EFDS", "Groussard"). Un test a sens unique (est-ce
+    ; que la saisie contient le nom de regle ?) ne peut jamais matcher dans
+    ; ce sens-la puisque la saisie est plus courte que le nom de regle --
+    ; c'etait le bug qui faisait retomber silencieusement ces transporteurs
+    ; sur le modele generique "Autre".
     For $i = 1 To $sections[0]
         If StringLeft($sections[$i], 3) = "SP:" Then
-            $ruleCarrier = IniRead($INI_PATH, $sections[$i], "CARRIER", "")
-            If $ruleCarrier <> "" And StringInStr($c, StringUpper($ruleCarrier)) Then Return $sections[$i]
+            $ruleCarrier = StringUpper(StringStripWS(IniRead($INI_PATH, $sections[$i], "CARRIER", ""), 3))
+            If $ruleCarrier <> "" And (StringInStr($c, $ruleCarrier) Or StringInStr($ruleCarrier, $c)) Then Return $sections[$i]
         EndIf
     Next
 

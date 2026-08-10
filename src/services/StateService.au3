@@ -24,8 +24,8 @@ Func _Batch_FC($sData)
     $bFC_Stop = False
     $bFC_Pause = False
     $bFC_Skip = False
-    HotKeySet("{F9}", "_HK_FC_PauseToggle")
-    HotKeySet("{ESCAPE}", "_HK_FC_Stop")
+    HotKeySet("^{F9}", "_HK_FC_PauseToggle")
+    HotKeySet("^{F10}", "_HK_FC_Stop")
 
     Local $aJobs = StringSplit($sData, "|")
 
@@ -120,8 +120,8 @@ Func _Batch_FC($sData)
             Next
         EndIf
     Next
-    HotKeySet("{F9}")
-    HotKeySet("{ESCAPE}")
+    HotKeySet("^{F9}")
+    HotKeySet("^{F10}")
     _Tracker_End()
     ; Bilan final FC
     If $iStoppedFC And $sRemainingFC <> "" Then

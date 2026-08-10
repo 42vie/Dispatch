@@ -48,6 +48,7 @@
   --k5-c: #1A8C4E; --k5-bg: #E8F5EE;
   --k6-c: #1A6EBF; --k6-bg: #EBF3FB;
   --k7-c: #6B3FA0; --k7-bg: #F2EDF9;
+  --k10-c: #0E7C86; --k10-bg: #E3F6F7;
 
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
   --shadow:    0 2px 8px rgba(0,0,0,0.10);
@@ -92,6 +93,7 @@ html.dark {
   --k5-c: #3ABB6E; --k5-bg: #1A3328;
   --k6-c: #4A9FE5; --k6-bg: #1A2D44;
   --k7-c: #9B6FD0; --k7-bg: #2A1E40;
+  --k10-c: #35C7D1; --k10-bg: #123338;
 }
 html.dark input, html.dark textarea, html.dark select {
   background: var(--surface2); color: var(--text); border-color: var(--border2);
@@ -326,6 +328,7 @@ table.t-master tbody td {
 .b6 { background: var(--k6-bg); color: var(--k6-c); }
 .b7 { background: var(--k7-bg); color: var(--k7-c); }
 .b8 { background: #E6FAF5; color: #0D7A5A; }
+.b10 { background: var(--k10-bg); color: var(--k10-c); }
 
 .cc-yes { color: var(--green); font-weight: 600; }
 .cc-no  { color: var(--text3); }
@@ -1286,6 +1289,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
           <option value="3">3. Attente réponse</option>
           <option value="4">4. Pré-alerte &amp; 5. FC</option>
           <option value="5">5. Prêt pour FC</option>
+          <option value="10">BL / CMR</option>
           <option value="6">6. COMAT</option>
           <option value="7">7. NTO</option>
           <option value="8">8. Terminé</option>
@@ -1624,11 +1628,16 @@ function transpTarget(svct, client) {
 }
 function statutLabel(n) {
   const L = {'1':'1. Pas encore CC','2':'2. RDV à envoyer','3':'3. Attente réponse',
-    '4':'4. Pré-alerte & FC','5':'5. Prêt pour FC','6':'6. COMAT','7':'7. NTO','8':'8. Terminé'};
+    '4':'4. Pré-alerte & FC','5':'5. Prêt pour FC','6':'6. COMAT','7':'7. NTO','8':'8. Terminé',
+    '10':'BL / CMR'};
   return L[String(n)] || String(n);
 }
-function statutNum(s) { const m = String(s||'').match(/^(\d)/); return m?m[1]:'1'; }
+// (\d+) et pas (\d) : un statut sur 2 chiffres (ex: '10' = BL/CMR) doit rester
+// entier -- avec (\d) seul, statutNum('10') aurait renvoye '1' (mauvaise
+// colonne Kanban, mauvais badge) au lieu de '10'.
+function statutNum(s) { const m = String(s||'').match(/^(\d+)/); return m?m[1]:'1'; }
 function statutClass(n) {
+  if (String(n) === '10') return 'b10';
   return ['b1','b1','b2','b3','b4','b5','b6','b7','b8'][+n]||'b1';
 }
 function daysSince(dateStr) {
@@ -1873,6 +1882,17 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key==='s'){e.preventDefault();autoSave();toast('Sauvegarde lancée.');return;}
   if (e.ctrlKey && e.key==='z'){e.preventDefault();undoLast();return;}
   if (e.ctrlKey && e.key==='b'){e.preventDefault();var tgl=document.getElementById('tabbar-toggle');if(tgl)tgl.click();return;}
+  // Ctrl+1..9 / Ctrl+0 : déplace les dossiers cochés dans le Kanban vers la
+  // colonne N (0 = colonne 10, BL/CMR). Ignoré si on est en train de taper
+  // dans un champ -- sinon impossible de saisir un chiffre normalement.
+  if (e.ctrlKey && !e.altKey && /^[0-9]$/.test(e.key)) {
+    const tag = (e.target && e.target.tagName || '').toLowerCase();
+    const editable = tag==='input' || tag==='textarea' || tag==='select' || (e.target && e.target.isContentEditable);
+    if (editable) return;
+    e.preventDefault();
+    kabMoveSelectedTo(e.key==='0' ? 10 : Number(e.key));
+    return;
+  }
 });
 
 function onCCCheck(idx, checked) {
@@ -1888,7 +1908,8 @@ const K_CFG = [
   {n:2, title:'RDV à envoyer',   c:'--k2-c', bg:'--k2-bg', action:'ENVOYER →3'},
   {n:3, title:'Attente réponse', c:'--k3-c', bg:'--k3-bg', action:'VALIDER →5'},
   {n:4, title:'Pré-alerte S5',   c:'--k4-c', bg:'--k4-bg', action:'ALERTER →5'},
-  {n:5, title:'Prêt pour FC',    c:'--k5-c', bg:'--k5-bg', action:'FC →6'},
+  {n:5, title:'Prêt pour FC',    c:'--k5-c', bg:'--k5-bg', action:'FC →6/BL'},
+  {n:10, title:'BL / CMR',       c:'--k10-c', bg:'--k10-bg', action:'BL/CMR →7'},
   {n:6, title:'COMAT',           c:'--k6-c', bg:'--k6-bg', action:'COMAT →7'},
   {n:7, title:'NTO',             c:'--k7-c', bg:'--k7-bg', action:'NTO →8'},
   {n:9, title:'En attente',       c:'--k9-c', bg:'--k9-bg'},
@@ -1971,7 +1992,7 @@ function renderKanban() {
         <input type="checkbox" class="k-chk" ${sel?'checked':''} onclick="event.stopPropagation();kabToggle(event,'${fileE}')">
         <div class="k-file">${fileDisp}${isGrp?`<span class="tag-group" style="font-size:9px;margin-left:4px">GRP</span>`:''}</div>
         <div class="k-client">${trunc(r.client,20)}${getSiblingBadge(r, siblingsMap)}</div>
-        ${(k.n>=2&&k.n<=7||k.n===9) ? `<div class="k-meta">${daysBadge(days)}</div>` : ''}
+        ${(k.n>=2&&k.n<=7||k.n===9||k.n===10) ? `<div class="k-meta">${daysBadge(days)}</div>` : ''}
         ${fcRow}
       </div>`;
     }).join('');
@@ -2153,6 +2174,27 @@ function onKDrop(event, status) {
   toast(files.length + ' dossier(s) déplacé(s).');
 }
 
+// ── Déplacement clavier : Ctrl+1..9 / Ctrl+0 (= colonne 10, BL/CMR) déplace
+// les dossiers cochés dans le Kanban (g_kabSelected) directement vers la
+// colonne visée, sans repasser par les actions métier (FC/COMAT/NTO) --
+// même effet qu'un drag & drop groupé, cf. onKDrop() ci-dessus. ──
+function kabMoveSelectedTo(status) {
+  const files = Array.from(g_kabSelected);
+  if (!files.length) { toast('Coche au moins un dossier dans le Kanban avant d\'utiliser Ctrl+chiffre.'); return; }
+  pushUndo('Déplacement clavier → ' + statutLabel(String(status)));
+  files.forEach(f => {
+    const idx = g_master.findIndex(r => r.file===f);
+    if (idx < 0) return;
+    g_master[idx].statut = String(status);
+    stampRecord(g_master[idx]);
+    if (status>=2 && g_master[idx].cc!=='Cc') g_master[idx].cc='Cc';
+  });
+  cleanupCpData();
+  g_kabSelected.clear();
+  renderMaster(); renderKanban(); updateStats(); markDirty();
+  toast(files.length + ' dossier(s) déplacé(s) vers ' + statutLabel(String(status)) + '.');
+}
+
 function onCardDrop(event, targetFile) {
   event.preventDefault();
   if (!g_dragFile || g_dragFile === targetFile) { g_dragFile = null; return; }
@@ -2195,7 +2237,7 @@ function onCardDrop(event, targetFile) {
 }
 
 async function kanbanAction(from) {
-  const toMap = {2:3, 4:5, 5:6, 6:7, 7:8};
+  const toMap = {2:3, 4:5, 5:6, 6:7, 7:8, 10:7};
   const affected = g_master.filter(r => parseInt(statutNum(r.statut)) === from && (!g_operatorFilter || (r.operator||'') === g_operatorFilter));
 
   if (!affected.length) return toast('Aucun dossier dans cette colonne.');
@@ -2238,6 +2280,12 @@ async function kanbanAction(from) {
     // FC : ouvrir la modale de paramétrage dates/horaires
     fcOpenModal(affected);
     return; // fcLancer() gère la suite
+  } else if (from === 10) {
+    // BL/CMR : le vrai traitement (génération du BL) se fait dans l'onglet
+    // CMR/BL lui-même (le dossier y a déjà été ajouté automatiquement au
+    // passage FC, cf. fcLancer()) -- ce bouton ne fait qu'avancer le statut
+    // une fois le BL traité, sans repasser par AutoIt.
+    affected.forEach(r => { r.statut = String(to); });
   } else {
     toast(`Ordre envoyé à AutoIt pour ${affected.length} dossier(s)...`);
     const kanResult = await apiCall('action', { action: 'KANBAN_' + from, data: strData });
@@ -3151,7 +3199,7 @@ document.getElementById('btn-export-wf').onclick = () => {
   // Exporter uniquement les dossiers en cours (pas les terminés/archivés)
   const active = g_master.filter(r => {
     const s = parseInt(statutNum(r.statut));
-    return s >= 1 && s <= 9 && s !== 8; // Tout sauf "Terminé"
+    return s >= 1 && s <= 10 && s !== 8; // Tout sauf "Terminé" (10 = BL/CMR, inclus)
   });
   if (!active.length) return toast('Aucun dossier actif à exporter.');
 
@@ -3256,7 +3304,7 @@ function updateStats() {
   let total=visible.length, cc=0, fc=0, nto=0;
   visible.forEach(r=>{
     const sn=parseInt(statutNum(r.statut));
-    if (sn>=2&&sn<=7) cc++;
+    if ((sn>=2&&sn<=7)||sn===10) cc++;
     if (sn===5) fc++;
     if (sn===7) nto++;
   });
@@ -5413,7 +5461,7 @@ function fcRecalcDates() {
 }
 
 
-// ── FC : envoi séquentiel un par un (pause/stop via hotkeys F9/Echap dans au3) ──
+// ── FC : envoi séquentiel un par un (pause/stop via hotkeys Ctrl+F9/Ctrl+F10 dans au3) ──
 let _fcRunning = false;
 
 async function fcLancer() {
@@ -5455,7 +5503,18 @@ async function fcLancer() {
     done++;
     const parentSubs = (job.masterRef.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean);
     const allDone = parentSubs.every(sf => !jobs.slice(done).some(q => q.masterRef === job.masterRef));
-    if (allDone) job.masterRef.statut = '6';
+    if (allDone) {
+      // Routage post-FC selon transporteur : UPS/DGS → COMAT (6, inchangé) ;
+      // FLEX/EFDS/Groussard et tous les autres → colonne BL/CMR (10), avec
+      // le dossier ajouté directement à la queue de l'onglet CMR/BL (même
+      // mécanisme que le bouton "Kanban = 1 BL" de cet onglet).
+      const transpLower = (job.masterRef.transp || '').toLowerCase();
+      const isComatCarrier = transpLower.includes('ups') || transpLower.includes('dgs');
+      job.masterRef.statut = isComatCarrier ? '6' : '10';
+      if (!isComatCarrier && typeof window.cmrAddGroups === 'function') {
+        window.cmrAddGroups([parentSubs]);
+      }
+    }
     renderMaster(); renderKanban(); updateStats(); markDirty();
     _batchShowBar('FC', done, total);
     // Yield : laisse le navigateur respirer entre chaque requête
@@ -5482,7 +5541,7 @@ function _batchShowBar(label, done, total, currentFile) {
         <div style="width:${pct}%;height:100%;background:var(--blue);border-radius:4px;transition:width .3s"></div>
       </div>
       <span style="font-family:var(--mono);font-weight:600;min-width:90px">${done} / ${total}${cur}</span>
-      <span style="color:var(--text3);font-size:10px;white-space:nowrap">⏸ F9 = Pause &nbsp;|&nbsp; ⏭ Passer &nbsp;|&nbsp; ⏹ Echap = Stop &nbsp;— fenêtre AutoIt</span>
+      <span style="color:var(--text3);font-size:10px;white-space:nowrap">⏸ Ctrl+F9 = Pause &nbsp;|&nbsp; ⏭ Passer &nbsp;|&nbsp; ⏹ Ctrl+F10 = Stop &nbsp;— raccourcis globaux (fonctionnent même sans être sur Dispatch)</span>
     </div>`;
   bar.style.display = 'flex';
 }
@@ -5492,7 +5551,7 @@ function _batchHideBar() {
   if (bar) bar.remove();
 }
 
-// ── COMAT : envoi séquentiel un par un (pause/stop via hotkeys F9/Echap dans au3) ──
+// ── COMAT : envoi séquentiel un par un (pause/stop via hotkeys Ctrl+F9/Ctrl+F10 dans au3) ──
 let _comatRunning = false;
 
 async function comatStartBatch(affected, toStatus) {
@@ -5534,8 +5593,8 @@ async function comatStartBatch(affected, toStatus) {
 }
 
 
-const STATUT_LABELS = {'1':'Import','2':'CC','3':'Attente','4':'Pré-alerte','5':'Prêt FC','6':'COMAT','7':'NTO','8':'Terminé','9':'En attente'};
-const STATUT_COLORS = {'1':'var(--text3)','2':'var(--blue)','3':'var(--orange)','4':'var(--purple)','5':'#00c08b','6':'#ff6b35','7':'var(--teal)','8':'var(--green)','9':'#d4a017'};
+const STATUT_LABELS = {'1':'Import','2':'CC','3':'Attente','4':'Pré-alerte','5':'Prêt FC','6':'COMAT','7':'NTO','8':'Terminé','9':'En attente','10':'BL/CMR'};
+const STATUT_COLORS = {'1':'var(--text3)','2':'var(--blue)','3':'var(--orange)','4':'var(--purple)','5':'#00c08b','6':'#ff6b35','7':'var(--teal)','8':'var(--green)','9':'#d4a017','10':'var(--k10-c)'};
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  UNDO — historique de 5 actions                                          ║
@@ -5825,13 +5884,50 @@ function updateDashboard(){
     '<section class="cr-card"><h3>Alertes</h3><div class="cr-kpi">'+(m.late+m.noEmail+m.noContact+m.rdl)+'</div><div class="cr-sub">Retard / email / contact / RDL</div></section>'+
     '<section class="cr-card"><h3>NTO</h3><div class="cr-kpi">'+m.nto+'</div><div class="cr-sub">À traiter</div></section>'+
     '<section class="cr-card"><h3>Terminés</h3><div class="cr-kpi">'+m.done+'</div><div class="cr-sub">Statut 8</div></section>'+
-    '<section class="cr-card cr-full"><h3>Actions rapides</h3><div class="cr-actions"><button class="cr-alert-chip cr-warn" data-cr-open="both">🛠 Compléter infos manquantes <b>'+(m.noEmail+m.noContact)+'</b></button><button class="cr-alert-chip cr-danger" data-filter="late">⚠ Retard <b>'+m.late+'</b></button><button class="cr-alert-chip cr-danger" data-filter="rdl">📅 RDL dépassée <b>'+m.rdl+'</b></button><button class="cr-alert-chip cr-good" data-filter="groupable">🔗 Groupables <b>'+m.groupable+'</b></button></div></section>'+
-    '<section class="cr-card cr-wide"><h3>Répartition par statut</h3><div class="cr-status-grid">'+statusHtml+'</div></section>'+
-    '<section class="cr-card cr-wide"><h3>Charge opérateur</h3>'+barRows(m.byOp)+'</section>'+
+    '<section class="cr-card cr-full"><h3>Actions rapides</h3><div class="cr-actions"><button class="cr-alert-chip cr-warn" data-cr-open="both">🛠 Compléter infos manquantes <b>'+(m.noEmail+m.noContact)+'</b></button><button class="cr-alert-chip cr-danger" data-filter="late">⚠ Retard <b>'+m.late+'</b></button><button class="cr-alert-chip cr-danger" data-filter="rdl">📅 RDL dépassée <b>'+m.rdl+'</b></button><button class="cr-alert-chip cr-good" data-filter="groupable">🔗 Groupables <b>'+m.groupable+'</b></button></div>' +
+      '<div class="cr-actions" style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;flex-wrap:wrap">' +
+      '<input id="qa-bl-input" type="text" placeholder="N° dossier (J1A...)" style="flex:1;min-width:160px;height:32px;border:1px solid var(--border2);border-radius:8px;background:var(--surface2);color:var(--text);padding:0 10px;font-family:var(--mono);font-size:12px">' +
+      '<button class="btn btn-blue-out btn-sm" id="qa-bl-go">📄 BL rapide</button>' +
+      '<button class="btn btn-purple-out btn-sm" id="qa-bl-edoc-go">📄➜📤 BL + EDOC rapide</button>' +
+      '</div><div id="qa-bl-hint" class="cr-sub" style="margin-top:4px"></div></section>'+
     '<section class="cr-card cr-wide"><h3>Top transporteurs</h3>'+barRows(m.byTransp)+'</section>'+
     '<section class="cr-card cr-wide"><h3>Focus manquant</h3><div class="cr-sub">Clique sur Sans email / Sans contact pour compléter directement les informations.</div></section>';
 }
-function bindDashboardActions(){ document.addEventListener('click', function(e){ var open = e.target.closest('[data-cr-open]'); if(open){ openMissing(open.dataset.crOpen); return; } var f = e.target.closest('[data-filter]'); if(f){ crFilter = f.dataset.filter; switchTab('dispatch'); setTimeout(applyFilter,100); } }); }
+// ── Actions rapides Dashboard : BL (et BL+EDOC) directement depuis un
+// numéro de dossier, sans passer par l'onglet CMR/BL. S'appuie sur
+// window.cmrQuickBL / window.cmrQuickBLThenEdoc (exposés par l'onglet
+// CMR/BL, autre IIFE) -- si ce dossier est actuellement dans la colonne
+// Kanban BL/CMR (statut 10), il avance automatiquement vers NTO (7). ──
+function quickBLAdvanceKanban(files){
+  var moved = 0;
+  files.forEach(function(f){
+    var r = rows().find(function(x){ return (x.file||'').split(/\s*\+\s*/).map(function(s){return s.trim().toUpperCase();}).indexOf(f)!==-1; });
+    if(r && stat(r)==='10'){ r.statut='7'; try{ if(typeof stampRecord==='function') stampRecord(r); }catch(e){} moved++; }
+  });
+  if(moved){ try{ renderMaster(); renderKanban(); updateStats(); markDirty(); }catch(e){} }
+  return moved;
+}
+function quickBL(withEdoc){
+  var inp = id('qa-bl-input'), hint = id('qa-bl-hint');
+  var v = inp ? inp.value : '';
+  if(!v || !v.trim()){ if(hint) hint.textContent = 'Saisis un ou plusieurs numéros de dossier.'; return; }
+  if(typeof window.cmrQuickBL !== 'function'){ if(hint) hint.textContent = 'Onglet CMR/BL pas encore chargé -- réessaie dans un instant.'; return; }
+  var res = withEdoc ? window.cmrQuickBLThenEdoc(v) : window.cmrQuickBL(v);
+  if(!res.ok){ if(hint) hint.textContent = res.message; return; }
+  if(inp) inp.value = '';
+  var moved = quickBLAdvanceKanban(res.files);
+  if(hint) hint.textContent = (withEdoc ? 'BL + EDOC lancés' : 'BL lancé') + ' pour ' + res.files.join(', ') + (moved ? ' — '+moved+' dossier(s) Kanban avancé(s) vers NTO.' : '.');
+  toastMsg((withEdoc ? 'BL + EDOC' : 'BL') + ' rapide lancé pour ' + res.files.length + ' dossier(s).');
+}
+function bindDashboardActions(){
+  document.addEventListener('click', function(e){
+    var open = e.target.closest('[data-cr-open]'); if(open){ openMissing(open.dataset.crOpen); return; }
+    var f = e.target.closest('[data-filter]'); if(f){ crFilter = f.dataset.filter; switchTab('dispatch'); setTimeout(applyFilter,100); return; }
+    var bl = e.target.closest('#qa-bl-go'); if(bl){ quickBL(false); return; }
+    var ble = e.target.closest('#qa-bl-edoc-go'); if(ble){ quickBL(true); return; }
+  });
+  document.addEventListener('keydown', function(e){ if(e.key==='Enter' && e.target && e.target.id==='qa-bl-input'){ quickBL(false); } });
+}
 
 function injectDispatchFilter(){
   var pane = id('tab-dispatch'); if(!pane || id('cr-filter-panel')) return; var wrap = pane.querySelector('.table-wrap'); if(!wrap) return;
@@ -6160,13 +6256,12 @@ function saveQ(){try{localStorage.setItem(LSQ,JSON.stringify(queue))}catch(e){}}
 function loadQ(){try{var q=JSON.parse(localStorage.getItem(LSQ)||'[]');if(Array.isArray(q))queue=q}catch(e){queue=[]}}
 function jclean(s){return String(s||'').trim().toUpperCase()}
 function parseManual(txt){return String(txt||'').split(/\n\s*(?:---+)?\s*\n/g).map(function(block){return Array.from(new Set((block.match(/J[A-Z0-9]{6,}/gi)||[]).map(jclean)))}).filter(function(a){return a.length})}
-function selectedKanban(){try{if(typeof g_kabSelected!=='undefined'&&g_kabSelected&&g_kabSelected.size)return Array.from(g_kabSelected)}catch(e){}return Array.from(document.querySelectorAll('.k-item.k-selected,.k-item input.k-chk:checked')).map(function(el){var card=el.closest('.k-item')||el;return card.dataset.file}).filter(Boolean)}
 function addGroups(groups){groups.forEach(function(g){var files=Array.from(new Set((g||[]).map(jclean).filter(function(x){return /^J[A-Z0-9]{6,}$/.test(x)})));if(files.length)queue.push({files:files,status:'Prêt',checked:true})});saveQ();renderQueue()}
 function checkedQueue(){return queue.filter(function(q){return q.checked!==false})}
 function renderQueue(){var b=id('cmr4-qbody');if(!b)return;b.innerHTML=queue.length?queue.map(function(q,i){var cls=q.status==='OK'?'cmr4-ok':q.status==='KO'?'cmr4-ko':q.status==='En cours'?'cmr4-run':'';return '<tr data-q="'+i+'"><td><input type="checkbox" class="cmr4-qchk" '+(q.checked!==false?'checked':'')+'></td><td><b>BL '+(i+1)+'</b></td><td class="cmr4-file">'+esc(q.files.join(' / '))+'</td><td>'+q.files.length+'</td><td><span class="cmr4-status '+cls+'">'+esc(q.status||'Prêt')+'</span></td><td><button class="btn btn-ghost cmr4-mini" data-q-remove="'+i+'">Retirer</button></td></tr>'}).join(''):'<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:22px">Queue vide.</td></tr>'}
 function renderResults(){var b=id('cmr4-rbody');if(!b)return;b.innerHTML=results.length?results.map(function(r,i){var idx=(r.index!=null?r.index:i);var spBadge=r.spFallback?' <span style="color:var(--orange);font-weight:800;font-size:10px" title="Aucune regle specifique pour ce transporteur : mail envoye avec le modele generique Autre">⚠ Autre</span>':'';return '<tr data-r="'+idx+'"><td><input type="checkbox" class="cmr4-rchk"></td><td><b>#'+(i+1)+'</b></td><td><div class="cmr4-file">'+esc(r.bl||'')+'</div><div class="cmr4-sub">'+esc(r.company||'')+'</div></td><td>'+esc(r.carrier||'')+spBadge+'</td><td>'+esc(r.delivery||'')+'</td><td><button class="btn btn-ghost cmr4-mini" data-pdf="'+esc(r.pdf||'')+'">PDF</button> <button class="btn btn-ghost cmr4-mini" data-html="'+esc(r.html||'')+'">HTML</button> <button class="btn btn-blue-out cmr4-mini" data-edit="'+idx+'">Edit</button> <button class="btn btn-green-out cmr4-mini" data-rebuild="'+idx+'">Rebuild PDF</button> <button class="btn btn-blue-out cmr4-mini" data-mail="'+idx+'">Mail</button> <button class="btn btn-purple-out cmr4-mini" data-edoc="'+idx+'">EDOC</button></td></tr>'}).join(''):'<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:22px">Aucun résultat.</td></tr>'}
 function live(s){var el=id('cmr4-live');if(el)el.textContent=s}
-function ensureTab(){var tabbar=id('tabbar'),content=id('content');if(!tabbar||!content)return;var tab=document.querySelector('.tab[data-tab="cmr"]');if(!tab){tab=document.createElement('div');tab.className='tab';tab.dataset.tab='cmr';tab.textContent='📄 CMR / BL';var opt=document.querySelector('.tab[data-tab="options"]');tabbar.insertBefore(tab,opt||null)}var pane=id('tab-cmr');if(!pane){pane=document.createElement('div');pane.className='tabpane';pane.id='tab-cmr';content.appendChild(pane)}pane.innerHTML='<div class="cmr4-page"><section class="cmr4-card"><h3>CMR / BL complet</h3><div class="cmr4-sub">Colle tes J. Ligne vide ou --- = nouveau BL. Tu peux aussi envoyer la sélection Kanban.</div><textarea id="cmr4-manual" class="cmr4-text" placeholder="J1A0040247\nJ1A0040248\n\n---\nJ1A0040300"></textarea><div class="cmr4-actions"><button class="btn btn-success btn-sm" id="cmr4-add">Ajouter</button><button class="btn btn-blue-out btn-sm" id="cmr4-kanban-one">Kanban = 1 BL</button><button class="btn btn-blue-out btn-sm" id="cmr4-kanban-split">Kanban = BL séparés</button><button class="btn btn-ghost btn-sm" id="cmr4-q-all">Tout cocher</button><button class="btn btn-ghost btn-sm" id="cmr4-q-none">Tout décocher</button><button class="btn btn-danger btn-sm" id="cmr4-clear">Vider</button></div><div class="cmr4-actions" style="border-top:1px solid var(--border);padding-top:9px"><button class="btn btn-primary" id="cmr4-generate">Générer sélection</button><button class="btn btn-ghost" id="cmr4-status">Statut</button><button class="btn btn-orange-out" id="cmr4-force">Forcer output</button><button class="btn btn-danger" id="cmr4-stop">Stop queue</button></div><div class="cmr4-live" id="cmr4-live">Prêt.</div><div class="cmr4-table-wrap" style="margin-top:10px;max-height:320px"><table class="cmr4-table"><thead><tr><th></th><th>#</th><th>BL / dossiers</th><th>Nb</th><th>Statut</th><th>Action</th></tr></thead><tbody id="cmr4-qbody"></tbody></table></div></section><section class="cmr4-card"><div class="cmr4-toolbar"><div><h3>Résultats CMR</h3><div class="cmr4-sub">Actions unitaires ou groupées sur les lignes cochées.</div></div><div class="cmr4-actions"><button class="btn btn-ghost btn-sm" id="cmr4-refresh">Rafraîchir</button><button class="btn btn-blue-out btn-sm" id="cmr4-r-all">Tout cocher</button><button class="btn btn-ghost btn-sm" id="cmr4-r-none">Tout décocher</button><button class="btn btn-blue-out btn-sm" id="cmr4-mail-many">Mail sélection</button><button class="btn btn-purple-out btn-sm" id="cmr4-edoc-many">EDOC sélection</button><button class="btn btn-success btn-sm" id="cmr4-both-many">EDOC + mail</button><button class="btn btn-danger btn-sm" id="cmr4-results-clear">Clear</button></div></div><div class="cmr4-table-wrap"><table class="cmr4-table"><thead><tr><th></th><th>#</th><th>BL / société</th><th>SP</th><th>Livraison</th><th>Actions</th></tr></thead><tbody id="cmr4-rbody"></tbody></table></div></section></div>';bind();renderQueue();renderResults()}
+function ensureTab(){var tabbar=id('tabbar'),content=id('content');if(!tabbar||!content)return;var tab=document.querySelector('.tab[data-tab="cmr"]');if(!tab){tab=document.createElement('div');tab.className='tab';tab.dataset.tab='cmr';tab.textContent='📄 CMR / BL';var opt=document.querySelector('.tab[data-tab="options"]');tabbar.insertBefore(tab,opt||null)}var pane=id('tab-cmr');if(!pane){pane=document.createElement('div');pane.className='tabpane';pane.id='tab-cmr';content.appendChild(pane)}pane.innerHTML='<div class="cmr4-page"><section class="cmr4-card"><h3>CMR / BL complet</h3><div class="cmr4-sub">Colle tes J (un dossier par ligne). Ligne vide ou --- = nouveau BL. Les dossiers routés en BL/CMR depuis le Kanban (FC) arrivent ici automatiquement.</div><textarea id="cmr4-manual" class="cmr4-text" placeholder="J1A0040247\nJ1A0040248\n\n---\nJ1A0040300"></textarea><div class="cmr4-field" style="display:flex;align-items:center;gap:8px;margin:9px 0"><label style="font-size:11px;color:var(--text3);white-space:nowrap">Type de document (upload EDOC)</label><select id="cmr4-doctype" class="cr-edoc-select" style="height:28px;font-size:11.5px;flex:1"></select><input id="cmr4-doctype-new" type="text" placeholder="Ou saisir un nouveau type..." style="height:28px;font-size:11.5px;flex:1;border:1px solid var(--border2);border-radius:6px;background:var(--surface2);color:var(--text);padding:0 8px"><button class="btn btn-ghost btn-sm" id="cmr4-doctype-add">OK</button></div><div class="cmr4-actions"><button class="btn btn-success btn-sm" id="cmr4-add">Ajouter</button><button class="btn btn-ghost btn-sm" id="cmr4-q-all">Tout cocher</button><button class="btn btn-ghost btn-sm" id="cmr4-q-none">Tout décocher</button><button class="btn btn-danger btn-sm" id="cmr4-clear">Vider</button></div><div class="cmr4-actions" style="border-top:1px solid var(--border);padding-top:9px"><button class="btn btn-primary" id="cmr4-generate">Générer sélection</button><button class="btn btn-ghost" id="cmr4-status">Statut</button><button class="btn btn-orange-out" id="cmr4-force">Forcer output</button><button class="btn btn-danger" id="cmr4-stop">Stop queue</button></div><div class="cmr4-live" id="cmr4-live">Prêt.</div><div class="cmr4-table-wrap" style="margin-top:10px;max-height:320px"><table class="cmr4-table"><thead><tr><th></th><th>#</th><th>BL / dossiers</th><th>Nb</th><th>Statut</th><th>Action</th></tr></thead><tbody id="cmr4-qbody"></tbody></table></div></section><section class="cmr4-card"><div class="cmr4-toolbar"><div><h3>Résultats CMR</h3><div class="cmr4-sub">Actions unitaires ou groupées sur les lignes cochées.</div></div><div class="cmr4-actions"><button class="btn btn-ghost btn-sm" id="cmr4-refresh">Rafraîchir</button><button class="btn btn-blue-out btn-sm" id="cmr4-r-all">Tout cocher</button><button class="btn btn-ghost btn-sm" id="cmr4-r-none">Tout décocher</button><button class="btn btn-blue-out btn-sm" id="cmr4-mail-many">Mail sélection</button><button class="btn btn-purple-out btn-sm" id="cmr4-edoc-many">EDOC sélection</button><button class="btn btn-success btn-sm" id="cmr4-both-many">EDOC + mail</button><button class="btn btn-danger btn-sm" id="cmr4-results-clear">Clear</button></div></div><div class="cmr4-table-wrap"><table class="cmr4-table"><thead><tr><th></th><th>#</th><th>BL / société</th><th>SP</th><th>Livraison</th><th>Actions</th></tr></thead><tbody id="cmr4-rbody"></tbody></table></div></section></div>';bind();renderQueue();renderResults()}
 function switchToCmr(){document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active')});document.querySelectorAll('.tabpane').forEach(function(p){p.classList.remove('active')});var t=document.querySelector('.tab[data-tab="cmr"]'),p=id('tab-cmr');if(t)t.classList.add('active');if(p)p.classList.add('active');renderQueue();renderResults()}
 function selectedResultIndexes(){return Array.from(document.querySelectorAll('#cmr4-rbody tr[data-r]')).filter(function(tr){var c=tr.querySelector('.cmr4-rchk');return c&&c.checked}).map(function(tr){return tr.dataset.r})}
 function setResultChecks(v){document.querySelectorAll('.cmr4-rchk').forEach(function(c){c.checked=v})}
@@ -6175,11 +6270,67 @@ function poll(){apiAction({action:'CMR_STATUS'}).then(function(r){live((r&&r.mes
 function startPoll(){if(pollTimer)clearInterval(pollTimer);pollTimer=setInterval(poll,1500);poll()}
 function generate(){var qs=checkedQueue();if(!qs.length)return toastMsg('Aucun BL coché dans la queue CMR.');qs.forEach(function(q){q.status='En cours'});renderQueue();live('Génération CMR lancée...');var data=qs.map(function(q){return q.files.join(',')}).join('@@BL@@');apiAction({action:'CMR_GENERATE',data:data}).then(function(){startPoll()}).catch(function(e){live('Erreur génération : '+(e.message||e))})}
 function sendMany(action,label){var idx=selectedResultIndexes();if(!idx.length)return toastMsg('Aucun résultat coché.');live(label+' : '+idx.length+' ligne(s).');apiAction({action:action,indexes:idx.join('|')}).then(function(){toastMsg(label+' lancé.');poll()}).catch(function(e){live('Erreur '+label+' : '+(e.message||e))})}
-function bind(){id('cmr4-add').onclick=function(){addGroups(parseManual(id('cmr4-manual').value));id('cmr4-manual').value=''};id('cmr4-kanban-one').onclick=function(){var f=selectedKanban();if(!f.length)return toastMsg('Aucune carte Kanban sélectionnée.');addGroups([f])};id('cmr4-kanban-split').onclick=function(){var f=selectedKanban();if(!f.length)return toastMsg('Aucune carte Kanban sélectionnée.');addGroups(f.map(function(x){return [x]}))};id('cmr4-q-all').onclick=function(){setQueueChecks(true)};id('cmr4-q-none').onclick=function(){setQueueChecks(false)};id('cmr4-clear').onclick=function(){queue=[];saveQ();renderQueue()};id('cmr4-generate').onclick=generate;id('cmr4-status').onclick=poll;id('cmr4-refresh').onclick=poll;id('cmr4-force').onclick=function(){apiAction({action:'CMR_FORCE'});live('Forçage demandé.')};id('cmr4-stop').onclick=function(){apiAction({action:'CMR_STOP'});live('Stop demandé.')};id('cmr4-r-all').onclick=function(){setResultChecks(true)};id('cmr4-r-none').onclick=function(){setResultChecks(false)};id('cmr4-results-clear').onclick=function(){results=[];renderResults()};id('cmr4-mail-many').onclick=function(){sendMany('CMR_MAIL_MANY','Mails sélection')};id('cmr4-edoc-many').onclick=function(){sendMany('CMR_EDOC_MANY','EDOC sélection')};id('cmr4-both-many').onclick=function(){sendMany('CMR_EDOC_MAIL_MANY','EDOC + mail')}}
+function loadDocType(){
+  apiAction({action:'EDOC_DOCTYPE_LIST'}).then(function(r){
+    if(!r || r.status!=='ok') return;
+    var sel=id('cmr4-doctype'); if(!sel) return;
+    sel.innerHTML=(r.options||[]).map(function(o){return '<option'+(o===r.active?' selected':'')+'>'+esc(o)+'</option>'}).join('');
+  }).catch(function(){});
+}
+function setDocType(v){
+  v=String(v||'').trim(); if(!v) return;
+  apiAction({action:'EDOC_DOCTYPE_SET', value:v}).then(function(r){
+    if(r && r.status==='ok'){ toastMsg('Type de document EDOC : '+v); loadDocType(); }
+  }).catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
+}
+function bind(){id('cmr4-add').onclick=function(){addGroups(parseManual(id('cmr4-manual').value));id('cmr4-manual').value=''};id('cmr4-doctype').onchange=function(){setDocType(id('cmr4-doctype').value)};id('cmr4-doctype-add').onclick=function(){var v=id('cmr4-doctype-new').value;if(!v.trim())return;setDocType(v);id('cmr4-doctype-new').value=''};id('cmr4-doctype-new').addEventListener('keydown',function(e){if(e.key==='Enter')id('cmr4-doctype-add').click()});id('cmr4-q-all').onclick=function(){setQueueChecks(true)};id('cmr4-q-none').onclick=function(){setQueueChecks(false)};id('cmr4-clear').onclick=function(){queue=[];saveQ();renderQueue()};id('cmr4-generate').onclick=generate;id('cmr4-status').onclick=poll;id('cmr4-refresh').onclick=poll;id('cmr4-force').onclick=function(){apiAction({action:'CMR_FORCE'});live('Forçage demandé.')};id('cmr4-stop').onclick=function(){apiAction({action:'CMR_STOP'});live('Stop demandé.')};id('cmr4-r-all').onclick=function(){setResultChecks(true)};id('cmr4-r-none').onclick=function(){setResultChecks(false)};id('cmr4-results-clear').onclick=function(){results=[];renderResults()};id('cmr4-mail-many').onclick=function(){sendMany('CMR_MAIL_MANY','Mails sélection')};id('cmr4-edoc-many').onclick=function(){sendMany('CMR_EDOC_MANY','EDOC sélection')};id('cmr4-both-many').onclick=function(){sendMany('CMR_EDOC_MAIL_MANY','EDOC + mail')}}
 document.addEventListener('change',function(e){var q=e.target.closest('.cmr4-qchk');if(q){var tr=q.closest('tr[data-q]');if(tr){queue[Number(tr.dataset.q)].checked=q.checked;saveQ()}}});
 document.addEventListener('click',function(e){var tab=e.target.closest('.tab[data-tab="cmr"]');if(tab){e.preventDefault();e.stopPropagation();ensureTab();switchToCmr();return}var rm=e.target.closest('[data-q-remove]');if(rm){queue.splice(Number(rm.dataset.qRemove),1);saveQ();renderQueue();return}var p=e.target.closest('[data-pdf]');if(p)return void apiAction({action:'CMR_OPEN_PDF',path:p.dataset.pdf});var h=e.target.closest('[data-html]');if(h)return void apiAction({action:'CMR_OPEN_HTML',path:h.dataset.html});var ed=e.target.closest('[data-edit]');if(ed)return void apiAction({action:'CMR_EDIT',index:ed.dataset.edit});var rb=e.target.closest('[data-rebuild]');if(rb)return void apiAction({action:'CMR_REBUILD_PDF',index:rb.dataset.rebuild});var m=e.target.closest('[data-mail]');if(m)return void apiAction({action:'CMR_MAIL',index:m.dataset.mail});var d=e.target.closest('[data-edoc]');if(d)return void apiAction({action:'CMR_EDOC',index:d.dataset.edoc})},true);
-function init(){loadQ();ensureTab();renderQueue();renderResults()}
+function init(){loadQ();ensureTab();renderQueue();renderResults();loadDocType()}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){setTimeout(init,600)});else setTimeout(init,600);window.addEventListener('load',function(){setTimeout(init,1200)});
+window.cmrAddGroups = addGroups; // permet au routage Kanban (BL/CMR) d'ajouter directement a la queue sans passer par cet onglet
+
+// ── Actions rapides Dashboard : genere (et, en option, upload EDOC) un BL
+// directement depuis un numero de dossier brut, sans passer par cet
+// onglet -- expose sur window pour etre appelable depuis le Dashboard
+// (autre IIFE). Ne touche pas les cases a cocher des autres lignes deja
+// dans la queue (generateOne cible directement ce groupe, pas checkedQueue()). ──
+function extractFiles(rawText){
+  return Array.from(new Set((String(rawText||'').match(/J[A-Z0-9]{6,}/gi)||[]).map(jclean)));
+}
+function generateOne(files){
+  return apiAction({action:'CMR_GENERATE', data: files.join(',')}).then(function(){ startPoll(); });
+}
+window.cmrQuickBL = function(rawText){
+  var files = extractFiles(rawText);
+  if(!files.length) return {ok:false, message:'Aucun numéro de dossier reconnu.'};
+  addGroups([files]);
+  generateOne(files).catch(function(e){ toastMsg('Erreur génération : '+(e.message||e)); });
+  return {ok:true, files:files};
+};
+window.cmrQuickBLThenEdoc = function(rawText){
+  var files = extractFiles(rawText);
+  if(!files.length) return {ok:false, message:'Aucun numéro de dossier reconnu.'};
+  addGroups([files]);
+  generateOne(files).catch(function(e){ toastMsg('Erreur génération : '+(e.message||e)); });
+  var attempts=0;
+  var timer=setInterval(function(){
+    attempts++;
+    apiAction({action:'CMR_STATUS'}).then(function(r){
+      if(r && Array.isArray(r.results)){
+        results = r.results; renderResults();
+        var match = r.results.find(function(res){ return files.every(function(f){ return String(res.bl||'').toUpperCase().indexOf(f)!==-1; }); });
+        if(match){
+          clearInterval(timer);
+          apiAction({action:'CMR_EDOC', index:match.index}).then(function(){ toastMsg('EDOC lancé pour '+files.join(', ')); }).catch(function(e){ toastMsg('Erreur EDOC : '+(e.message||e)); });
+          return;
+        }
+      }
+      if(attempts>=40) clearInterval(timer); // ~1 min : le BL n'est pas apparu dans les resultats, on abandonne l'auto-EDOC
+    }).catch(function(){});
+  }, 1500);
+  return {ok:true, files:files};
+};
 })();
 </script>
 
@@ -6392,6 +6543,11 @@ window.addEventListener('load', function(){ setTimeout(init,1250); });
 .hpe-panel{display:none;flex-direction:column;gap:14px;}
 .hpe-panel.active{display:flex;}
 @media(max-width:640px){.hpe-row2,.hpe-row-btn{grid-template-columns:1fr}}
+/* Kanban : mail HPE recu non traite sur ce dossier -- animation + lien direct */
+@keyframes hpeKanbanPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,140,0,.55)}50%{box-shadow:0 0 0 5px rgba(255,140,0,0)}}
+.k-item{position:relative;}
+.k-item.hpe-kanban-pulse{animation:hpeKanbanPulse 1.7s ease-in-out infinite;}
+.hpe-kanban-link{position:absolute;top:5px;right:5px;font-size:13px;line-height:1;text-decoration:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35));z-index:2;}
 </style>
 <script id="hpe-ui-v1-script">
 (function(){
@@ -6434,22 +6590,60 @@ function extractRef(s){
   if(!m) return '';
   return m[1].toUpperCase() + m[2];
 }
+// ── Recherche rapide : accepte une référence INC/FXC/ARN, mais aussi
+// directement un numéro de dossier (J1A/H1A) ou un numéro de tracking --
+// dans ce cas pas d'extraction par regex possible, on passe la saisie brute
+// telle quelle à HPE_MAPPING_LOOKUP (qui sait déjà chercher dans les deux
+// sens côté AutoIt, cf. _HPE_MappingLookupJSON). ──
 function quickSearch(){
   var raw = id('hpe-quick-ref').value;
   var ref = extractRef(raw);
+  var lookupVal = ref || String(raw||'').trim().toUpperCase();
   var out = id('hpe-quick-result');
-  if(!ref){ out.innerHTML = '<span style="color:var(--orange)">Aucune référence INC/FXC/ARN reconnue.</span>'; return; }
-  var field = document.getElementById('hdr-file');
-  if(field){ field.value = 'R#'+ref; field.focus(); }
-  out.innerHTML = '<span style="color:var(--green);font-weight:700">✓ R#'+esc(ref)+'</span> prêt dans le champ de recherche en haut — clique LOG / NOTES / DIMS...';
-  apiAction({action:'HPE_MAPPING_LOOKUP', value:ref}).then(function(r){
+  if(!lookupVal){ out.innerHTML = '<span style="color:var(--orange)">Saisis une référence, un numéro de dossier (J/H) ou de tracking.</span>'; return; }
+  if(ref){
+    var field = document.getElementById('hdr-file');
+    if(field){ field.value = 'R#'+ref; field.focus(); }
+    out.innerHTML = '<span style="color:var(--green);font-weight:700">✓ R#'+esc(ref)+'</span> prêt dans le champ de recherche en haut — clique LOG / NOTES / DIMS...';
+  } else {
+    out.innerHTML = 'Recherche de <b>'+esc(lookupVal)+'</b>...';
+  }
+  apiAction({action:'HPE_MAPPING_LOOKUP', value:lookupVal}).then(function(r){
     if(r && r.status==='ok' && r.found){
-      out.innerHTML += '<br><span style="color:var(--blue)">↔ Lié au dossier <b>'+esc(r.dossier)+'</b></span> — <a href="#" id="hpe-quick-load-dossier" style="color:var(--blue)">charger son suivi</a>';
-      var link = id('hpe-quick-load-dossier');
-      if(link) link.onclick=function(ev){ ev.preventDefault(); id('hpe-suivi-dossier').value=r.dossier; loadDossier(); };
+      out.innerHTML = (ref ? out.innerHTML : ('<span style="color:var(--blue)">Trouvé.</span>')) +
+        '<br><span style="color:var(--blue)">↔ Lié au dossier <b>'+esc(r.dossier)+'</b></span> — ' +
+        '<a href="#" data-qs-suivi="'+esc(r.dossier)+'" style="color:var(--blue)">📁 Suivi HPE</a> · ' +
+        '<a href="#" data-qs-kanban="'+esc(r.dossier)+'" style="color:var(--blue)">🧭 Voir dans le Kanban</a>';
+    } else if(!ref){
+      out.innerHTML = '<span style="color:var(--orange)">Aucun dossier ni référence trouvé pour "'+esc(lookupVal)+'".</span>';
     }
   }).catch(function(){});
 }
+function jumpToKanban(dossier){
+  var d = String(dossier||'').trim().toUpperCase();
+  var tab = document.querySelector('.tab[data-tab="workflow"]');
+  if(tab) tab.click();
+  setTimeout(function(){
+    var cards = document.querySelectorAll('.k-item[data-file]');
+    var card = Array.prototype.find.call(cards, function(el){
+      return el.dataset.file.split(' + ').map(function(p){ return p.trim().toUpperCase(); }).indexOf(d)!==-1;
+    });
+    if(card){
+      card.scrollIntoView({behavior:'smooth', block:'center'});
+      card.style.transition='box-shadow .3s';
+      card.style.boxShadow='0 0 0 3px var(--blue)';
+      setTimeout(function(){ card.style.boxShadow=''; }, 2500);
+    } else {
+      toastMsg('Dossier non visible dans le Kanban actuel (filtré par opérateur, ou statut hors tableau).');
+    }
+  }, 350);
+}
+document.addEventListener('click', function(e){
+  var s=e.target.closest('[data-qs-suivi]');
+  if(s){ e.preventDefault(); id('hpe-suivi-dossier').value=s.dataset.qsSuivi; switchHpePanel('workflows'); loadDossier(); return; }
+  var k=e.target.closest('[data-qs-kanban]');
+  if(k){ e.preventDefault(); jumpToKanban(k.dataset.qsKanban); }
+});
 
 function renderMapping(){
   var b=id('hpe-map-body'); if(!b) return;
@@ -6509,6 +6703,43 @@ function wrapMasterRender(){
   try{ renderMaster=wrapped; }catch(e){}
 }
 
+// ── Kanban : animation + lien mail direct sur les cartes dont le dossier a
+// reçu un nouveau mail HPE (alerte active, non ignorée). Meme principe que
+// markMasterRows() ci-dessus, applique aux cartes .k-item (attribut
+// data-file, y compris les cartes groupées "DOSSIER1 + DOSSIER2"). ──
+function markKanbanCards(){
+  var byDossier={};
+  lastAlerts.forEach(function(a){
+    if(isDismissed(a) || a.sent) return; // seulement les mails RECUS, pas encore ignorés
+    var key=String(a.dossier||'').trim().toUpperCase();
+    if(!byDossier[key] || String(a.date) > String(byDossier[key].date)) byDossier[key]=a;
+  });
+  document.querySelectorAll('.k-item[data-file]').forEach(function(card){
+    var parts=String(card.dataset.file||'').split(' + ');
+    var hit=null;
+    parts.some(function(p){ var k=p.trim().toUpperCase(); if(byDossier[k]){ hit=byDossier[k]; return true; } return false; });
+    var link=card.querySelector('.hpe-kanban-link');
+    if(hit){
+      card.classList.add('hpe-kanban-pulse');
+      if(!link){ link=document.createElement('a'); link.className='hpe-kanban-link'; link.href='#'; card.appendChild(link); }
+      link.title='Nouveau mail HPE reçu — '+String(hit.subject||'').slice(0,90);
+      link.textContent='✉️';
+      link.onclick=function(ev){ ev.preventDefault(); ev.stopPropagation(); if(hit.entryId) openHpeMail(hit.entryId); };
+    } else {
+      card.classList.remove('hpe-kanban-pulse');
+      if(link) link.remove();
+    }
+  });
+}
+function wrapKanbanRender(){
+  if(typeof window.renderKanban!=='function' || window.renderKanban.__hpe) return;
+  var orig=window.renderKanban;
+  var wrapped=function(){ var r=orig.apply(this, arguments); setTimeout(markKanbanCards, 0); return r; };
+  wrapped.__hpe=true;
+  window.renderKanban=wrapped;
+  try{ renderKanban=wrapped; }catch(e){}
+}
+
 function renderSuiviList(){
   var b=id('hpe-suivi-body'); if(!b) return;
   var badge=id('hpe-suivi-badge'); if(badge) badge.textContent=suivi.length;
@@ -6544,7 +6775,47 @@ function loadDossier(){
     notes = (r && r.notes) || [];
     renderNotes();
   }).catch(function(e){ toastMsg('Erreur notes : '+(e.message||e)); });
+  loadTimeline(dossier);
 }
+
+// ── Chronologie d'un dossier : fusion mails + notes, triee par date. Les
+// notes utilisent le format "JJ/MM/AAAA hh:mm:ss" (_NowText cote AutoIt) et
+// les mails "AAAA/MM/JJ hh:mm:ss" (_FmtDate) -- parseHpeDate gere les deux,
+// un tri texte brut donnerait un ordre incorrect entre les deux sources. ──
+function parseHpeDate(s){
+  s = String(s||'').trim();
+  var m = s.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})[ T]?(\d{1,2})?:?(\d{1,2})?:?(\d{1,2})?/);
+  if(m) return new Date(+m[1], (+m[2])-1, +m[3], +(m[4]||0), +(m[5]||0), +(m[6]||0)).getTime();
+  var m2 = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})[ T]?(\d{1,2})?:?(\d{1,2})?:?(\d{1,2})?/);
+  if(m2) return new Date(+m2[3], (+m2[2])-1, +m2[1], +(m2[4]||0), +(m2[5]||0), +(m2[6]||0)).getTime();
+  return 0;
+}
+function renderTimeline(events, warning){
+  var b=id('hpe-timeline-list'), hint=id('hpe-timeline-hint');
+  if(!b) return;
+  if(hint) hint.innerHTML = warning ? '<span style="color:var(--orange)">Outlook indisponible pour le moment — notes uniquement.</span>' : '';
+  var sorted = (events||[]).slice().sort(function(a,c){ return parseHpeDate(c.date)-parseHpeDate(a.date); });
+  if(!sorted.length){ b.innerHTML='<div class="hpe-empty">Aucun échange enregistré.</div>'; return; }
+  var lastMail = sorted.find(function(e){ return e.type==='mail'; });
+  var lastLine = lastMail ? ('<div class="hpe-hint" style="margin-bottom:8px">Dernier message : <b style="color:'+(lastMail.direction==='envoyé'?'var(--purple)':'var(--teal)')+'">'+esc(lastMail.direction)+'</b> — '+esc(lastMail.who)+' ('+esc(lastMail.date)+')</div>') : '';
+  b.innerHTML = lastLine + sorted.map(function(e){
+    if(e.type==='note') return '<div class="hpe-note" style="border-left:3px solid var(--purple)"><div class="hpe-note-meta">📝 '+esc(e.date)+' — '+esc(e.who)+'</div>'+esc(e.text)+'</div>';
+    var dirColor = e.direction==='envoyé' ? 'var(--purple)' : 'var(--teal)';
+    var dirIcon = e.direction==='envoyé' ? '↗' : '↙';
+    return '<div class="hpe-note" style="border-left:3px solid '+dirColor+'"><div class="hpe-note-meta">'+dirIcon+' '+esc(e.date)+' — '+esc(e.who)+'</div>'+esc(e.text)+
+      (e.entryId?'<div style="margin-top:6px"><button class="btn btn-blue-out hpe-mini" data-tl-open="'+esc(e.entryId)+'" style="height:20px;padding:0 7px;font-size:9.5px">✉ Ouvrir</button></div>':'')+'</div>';
+  }).join('');
+}
+function loadTimeline(dossier){
+  var b=id('hpe-timeline-list'); if(b) b.innerHTML='<div class="hpe-empty">Chargement...</div>';
+  apiAction({action:'HPE_DOSSIER_TIMELINE', dossier:dossier, mailbox:getMailbox()}).then(function(r){
+    if(!r || r.status!=='ok'){ if(b) b.innerHTML='<div class="hpe-empty">Erreur de chargement.</div>'; return; }
+    renderTimeline(r.events||[], r.mailWarning);
+  }).catch(function(e){ if(b) b.innerHTML='<div class="hpe-empty">Erreur : '+esc(e.message||e)+'</div>'; });
+}
+document.addEventListener('click', function(e){
+  var b=e.target.closest('[data-tl-open]'); if(b) openHpeMail(b.dataset.tlOpen);
+});
 function saveSuivi(){
   if(!curDossier){ toastMsg('Charge d\'abord un dossier.'); return; }
   apiAction({action:'HPE_SUIVI_SAVE', dossier:curDossier, owner:id('hpe-suivi-owner').value, status:id('hpe-suivi-status').value}).then(function(r){
@@ -6590,8 +6861,10 @@ function logRefInEtms(ref){
   if(typeof sendActionHeader === 'function') sendActionHeader('ETMS_CMD', 'LOG');
 }
 
-// ── Popup de notification (nouveau mail sur une référence déjà liée) ──
+// ── Popup de notification (nouveau mail sur une référence déjà liée, OU
+// nouvelle référence HPE jamais vue encore sans dossier lié) ──
 var seenAlertKeys = null; // null tant qu'aucun scan n'a encore tourné (pas de notif au tout 1er scan)
+var seenUnmappedKeys = null;
 function ensureNotifWrap(){
   var w=id('hpe-notif-wrap');
   if(!w){ w=document.createElement('div'); w.id='hpe-notif-wrap';
@@ -6610,8 +6883,21 @@ function notifyNewMail(a){
   w.appendChild(card);
   setTimeout(function(){ card.style.opacity='0'; setTimeout(function(){ card.remove(); }, 300); }, 9000);
 }
+function notifyNewUnmapped(a){
+  var w=ensureNotifWrap();
+  var card=document.createElement('div');
+  card.style.cssText='background:var(--surface);border:1px solid var(--red);border-left:4px solid var(--red);border-radius:10px;box-shadow:var(--shadow-lg);padding:10px 14px;font-size:12px;color:var(--text);width:290px;line-height:1.5;transition:opacity .3s;';
+  card.innerHTML='🆕 <b style="color:var(--red)">Nouvelle référence HPE non liée</b><br>Référence : <b>'+esc(a.reference)+'</b><br>Objet : '+esc(String(a.subject||'').slice(0,70))+
+    '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">'+
+    (a.entryId ? '<button class="btn btn-blue-out hpe-mini" data-notif-open="'+esc(a.entryId)+'" style="height:22px;padding:0 8px;font-size:10px">✉ Ouvrir</button>' : '')+
+    '<button class="btn btn-orange-out hpe-mini" data-notif-goto-import="1" style="height:22px;padding:0 8px;font-size:10px">📥 Lier</button>' +
+    '</div>';
+  w.appendChild(card);
+  setTimeout(function(){ card.style.opacity='0'; setTimeout(function(){ card.remove(); }, 300); }, 9000);
+}
 document.addEventListener('click', function(e){
   var b=e.target.closest('[data-notif-open]'); if(b) openHpeMail(b.dataset.notifOpen);
+  var g=e.target.closest('[data-notif-goto-import]'); if(g){ var t=document.querySelector('.tab[data-tab="hpe"]'); if(t) t.click(); setTimeout(function(){ switchHpePanel('nouveaux'); }, 200); }
 });
 
 var LS_DISMISS_UNMAPPED = 'dispatch_hpe_unmapped_dismissed';
@@ -6683,11 +6969,16 @@ function scanMail(){
       lastAlerts.forEach(function(a){ if(!seenAlertKeys.has(dismissKey(a))) notifyNewMail(a); });
     }
     seenAlertKeys = new Set(lastAlerts.map(dismissKey));
+    if(seenUnmappedKeys){
+      lastUnmapped.forEach(function(a){ if(!seenUnmappedKeys.has(dismissKey(a))) notifyNewUnmapped(a); });
+    }
+    seenUnmappedKeys = new Set(lastUnmapped.map(dismissKey));
     renderAlerts(lastAlerts);
     renderUnmapped(lastUnmapped);
     renderDashboardBanner(lastAlerts);
     renderDashPreview();
     markMasterRows();
+    markKanbanCards();
   }).catch(function(e){ if(st) st.textContent='Erreur : '+(e.message||e); });
 }
 
@@ -6765,6 +7056,7 @@ function ensureTab(){
       '<div class="hpe-subnav-btn active" data-hpe-panel="nouveaux">📥 Nouveaux mails <span id="hpe-unmapped-badge" class="hpe-badge">0</span></div>' +
       '<div class="hpe-subnav-btn" data-hpe-panel="workflows">🧭 Workflows <span id="hpe-alerts-badge" class="hpe-badge">0</span></div>' +
       '<div class="hpe-subnav-btn" data-hpe-panel="recherche">🔎 Recherche</div>' +
+      '<div class="hpe-subnav-btn" data-hpe-panel="import">📋 Import</div>' +
       '</div>' +
 
       '<div class="hpe-panel active" id="hpe-panel-nouveaux">' +
@@ -6799,6 +7091,9 @@ function ensureTab(){
       '<div class="hpe-row-btn"><div class="hpe-field" style="margin-bottom:0"><input id="hpe-suivi-dossier" type="text" placeholder="N° Dossier (J1A/H1A)"></div><button class="btn btn-blue-out btn-sm" id="hpe-suivi-load">Charger</button></div>' +
       '<div class="hpe-row2" style="margin-top:10px"><div class="hpe-field" style="margin-bottom:0"><label>Propriétaire</label><input id="hpe-suivi-owner" type="text"></div><div class="hpe-field" style="margin-bottom:0"><label>Statut</label><input id="hpe-suivi-status" type="text" placeholder="En cours, Bloqué, Terminé..."></div></div>' +
       '<div class="hpe-actions"><button class="btn btn-primary btn-sm" id="hpe-suivi-save">💾 Enregistrer</button></div>' +
+      '<h4>🕒 Chronologie <span style="font-weight:400;color:var(--text3);font-size:10.5px">(mails + notes, 60 derniers jours)</span></h4>' +
+      '<div id="hpe-timeline-hint" class="hpe-hint"></div>' +
+      '<div id="hpe-timeline-list"></div>' +
       '<h4>📝 Notes</h4>' +
       '<div id="hpe-notes-list"></div>' +
       '<div class="hpe-field"><textarea id="hpe-note-text" placeholder="Nouvelle note..."></textarea></div>' +
@@ -6814,6 +7109,18 @@ function ensureTab(){
       '<div class="hpe-sub">Colle une référence HPE (INC/FXC/ARN...) ou un numéro de dossier (J1A/H1A) : prépare "R#..." dans le champ de recherche E.TMS en haut de l\'écran et affiche le lien s\'il existe.</div>' +
       '<div class="hpe-row-btn"><div class="hpe-field" style="margin-bottom:0"><input id="hpe-quick-ref" type="text" placeholder="Ex: FXC123456 ou un texte contenant la référence"></div><button class="btn btn-blue-out btn-sm" id="hpe-quick-go">Préparer</button></div>' +
       '<div id="hpe-quick-result" class="hpe-hint"></div>' +
+      '</section>' +
+      '</div>' +
+
+      '<div class="hpe-panel" id="hpe-panel-import">' +
+      '<section class="hpe-card hpe-card--mapping">' +
+      '<div class="hpe-card-head"><div class="hpe-card-title">📋 <span>Import du rapport HPE (File / SHPMNT_REF / SP_TRACKING_NUM)</span></div></div>' +
+      '<div class="hpe-sub">Colle directement le tableau copié depuis l\'outil interne (Ctrl+V dans le champ ci-dessous) ou choisis un fichier .xlsx/.csv exporté. La colonne "File" doit contenir la référence client (FXC/ARN/INC...), "SHPMNT_REF" le numéro de dossier (J1A/H1A) et "SP_TRACKING_NUM" le numéro de tracking transporteur — les dossiers sont créés/liés automatiquement.</div>' +
+      '<div class="hpe-field"><label>Fichier (.xlsx, .xls, .csv)</label><input id="hpe-import-file" type="file" accept=".xlsx,.xls,.csv"></div>' +
+      '<div class="hpe-field"><label>...ou coller le tableau (Ctrl+V)</label><textarea id="hpe-import-text" placeholder="File\tSHPMNT_REF\tSP_TRACKING_NUM&#10;R#FXC2446003\tJ1A0051078\t2773729" style="min-height:110px"></textarea></div>' +
+      '<div class="hpe-actions"><button class="btn btn-blue-out btn-sm" id="hpe-import-preview">🔎 Analyser</button><button class="btn btn-success btn-sm" id="hpe-import-run" disabled>✓ Importer les liens</button></div>' +
+      '<div id="hpe-import-hint" class="hpe-hint"></div>' +
+      '<div class="hpe-table-wrap" id="hpe-import-preview-wrap" style="display:none"><table class="hpe-table"><thead><tr><th>File</th><th>Référence détectée</th><th>SHPMNT_REF (dossier)</th><th>SP_TRACKING_NUM</th></tr></thead><tbody id="hpe-import-preview-body"></tbody></table></div>' +
       '</section>' +
       '</div>' +
 
@@ -6834,7 +7141,7 @@ function ensureTab(){
       var dismissBtn=e.target.closest('[data-alert-dismiss]');
       if(dismissBtn){
         var a=lastAlerts.find(function(x){ return x.reference===card.dataset.alertRef && x.date===card.dataset.alertDate; });
-        if(a){ dismissAlert(a); renderAlerts(lastAlerts); renderDashboardBanner(lastAlerts); }
+        if(a){ dismissAlert(a); renderAlerts(lastAlerts); renderDashboardBanner(lastAlerts); markKanbanCards(); }
       }
     });
     id('hpe-unmapped-list').addEventListener('click', function(e){
@@ -6892,7 +7199,106 @@ function ensureTab(){
       id('hpe-suivi-dossier').value = tr.dataset.dossier;
       loadDossier();
     });
+    id('hpe-import-preview').onclick=previewImport;
+    id('hpe-import-run').onclick=runImport;
+    id('hpe-import-file').addEventListener('change', function(){ id('hpe-import-hint').textContent=''; });
   }
+}
+
+// ── Import en masse (paste/upload) : File / SHPMNT_REF / SP_TRACKING_NUM ──
+// (colonnes du rapport exporte par l'outil interne HPE, cf. panneau "Import")
+var importRowsParsed = [];
+function extractRefForImport(s){
+  var ref = extractRef(s);
+  if(ref) return ref;
+  return String(s||'').trim().toUpperCase().replace(/^R#/i, '');
+}
+function textToAOA(text){
+  var lines = String(text||'').split(/\r\n|\r|\n/).filter(function(l){ return l.trim()!==''; });
+  return lines.map(function(l){ return l.indexOf('\t')!==-1 ? l.split('\t') : l.split(','); });
+}
+function parseImportAOA(aoa){
+  if(!aoa || !aoa.length) return {rows:[], error:'Tableau vide.'};
+  function norm(h){ return String(h==null?'':h).toUpperCase().replace(/[^A-Z0-9_]/g,''); }
+  var header = aoa[0].map(norm);
+  function findCol(patterns){
+    for(var i=0;i<header.length;i++){ for(var p=0;p<patterns.length;p++){ if(header[i].indexOf(patterns[p])!==-1) return i; } }
+    return -1;
+  }
+  var fileIdx = findCol(['FILE']);
+  var shpIdx = findCol(['SHPMNT','SHPMT','SHIPMENT']);
+  var trkIdx = findCol(['TRACKING']);
+  if(fileIdx<0 || shpIdx<0) return {rows:[], error:'Colonnes "File" et "SHPMNT_REF" introuvables dans l\'en-tête (1re ligne du tableau).'};
+  var rows=[];
+  for(var i=1;i<aoa.length;i++){
+    var r=aoa[i]; if(!r) continue;
+    var file=String(r[fileIdx]==null?'':r[fileIdx]).trim();
+    var shp=String(r[shpIdx]==null?'':r[shpIdx]).trim();
+    var trk = trkIdx>=0 ? String(r[trkIdx]==null?'':r[trkIdx]).trim() : '';
+    if(!file && !shp) continue;
+    rows.push({file:file, ref:extractRefForImport(file), shp:shp.toUpperCase(), trk:trk.toUpperCase()});
+  }
+  return {rows:rows, error:rows.length?'':'Aucune ligne de données trouvée sous l\'en-tête.'};
+}
+function renderImportPreview(rows){
+  var wrap=id('hpe-import-preview-wrap'), body=id('hpe-import-preview-body');
+  if(!wrap || !body) return;
+  if(!rows.length){ wrap.style.display='none'; body.innerHTML=''; return; }
+  wrap.style.display='block';
+  body.innerHTML = rows.map(function(r){
+    var missing = (!r.ref || !r.shp);
+    return '<tr'+(missing?' style="opacity:.5"':'')+'><td>'+esc(r.file)+'</td><td><b>'+esc(r.ref||'—')+'</b></td><td>'+esc(r.shp||'—')+'</td><td>'+esc(r.trk||'—')+'</td></tr>';
+  }).join('');
+}
+function finishImportPreview(res){
+  var hint=id('hpe-import-hint');
+  if(res.error){ hint.innerHTML='<span style="color:var(--red)">'+esc(res.error)+'</span>'; importRowsParsed=[]; renderImportPreview([]); id('hpe-import-run').disabled=true; return; }
+  importRowsParsed=res.rows;
+  var missing=res.rows.filter(function(r){ return !r.ref || !r.shp; }).length;
+  hint.innerHTML='<span style="color:var(--green)">'+res.rows.length+' ligne(s) détectée(s)'+(missing?' — <span style="color:var(--orange)">'+missing+' seront ignorée(s) (référence ou dossier manquant)</span>':'')+'.</span>';
+  renderImportPreview(res.rows);
+  id('hpe-import-run').disabled = res.rows.length===0;
+}
+function previewImport(){
+  var fileInput=id('hpe-import-file');
+  var hint=id('hpe-import-hint');
+  id('hpe-import-run').disabled=true;
+  importRowsParsed=[];
+  if(fileInput && fileInput.files && fileInput.files.length){
+    var f=fileInput.files[0];
+    var reader=new FileReader();
+    reader.onload=function(ev){
+      try{
+        var wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+        var aoa=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+        finishImportPreview(parseImportAOA(aoa));
+      }catch(e){ hint.innerHTML='<span style="color:var(--red)">Erreur de lecture du fichier : '+esc(e.message||e)+'</span>'; }
+    };
+    reader.readAsArrayBuffer(f);
+    return;
+  }
+  var text=id('hpe-import-text').value;
+  if(!text.trim()){ hint.innerHTML='<span style="color:var(--orange)">Colle un tableau ou choisis un fichier.</span>'; return; }
+  finishImportPreview(parseImportAOA(textToAOA(text)));
+}
+function runImport(){
+  if(!importRowsParsed.length){ toastMsg('Analyse le tableau d\'abord (bouton "Analyser").'); return; }
+  var payload = importRowsParsed.map(function(r){
+    return [r.file, r.shp, r.trk].map(function(v){ return String(v||'').replace(/[|;]/g,' '); }).join(';');
+  }).join('|');
+  var hint=id('hpe-import-hint');
+  hint.textContent='Import en cours...';
+  apiAction({action:'HPE_MAPPING_IMPORT', rows: payload}).then(function(r){
+    if(!r || r.status!=='ok'){ hint.innerHTML='<span style="color:var(--red)">Erreur : '+esc((r&&r.message)||'inconnue')+'</span>'; return; }
+    hint.innerHTML='<span style="color:var(--green);font-weight:700">✓ '+r.added+' lien(s) créé(s)/mis à jour'+(r.skipped?', '+r.skipped+' ligne(s) ignorée(s)':'')+'.</span>';
+    toastMsg(r.added+' dossier(s) HPE lié(s).');
+    importRowsParsed=[];
+    id('hpe-import-run').disabled=true;
+    renderImportPreview([]);
+    id('hpe-import-text').value='';
+    if(id('hpe-import-file')) id('hpe-import-file').value='';
+    loadMapping();
+  }).catch(function(e){ hint.innerHTML='<span style="color:var(--red)">Erreur : '+esc(e.message||e)+'</span>'; });
 }
 
 function switchToHpe(){
@@ -6916,10 +7322,156 @@ document.addEventListener('click', function(e){
 }, true);
 
 window.hpeScanMail = scanMail; // permet au bouton "Scanner" de la carte Dashboard de declencher un vrai scan sans naviguer vers l'onglet HPE
-function init(){ ensureTab(); wrapMasterRender(); loadMapping(); scanMail(); setInterval(scanMail, 300000); setTimeout(renderDashPreview, 2000); setTimeout(renderDashPreview, 5000); }
+window.hpeGetState = function(){ return { lastAlerts: lastAlerts, lastUnmapped: lastUnmapped, suivi: suivi, mapping: mapping }; }; // lu par HPE_DASHBOARD_WIDGET_V1 (autre IIFE, meme page)
+function init(){ ensureTab(); wrapMasterRender(); wrapKanbanRender(); loadMapping(); scanMail(); setInterval(scanMail, 300000); setTimeout(renderDashPreview, 2000); setTimeout(renderDashPreview, 5000); }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(init,700); });
 else setTimeout(init,700);
 window.addEventListener('load', function(){ setTimeout(init,1300); });
+})();
+</script>
+
+<!-- ============================================================
+     HPE_DASHBOARD_WIDGET_V1 - encart Dashboard "Mon suivi HPE" filtre par
+     operateur connecte (meme identite que le filtre "operator-filter" du
+     tableau principal), avec dernier expediteur/sens du dernier mail par
+     dossier, acces direct a la chronologie (onglet HPE) et creation d'un
+     mail HPE. Bloc independant de HPE_UI_V1 : recupere lastAlerts via
+     window.hpeGetState() (expose par HPE_UI_V1) pour eviter de relancer un
+     2e scan Outlook rien que pour ce widget.
+     ============================================================ -->
+<style id="hpe-dashboard-widget-v1-style">
+.hpe-mw-toggle{display:flex;gap:6px;}
+.hpe-mw-toggle .btn.active{color:var(--blue);background:var(--blue-bg);border-color:var(--blue);}
+.hpe-mw-row{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;padding:9px 10px;border:1px solid var(--border);border-radius:10px;margin-bottom:7px;font-size:12px;background:var(--surface2);}
+.hpe-mw-dossier{font-weight:800;color:var(--text);}
+.hpe-mw-last{font-size:11px;color:var(--text3);}
+@media(max-width:760px){.hpe-mw-row{grid-template-columns:1fr;}}
+</style>
+<script id="hpe-dashboard-widget-v1-script">
+(function(){
+'use strict';
+function id(x){return document.getElementById(x)}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function toastMsg(s){if(typeof toast==='function')toast(s);else console.log(s)}
+function apiAction(payload){return fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json().catch(function(){return {status:r.ok?'ok':'error'}});});}
+function getOperator(){ try{ return localStorage.getItem('dispatch_operator')||''; }catch(e){ return ''; } }
+function getScope(){ try{ return localStorage.getItem('dispatch_hpe_mw_scope')||'mine'; }catch(e){ return 'mine'; } }
+function setScope(v){ try{ localStorage.setItem('dispatch_hpe_mw_scope', v); }catch(e){} }
+function getMailbox(){ try{ return localStorage.getItem('dispatch_hpe_mailbox')||'CDG-HPE-Transcon@expeditors.com'; }catch(e){ return 'CDG-HPE-Transcon@expeditors.com'; } }
+
+var mwSuivi=[];
+
+function statusColorMw(s){
+  var t=String(s||'').toLowerCase();
+  if(!t) return {c:'var(--text3)',bg:'var(--surface2)'};
+  if(/bloq|probl|urgent|litige/.test(t)) return {c:'var(--red)',bg:'var(--red-bg)'};
+  if(/cours|attente|pending/.test(t)) return {c:'var(--orange)',bg:'var(--orange-bg)'};
+  if(/termin|clotur|resolu|done|ok/.test(t)) return {c:'var(--green)',bg:'var(--green-bg)'};
+  return {c:'var(--blue)',bg:'var(--blue-bg)'};
+}
+
+function ensureWidget(){
+  var dash=document.querySelector('#tab-dashboard .cr-page'); if(!dash) return null;
+  var el=id('hpe-mywidget');
+  if(!el){
+    el=document.createElement('section'); el.id='hpe-mywidget'; el.className='hpe-card hpe-card--suivi';
+    el.style.cssText='margin-bottom:10px;';
+    var banner=id('hpe-dash-banner');
+    if(banner) banner.insertAdjacentElement('afterend', el); else dash.insertBefore(el, dash.firstChild);
+  }
+  return el;
+}
+
+function renderWidget(){
+  var el=ensureWidget(); if(!el) return;
+  var scope=getScope();
+  var operator=getOperator();
+  var state=(typeof window.hpeGetState==='function') ? window.hpeGetState() : {lastAlerts:[]};
+  var lastAlerts = state.lastAlerts || [];
+  var list = mwSuivi.slice();
+  if(scope==='mine' && operator){
+    // "Mien" = proprietaire OU contributeur (a deja envoye un mail sur ce
+    // dossier) -- si Nabil ET Jason ont chacun repondu sur le meme dossier,
+    // il doit apparaitre chez les deux, pas seulement chez le proprietaire.
+    list = list.filter(function(s){
+      if(String(s.owner||'').trim()===operator) return true;
+      return (s.contributors||[]).some(function(c){ return String(c||'').trim()===operator; });
+    });
+  }
+
+  // Dernier mail connu (14 derniers jours, via le scan HPE_UI_V1) par dossier
+  // -- repond a "qui a envoye le dernier message sur ce dossier".
+  var lastByDossier={};
+  lastAlerts.forEach(function(a){
+    var cur=lastByDossier[a.dossier];
+    if(!cur || String(a.date) > String(cur.date)) lastByDossier[a.dossier]=a;
+  });
+  list.sort(function(a,b){
+    var da=(lastByDossier[a.dossier]||{}).date||'';
+    var db=(lastByDossier[b.dossier]||{}).date||'';
+    return db.localeCompare(da);
+  });
+
+  var head = '<div class="hpe-card-head"><div class="hpe-card-title">🎫 <span>Mon suivi HPE</span>'+(operator?(' — <span style="color:var(--blue)">'+esc(operator)+'</span>'):'')+'</div>'+
+    '<div class="hpe-mw-toggle"><button class="btn btn-ghost btn-sm'+(scope==='mine'?' active':'')+'" data-mw-scope="mine">Mes dossiers</button><button class="btn btn-ghost btn-sm'+(scope==='all'?' active':'')+'" data-mw-scope="all">Tous</button></div></div>';
+
+  var body;
+  if(!operator && scope==='mine'){
+    body = '<div class="hpe-empty">Choisis ton identité (filtre opérateur en haut, ou onglet Options) pour voir tes dossiers HPE ici — ou clique "Tous".</div>';
+  } else if(!list.length){
+    body = '<div class="hpe-empty">Aucun dossier HPE '+(scope==='mine'?'à ton nom':'suivi')+' pour l\'instant.</div>';
+  } else {
+    body = list.slice(0,8).map(function(s){
+      var c=statusColorMw(s.status);
+      var last=lastByDossier[s.dossier];
+      var lastTxt = last ? ((last.sent?'↗ Envoyé':'↙ Reçu')+' — '+esc(last.sender)+' ('+esc(last.date)+')') : 'Aucun mail récent (14j)';
+      var others = (s.contributors||[]).filter(function(cn){ return String(cn||'').trim()!==String(s.owner||'').trim(); });
+      var othersTxt = others.length ? ('<div class="hpe-mw-last">👥 aussi : '+esc(others.join(', '))+'</div>') : '';
+      return '<div class="hpe-mw-row">' +
+        '<div><div class="hpe-mw-dossier">'+esc(s.dossier)+'</div><div class="hpe-mw-last">'+lastTxt+'</div>'+othersTxt+'</div>' +
+        '<div>'+(s.owner?esc(s.owner):'<span style="color:var(--text3)">Non assigné</span>')+'</div>' +
+        '<div><span class="hpe-pill" style="color:'+c.c+';background:'+c.bg+'">'+(s.status?esc(s.status):'—')+'</span></div>' +
+        '<div style="display:flex;gap:6px"><a href="#" data-dash-hpe-open="'+esc(s.dossier)+'" class="btn btn-blue-out btn-sm" style="text-decoration:none">🕒 Suivi</a><button class="btn btn-orange-out btn-sm" data-mw-mail="'+esc(s.dossier)+'">✉ Mail</button></div>' +
+      '</div>';
+    }).join('') + (list.length>8 ? '<div class="hpe-hint">+ '+(list.length-8)+' autre(s) — voir l\'onglet HPE</div>' : '');
+  }
+  el.innerHTML = head + body;
+}
+
+function loadSuivi(){
+  apiAction({action:'HPE_SUIVI_LIST'}).then(function(r){
+    mwSuivi=(r&&r.suivi)||[];
+    renderWidget();
+  }).catch(function(){});
+}
+
+document.addEventListener('click', function(e){
+  var t=e.target.closest('[data-mw-scope]');
+  if(t){ setScope(t.dataset.mwScope); renderWidget(); return; }
+  var m=e.target.closest('[data-mw-mail]');
+  if(m){
+    e.preventDefault();
+    var dossier=m.dataset.mwMail;
+    m.disabled=true; var orig=m.textContent; m.textContent='...';
+    apiAction({action:'HPE_MAIL_COMPOSE', dossier:dossier, to:getMailbox()}).then(function(r){
+      m.disabled=false; m.textContent=orig;
+      if(!r || r.status!=='ok') toastMsg('Impossible de créer le mail : '+((r&&r.message)||'inconnue'));
+    }).catch(function(err){ m.disabled=false; m.textContent=orig; toastMsg('Erreur : '+(err.message||err)); });
+  }
+});
+
+function tick(){
+  if(id('tab-dashboard') && id('tab-dashboard').classList.contains('active')){
+    if(!id('hpe-mywidget')) loadSuivi(); else renderWidget();
+  }
+}
+function init(){
+  if(window.__hpeMwInit) return; window.__hpeMwInit=true;
+  loadSuivi(); setInterval(tick, 4000); setInterval(loadSuivi, 300000);
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(init,900); });
+else setTimeout(init,900);
+window.addEventListener('load', function(){ setTimeout(init,1500); });
 })();
 </script>
 

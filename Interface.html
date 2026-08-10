@@ -6675,6 +6675,21 @@ function delMapping(ref){
     .catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
 }
 
+function loadNames(){
+  var input=id('hpe-names-input'); if(!input) return;
+  apiAction({action:'HPE_NAMES_LIST'}).then(function(r){
+    input.value = ((r && r.names) || []).join(', ');
+  }).catch(function(e){ toastMsg('Erreur chargement noms : '+(e.message||e)); });
+}
+function saveNames(){
+  var input=id('hpe-names-input'); if(!input) return;
+  var names = input.value.split(',').map(function(s){ return s.trim(); }).filter(Boolean).join('|');
+  apiAction({action:'HPE_NAMES_SAVE', names:names}).then(function(r){
+    if(r && r.status==='ok') toastMsg('Liste de noms enregistrée.');
+    else toastMsg('Erreur : '+((r&&r.message)||'inconnue'));
+  }).catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
+}
+
 // ── Astérisque dans le tableau Dispatch principal, sur les dossiers ayant
 // une référence HPE liée (colonne "File J", 2e <td> de chaque ligne). ──
 function markMasterRows(){
@@ -6975,11 +6990,37 @@ function scanMail(){
     seenUnmappedKeys = new Set(lastUnmapped.map(dismissKey));
     renderAlerts(lastAlerts);
     renderUnmapped(lastUnmapped);
+    renderReferencesList();
     renderDashboardBanner(lastAlerts);
     renderDashPreview();
     markMasterRows();
     markKanbanCards();
   }).catch(function(e){ if(st) st.textContent='Erreur : '+(e.message||e); });
+}
+
+function renderReferencesList(){
+  var b=id('hpe-refs-body'); if(!b) return;
+  var rows = lastAlerts.map(function(a){ return {reference:a.reference, dossier:a.dossier, date:a.date, subject:a.subject}; })
+    .concat(lastUnmapped.map(function(u){ return {reference:u.reference, dossier:'', date:u.date, subject:u.subject}; }));
+  var badge=id('hpe-refs-badge'); if(badge) badge.textContent=rows.length;
+  b.innerHTML = rows.length ? rows.map(function(r){
+    return '<tr><td class="hpe-ref-cell"><b>'+esc(r.reference)+'</b></td>'+
+      '<td>'+(r.dossier?esc(r.dossier):'<span style="color:var(--text3)">—</span>')+'</td>'+
+      '<td>'+esc(r.date)+'</td>'+
+      '<td title="'+esc(r.subject)+'">'+esc(String(r.subject||'').slice(0,60))+'</td>'+
+      '<td><button class="btn btn-orange-out hpe-mini" data-log-ref="'+esc(r.reference)+'" style="height:20px;padding:0 6px;font-size:9.5px">📋 LOG</button></td></tr>';
+  }).join('') : '<tr><td colspan="5" class="hpe-empty">Aucune référence -- lance un scan.</td></tr>';
+}
+function copyReferencesList(){
+  var rows = lastAlerts.map(function(a){ return {reference:a.reference, dossier:a.dossier}; })
+    .concat(lastUnmapped.map(function(u){ return {reference:u.reference, dossier:''}; }));
+  if(!rows.length){ toastMsg('Aucune référence à copier -- lance un scan.'); return; }
+  var text = rows.map(function(r){ return r.dossier ? (r.reference+'\t'+r.dossier) : r.reference; }).join('\n');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){ toastMsg(rows.length+' référence(s) copiée(s).'); }, function(){ toastMsg('Copie impossible (permissions navigateur).'); });
+  } else {
+    toastMsg('Copie non supportée par ce navigateur.');
+  }
 }
 
 function renderDashPreview(){
@@ -7056,6 +7097,7 @@ function ensureTab(){
       '<div class="hpe-subnav-btn active" data-hpe-panel="nouveaux">📥 Nouveaux mails <span id="hpe-unmapped-badge" class="hpe-badge">0</span></div>' +
       '<div class="hpe-subnav-btn" data-hpe-panel="workflows">🧭 Workflows <span id="hpe-alerts-badge" class="hpe-badge">0</span></div>' +
       '<div class="hpe-subnav-btn" data-hpe-panel="recherche">🔎 Recherche</div>' +
+      '<div class="hpe-subnav-btn" data-hpe-panel="references">📋 Références</div>' +
       '<div class="hpe-subnav-btn" data-hpe-panel="import">📋 Import</div>' +
       '</div>' +
 
@@ -7085,6 +7127,13 @@ function ensureTab(){
       '<div class="hpe-table-wrap"><table class="hpe-table"><thead><tr><th>Référence</th><th>Dossier</th><th>Tracking</th><th>Ajouté</th><th></th></tr></thead><tbody id="hpe-map-body"></tbody></table></div>' +
       '</section>' +
 
+      '<section class="hpe-card hpe-card--mapping">' +
+      '<div class="hpe-card-head"><div class="hpe-card-title">👤 <span>Détection auto du propriétaire</span></div></div>' +
+      '<div class="hpe-sub">Au scan, si un dossier n\'a pas encore de propriétaire, le nom cherché dans l\'objet, l\'expéditeur et le corps (signature incluse) du mail le plus récent du fil — parmi la liste ci-dessous — est enregistré automatiquement. Ne remplace jamais un propriétaire déjà saisi à la main.</div>' +
+      '<div class="hpe-field"><label>Noms connus (séparés par une virgule)</label><input id="hpe-names-input" type="text" placeholder="Jason, Nabil, Chloé, Abderrahman, Charles"></div>' +
+      '<div class="hpe-actions"><button class="btn btn-success btn-sm" id="hpe-names-save">💾 Enregistrer</button></div>' +
+      '</section>' +
+
       '<section class="hpe-card hpe-card--suivi">' +
       '<div class="hpe-card-head"><div class="hpe-card-title">📁 <span>Suivi dossier</span></div><span id="hpe-suivi-badge" class="hpe-badge">0</span></div>' +
       '<div class="hpe-sub">Propriétaire, statut libre et notes horodatées, par dossier J1A/H1A — ton historique automatique par workflow.</div>' +
@@ -7109,6 +7158,15 @@ function ensureTab(){
       '<div class="hpe-sub">Colle une référence HPE (INC/FXC/ARN...) ou un numéro de dossier (J1A/H1A) : prépare "R#..." dans le champ de recherche E.TMS en haut de l\'écran et affiche le lien s\'il existe.</div>' +
       '<div class="hpe-row-btn"><div class="hpe-field" style="margin-bottom:0"><input id="hpe-quick-ref" type="text" placeholder="Ex: FXC123456 ou un texte contenant la référence"></div><button class="btn btn-blue-out btn-sm" id="hpe-quick-go">Préparer</button></div>' +
       '<div id="hpe-quick-result" class="hpe-hint"></div>' +
+      '</section>' +
+      '</div>' +
+
+      '<div class="hpe-panel" id="hpe-panel-references">' +
+      '<section class="hpe-card hpe-card--search">' +
+      '<div class="hpe-card-head"><div class="hpe-card-title">📋 <span>Toutes les références détectées</span></div><span id="hpe-refs-badge" class="hpe-badge">0</span></div>' +
+      '<div class="hpe-sub">Liste à plat de toutes les références INC/FXC/ARN vues au dernier scan (liées et non liées) — pour copier/coller dans ETMS ou ailleurs.</div>' +
+      '<div class="hpe-actions"><button class="btn btn-blue-out btn-sm" id="hpe-refs-copy">📎 Copier la liste</button></div>' +
+      '<div class="hpe-table-wrap"><table class="hpe-table"><thead><tr><th>Référence</th><th>Dossier</th><th>Date</th><th>Objet</th><th></th></tr></thead><tbody id="hpe-refs-body"></tbody></table></div>' +
       '</section>' +
       '</div>' +
 
@@ -7177,9 +7235,15 @@ function ensureTab(){
       }
     });
     id('hpe-quick-go').onclick=quickSearch;
+    if(id('hpe-refs-copy')) id('hpe-refs-copy').onclick=copyReferencesList;
+    if(id('hpe-refs-body')) id('hpe-refs-body').addEventListener('click', function(e){
+      var logBtn=e.target.closest('[data-log-ref]');
+      if(logBtn) logRefInEtms(logBtn.dataset.logRef);
+    });
     id('hpe-quick-ref').addEventListener('keydown', function(e){ if(e.key==='Enter') quickSearch(); });
     id('hpe-map-add').onclick=addMapping;
     id('hpe-map-reload').onclick=loadMapping;
+    if(id('hpe-names-save')) id('hpe-names-save').onclick=saveNames;
     id('hpe-map-ref').addEventListener('keydown', function(e){ if(e.key==='Enter') addMapping(); });
     id('hpe-map-dossier').addEventListener('keydown', function(e){ if(e.key==='Enter') addMapping(); });
     if(id('hpe-map-tracking')) id('hpe-map-tracking').addEventListener('keydown', function(e){ if(e.key==='Enter') addMapping(); });
@@ -7306,7 +7370,7 @@ function switchToHpe(){
   document.querySelectorAll('.tabpane').forEach(function(p){p.classList.remove('active')});
   var t=document.querySelector('.tab[data-tab="hpe"]'), p=id('tab-hpe');
   if(t) t.classList.add('active'); if(p) p.classList.add('active');
-  loadMapping(); loadSuiviList(); renderKpis(); renderDashPreview();
+  loadMapping(); loadSuiviList(); loadNames(); renderKpis(); renderDashPreview();
 }
 
 function switchHpePanel(name){
@@ -7327,6 +7391,207 @@ function init(){ ensureTab(); wrapMasterRender(); wrapKanbanRender(); loadMappin
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(init,700); });
 else setTimeout(init,700);
 window.addEventListener('load', function(){ setTimeout(init,1300); });
+})();
+</script>
+
+<!-- ============================================================
+     EDOC_CLIENTS_V1 - onglet "Clients EDOC" : ajout/suppression de
+     profils clients et de leurs actions de scan, edition des regles
+     (dossier Outlook, mots-cles, prefixe/longueur, expediteur, type de
+     document). Reutilise EDOC_WEB_RULE_SAVE deja existant pour
+     enregistrer les champs d'une action ; seuls l'ajout/suppression de
+     profils et d'actions sont nouveaux cote backend (EDOC_Web.au3).
+     ============================================================ -->
+<style id="edoc-clients-v1-style">
+#tab-edoc-clients{height:100%;overflow:auto;background:var(--bg);}
+.edocc-page{padding:12px;display:grid;grid-template-columns:220px 240px 1fr;gap:12px;min-height:100%;}
+.edocc-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-sm);padding:13px;min-width:0;}
+.edocc-card h3{margin:0 0 8px;font-size:13px;font-weight:900;color:var(--text);}
+.edocc-sub{font-size:11px;color:var(--text3);line-height:1.35;margin-bottom:9px;}
+.edocc-list{list-style:none;margin:0;padding:0;max-height:calc(100vh - 260px);overflow:auto;}
+.edocc-list li{padding:8px 10px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;color:var(--text2);margin-bottom:3px;display:flex;justify-content:space-between;align-items:center;gap:6px;}
+.edocc-list li:hover{background:var(--blue-bg);}
+.edocc-list li.active{background:var(--blue-bg);color:var(--blue);}
+.edocc-list li .edocc-del{opacity:0;font-size:11px;color:var(--red);flex-shrink:0;}
+.edocc-list li:hover .edocc-del{opacity:1;}
+.edocc-field{margin-bottom:10px;}
+.edocc-field label{display:block;font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px;}
+.edocc-field input,.edocc-field select{width:100%;border:1px solid var(--border2);border-radius:8px;background:var(--surface2);color:var(--text);font-size:12px;padding:8px 9px;outline:none;box-sizing:border-box;}
+.edocc-field input:disabled{opacity:.6;}
+.edocc-row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.edocc-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;border-top:1px solid var(--border);padding-top:10px;}
+.edocc-add-row{display:flex;gap:6px;margin-bottom:10px;}
+.edocc-add-row input{flex:1;border:1px solid var(--border2);border-radius:6px;background:var(--surface2);color:var(--text);font-size:11px;padding:6px 8px;min-width:0;}
+.edocc-hint{font-size:11px;color:var(--text3);margin-top:2px;}
+@media(max-width:1000px){.edocc-page{grid-template-columns:1fr}}
+</style>
+<script id="edoc-clients-v1-script">
+(function(){
+'use strict';
+var profiles=[], selProfile=-1, selAction=-1;
+function id(x){return document.getElementById(x)}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function toastMsg(s){if(typeof toast==='function')toast(s);else console.log(s)}
+function apiAction(payload){if(typeof apiCall==='function')return apiCall('action',payload);return fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json().catch(function(){return {status:r.ok?'ok':'error'}});});}
+
+function curProfile(){ return (selProfile>=0 && profiles[selProfile]) ? profiles[selProfile] : null; }
+function curActions(){ var p=curProfile(); return p ? (p.actions||[]) : []; }
+function curAction(){ var a=curActions(); return (selAction>=0 && a[selAction]) ? a[selAction] : null; }
+
+function renderProfiles(){
+  var ul=id('edocc-profiles'); if(!ul) return;
+  ul.innerHTML = profiles.length ? profiles.map(function(p,i){
+    return '<li data-p="'+i+'" class="'+(i===selProfile?'active':'')+'"><span>'+esc(p.name)+'</span><span class="edocc-del" data-del-profile="'+esc(p.name)+'" title="Supprimer ce client">🗑</span></li>';
+  }).join('') : '<li style="cursor:default;color:var(--text3)">Aucun client.</li>';
+}
+function renderActions(){
+  var ul=id('edocc-actions'); if(!ul) return;
+  var acts=curActions();
+  ul.innerHTML = acts.length ? acts.map(function(a,i){
+    return '<li data-a="'+i+'" class="'+(i===selAction?'active':'')+'"><span>'+esc(a.name)+'</span><span class="edocc-del" data-del-action="'+esc(a.name)+'" title="Supprimer cette action">🗑</span></li>';
+  }).join('') : '<li style="cursor:default;color:var(--text3)">Aucune action pour ce client.</li>';
+}
+function emptyAction(){ return {name:'',folder:'5',keywords:'',sender:'',prefix:'J',length:'9',docType:'',lastUpload:''}; }
+function renderForm(){
+  var a = curAction() || emptyAction();
+  var hasAction = !!curAction();
+  id('edocc-f-name').value = a.name||'';
+  id('edocc-f-folder').value = (a.folder==='6') ? '6' : '5';
+  id('edocc-f-keywords').value = a.keywords||'';
+  id('edocc-f-sender').value = a.sender||'';
+  id('edocc-f-prefix').value = a.prefix||'J';
+  id('edocc-f-length').value = a.length||'9';
+  id('edocc-f-doctype').value = a.docType||'';
+  id('edocc-f-lastupload').textContent = hasAction ? ('Dernier import : ' + (a.lastUpload || 'Jamais')) : '';
+  id('edocc-save').style.display = hasAction ? '' : 'none';
+}
+
+function load(){
+  apiAction({action:'EDOC_PROFILES_LIST'}).then(function(r){
+    profiles = (r && r.profiles) || [];
+    if(selProfile>=profiles.length) selProfile=-1;
+    selAction=-1;
+    renderProfiles(); renderActions(); renderForm();
+  }).catch(function(e){ toastMsg('Erreur chargement clients : '+(e.message||e)); });
+}
+
+function addProfile(){
+  var input=id('edocc-new-profile');
+  var name = input.value.trim();
+  if(!name){ toastMsg('Nom du client obligatoire.'); return; }
+  apiAction({action:'EDOC_PROFILE_ADD', profile:name}).then(function(r){
+    if(r && r.status==='ok'){ input.value=''; toastMsg('Client "'+name+'" créé.'); load(); }
+    else toastMsg('Erreur : '+((r&&r.message)||'inconnue'));
+  }).catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
+}
+function delProfile(name){
+  if(!confirm('Supprimer le client "'+name+'" et toutes ses actions ?')) return;
+  apiAction({action:'EDOC_PROFILE_DELETE', profile:name}).then(function(){
+    selProfile=-1; selAction=-1; toastMsg('Client supprimé.'); load();
+  }).catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
+}
+function addAction(){
+  var p=curProfile(); if(!p){ toastMsg('Sélectionne un client d’abord.'); return; }
+  var input=id('edocc-new-action');
+  var name = input.value.trim();
+  if(!name){ toastMsg('Nom de l’action obligatoire.'); return; }
+  apiAction({action:'EDOC_ACTION_ADD', profile:p.name, actionName:name}).then(function(r){
+    if(r && r.status==='ok'){ input.value=''; toastMsg('Action "'+name+'" créée.'); load(); }
+    else toastMsg('Erreur : '+((r&&r.message)||'inconnue'));
+  }).catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
+}
+function delAction(name){
+  var p=curProfile(); if(!p) return;
+  if(!confirm('Supprimer l’action "'+name+'" ?')) return;
+  apiAction({action:'EDOC_ACTION_DELETE', profile:p.name, actionName:name}).then(function(){
+    selAction=-1; toastMsg('Action supprimée.'); load();
+  }).catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
+}
+function saveAction(){
+  var p=curProfile(), a=curAction();
+  if(!p || !a){ toastMsg('Sélectionne un client et une action.'); return; }
+  apiAction({
+    action:'EDOC_WEB_RULE_SAVE', profile:p.name, actionName:a.name,
+    folder:id('edocc-f-folder').value, keywords:id('edocc-f-keywords').value,
+    sender:id('edocc-f-sender').value, prefix:id('edocc-f-prefix').value,
+    length:id('edocc-f-length').value, docType:id('edocc-f-doctype').value
+  }).then(function(r){
+    if(r && r.status==='ok'){ toastMsg('Règles enregistrées.'); load(); }
+    else toastMsg('Erreur : '+((r&&r.message)||'inconnue'));
+  }).catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
+}
+
+function ensureTab(){
+  var tabbar=id('tabbar'), content=id('content'); if(!tabbar||!content) return;
+  var tab=document.querySelector('.tab[data-tab="edoc-clients"]');
+  if(!tab){
+    tab=document.createElement('div'); tab.className='tab'; tab.dataset.tab='edoc-clients'; tab.textContent='🗂️ Clients EDOC';
+    var opt=document.querySelector('.tab[data-tab="options"]');
+    tabbar.insertBefore(tab, opt||null);
+  }
+  var pane=id('tab-edoc-clients');
+  if(!pane){
+    pane=document.createElement('div'); pane.className='tabpane'; pane.id='tab-edoc-clients';
+    pane.innerHTML = '<div class="edocc-page">' +
+      '<section class="edocc-card"><h3>Clients</h3><div class="edocc-sub">Un client = un profil EDOC (ex: HPE), avec ses propres actions de scan.</div>' +
+      '<div class="edocc-add-row"><input id="edocc-new-profile" type="text" placeholder="Nouveau client..."><button class="btn btn-success btn-sm" id="edocc-add-profile">+</button></div>' +
+      '<ul class="edocc-list" id="edocc-profiles"></ul></section>' +
+
+      '<section class="edocc-card"><h3>Actions</h3><div class="edocc-sub">Chaque action correspond à un scan (ex: "Pre-Alertes", "Rendez-Vous").</div>' +
+      '<div class="edocc-add-row"><input id="edocc-new-action" type="text" placeholder="Nouvelle action..."><button class="btn btn-success btn-sm" id="edocc-add-action">+</button></div>' +
+      '<ul class="edocc-list" id="edocc-actions"></ul></section>' +
+
+      '<section class="edocc-card"><h3>Règles de l’action</h3>' +
+      '<div class="edocc-field"><label>Nom</label><input id="edocc-f-name" type="text" disabled></div>' +
+      '<div class="edocc-row2"><div class="edocc-field"><label>Dossier Outlook</label><select id="edocc-f-folder"><option value="5">Éléments envoyés</option><option value="6">Boîte de réception</option></select></div>' +
+      '<div class="edocc-field"><label>Type de document</label><input id="edocc-f-doctype" type="text" placeholder="Delivery Order..."></div></div>' +
+      '<div class="edocc-field"><label>Mots-clés objet (séparés par virgules)</label><input id="edocc-f-keywords" type="text"></div>' +
+      '<div class="edocc-row2"><div class="edocc-field"><label>Préfixe</label><input id="edocc-f-prefix" type="text"></div>' +
+      '<div class="edocc-field"><label>Longueur après préfixe</label><input id="edocc-f-length" type="text"></div></div>' +
+      '<div class="edocc-field"><label>Filtre expéditeur (optionnel)</label><input id="edocc-f-sender" type="text"></div>' +
+      '<div class="edocc-hint" id="edocc-f-lastupload"></div>' +
+      '<div class="edocc-actions"><button class="btn btn-primary btn-sm" id="edocc-save">💾 Enregistrer</button><button class="btn btn-ghost btn-sm" id="edocc-reload">Rafraîchir</button></div>' +
+      '</section>' +
+      '</div>';
+    content.appendChild(pane);
+    id('edocc-add-profile').onclick=addProfile;
+    id('edocc-new-profile').addEventListener('keydown', function(e){ if(e.key==='Enter') addProfile(); });
+    id('edocc-add-action').onclick=addAction;
+    id('edocc-new-action').addEventListener('keydown', function(e){ if(e.key==='Enter') addAction(); });
+    id('edocc-save').onclick=saveAction;
+    id('edocc-reload').onclick=load;
+    id('edocc-profiles').addEventListener('click', function(e){
+      var del=e.target.closest('[data-del-profile]');
+      if(del){ e.stopPropagation(); delProfile(del.dataset.delProfile); return; }
+      var li=e.target.closest('[data-p]');
+      if(li){ selProfile=Number(li.dataset.p); selAction=-1; renderProfiles(); renderActions(); renderForm(); }
+    });
+    id('edocc-actions').addEventListener('click', function(e){
+      var del=e.target.closest('[data-del-action]');
+      if(del){ e.stopPropagation(); delAction(del.dataset.delAction); return; }
+      var li=e.target.closest('[data-a]');
+      if(li){ selAction=Number(li.dataset.a); renderActions(); renderForm(); }
+    });
+  }
+}
+
+function switchToEdocClients(){
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active')});
+  document.querySelectorAll('.tabpane').forEach(function(p){p.classList.remove('active')});
+  var t=document.querySelector('.tab[data-tab="edoc-clients"]'), p=id('tab-edoc-clients');
+  if(t) t.classList.add('active'); if(p) p.classList.add('active');
+  load();
+}
+
+document.addEventListener('click', function(e){
+  var tab=e.target.closest('.tab[data-tab="edoc-clients"]');
+  if(tab){ e.preventDefault(); e.stopPropagation(); ensureTab(); switchToEdocClients(); }
+}, true);
+
+function init(){ ensureTab(); }
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(init,750); });
+else setTimeout(init,750);
+window.addEventListener('load', function(){ setTimeout(init,1350); });
 })();
 </script>
 

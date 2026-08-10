@@ -382,6 +382,14 @@ Func HttpServer_HandleClient($iSocket)
                 _SendHttpResponse($iSocket, 200, "application/json", _HPE_OpenMailJSON($sBody))
                 TCPCloseSocket($iSocket)
                 Return
+            Case "HPE_NAMES_LIST"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_NamesListJSON())
+                TCPCloseSocket($iSocket)
+                Return
+            Case "HPE_NAMES_SAVE"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_NamesSaveJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
             Case "HPE_MAPPING_IMPORT"
                 _SendHttpResponse($iSocket, 200, "application/json", _HPE_MappingImportJSON($sBody))
                 TCPCloseSocket($iSocket)
@@ -419,6 +427,26 @@ Func HttpServer_HandleClient($iSocket)
             Case "EDOC_WEB_RULE_SAVE"
                 Local $sEdocRespRule = _EDOC_WebRuleSave($sBody)
                 _SendHttpResponse($iSocket, 200, "application/json", $sEdocRespRule)
+                TCPCloseSocket($iSocket)
+                Return
+            Case "EDOC_PROFILES_LIST"
+                _SendHttpResponse($iSocket, 200, "application/json", _EDOC_ProfilesOnlyJSON())
+                TCPCloseSocket($iSocket)
+                Return
+            Case "EDOC_PROFILE_ADD"
+                _SendHttpResponse($iSocket, 200, "application/json", _EDOC_ProfileAddJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "EDOC_PROFILE_DELETE"
+                _SendHttpResponse($iSocket, 200, "application/json", _EDOC_ProfileDeleteJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "EDOC_ACTION_ADD"
+                _SendHttpResponse($iSocket, 200, "application/json", _EDOC_ActionAddJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "EDOC_ACTION_DELETE"
+                _SendHttpResponse($iSocket, 200, "application/json", _EDOC_ActionDeleteJSON($sBody))
                 TCPCloseSocket($iSocket)
                 Return
             Case "DIAG"

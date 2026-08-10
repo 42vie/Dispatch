@@ -27,6 +27,63 @@ Func _HPE_SuiviSec($dossier)
     Return "SUIVI:" & StringUpper(StringStripWS($dossier, 3))
 EndFunc
 
+; ============================================================================
+; NOMS CONNUS -- liste parametrable (section SYSTEM, cle NAMES, separes par
+; "|") utilisee pour deviner automatiquement le proprietaire d'un dossier en
+; cherchant un de ces noms dans l'objet/expediteur/corps (signature incluse)
+; du mail le plus recent du fil. Initialisee avec quelques noms d'equipe par
+; defaut au premier appel si jamais configuree. Valeur par defaut gardee en
+; Local (pas Global) : elle n'est utilisee que dans cette seule fonction, pas
+; besoin de l'exposer script-wide -- voir la note en tete de Globals.au3 sur
+; les Global declares hors de Globals.au3 qui ne s'executent jamais.
+; ============================================================================
+Func _HPE_GetNames()
+    Local $sPacked = IniRead($HPE_INI_PATH, "SYSTEM", "NAMES", "")
+    If $sPacked = "" Then
+        Local $sDefaultNames = "Jason|Nabil|Chloé|Abderrahman|Charles"
+        $sPacked = $sDefaultNames
+        IniWrite($HPE_INI_PATH, "SYSTEM", "NAMES", $sPacked)
+    EndIf
+    Return $sPacked
+EndFunc
+
+Func _HPE_NamesListJSON()
+    Local $aNames = StringSplit(_HPE_GetNames(), "|", 2)
+    Local $sJson = "["
+    For $i = 0 To UBound($aNames) - 1
+        Local $sName = StringStripWS($aNames[$i], 3)
+        If $sName = "" Then ContinueLoop
+        If $sJson <> "[" Then $sJson &= ","
+        $sJson &= '"' & _JsonEscape($sName) & '"'
+    Next
+    $sJson &= "]"
+    Return '{"status":"ok","names":' & $sJson & '}'
+EndFunc
+
+Func _HPE_NamesSaveJSON($sBody)
+    Local $sNames = _GetJsonValue($sBody, "names")
+    IniWrite($HPE_INI_PATH, "SYSTEM", "NAMES", $sNames)
+    Return '{"status":"ok"}'
+EndFunc
+
+; Cherche le 1er nom connu (liste $HPE_INI_PATH/SYSTEM/NAMES) present dans
+; $sText (objet + expediteur + corps du mail, signature comprise), recherche
+; insensible a la casse sur mot complet (pas de faux positif sur un nom
+; contenu dans un autre mot). Renvoie "" si aucun nom ne matche. Bornes de
+; mot definies explicitement (lettres ASCII + Latin-1 accentue) plutot que
+; \b/\w, dont le comportement Unicode par defaut de PCRE est peu fiable sur
+; les caracteres accentues (ex: "Chloé").
+Func _HPE_DetectOwnerName($sText)
+    Local $sPad = " " & StringRegExpReplace($sText, "\s+", " ") & " "
+    Local $aNames = StringSplit(_HPE_GetNames(), "|", 2)
+    For $i = 0 To UBound($aNames) - 1
+        Local $sName = StringStripWS($aNames[$i], 3)
+        If $sName = "" Then ContinueLoop
+        If StringRegExp($sPad, "(?i)[^A-Za-zÀ-ÿ]" & $sName & "[^A-Za-zÀ-ÿ]") Then Return $sName
+    Next
+    Return ""
+EndFunc
+
 ; Encode/decode d'une note individuelle -- reutilise la meme convention que
 ; CMR_SP.au3 pour les retours a la ligne dans un champ ini.
 Func _HPE_EncNote($s)
@@ -529,6 +586,25 @@ Func _HPE_MailScanJSON($sMailbox = "")
 
         Local $sOwner = IniRead($HPE_INI_PATH, _HPE_SuiviSec($sDossier), "OWNER", "")
         Local $sStatus = IniRead($HPE_INI_PATH, _HPE_SuiviSec($sDossier), "STATUS", "")
+
+        ; Detection auto du proprietaire (uniquement si pas deja renseigne
+        ; manuellement) : cherche un nom connu dans objet/expediteur/corps du
+        ; mail representatif du fil, corps inclus (donc aussi dans une
+        ; signature). Le corps n'est recupere qu'ici, pour le seul mail
+        ; representatif de chaque fil -- pas pour les 500 mails bruts scannes.
+        If $sOwner = "" Then
+            Local $oOwnerMail = 0
+            If IsObj($g_oNamespace) Then $oOwnerMail = $g_oNamespace.GetItemFromID($sEntryId)
+            If IsObj($oOwnerMail) Then
+                Local $sBodyText = $oOwnerMail.Body
+                If @error Then $sBodyText = ""
+                Local $sDetected = _HPE_DetectOwnerName($sSubj & " " & $sFrom & " " & $sBodyText)
+                If $sDetected <> "" Then
+                    $sOwner = $sDetected
+                    IniWrite($HPE_INI_PATH, _HPE_SuiviSec($sDossier), "OWNER", $sOwner)
+                EndIf
+            EndIf
+        EndIf
 
         Local $bStale = ($sSentFlag = "false") And (_DateDiff('d', $itemDate, _NowCalc()) >= $iAutoStaleDays)
         If $bStale And ($sStatus = "" Or $sStatus = $sAutoStatusLabel) Then

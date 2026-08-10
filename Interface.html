@@ -6553,7 +6553,8 @@ window.addEventListener('load', function(){ setTimeout(init,1250); });
 @keyframes hpeKanbanPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,140,0,.55)}50%{box-shadow:0 0 0 5px rgba(255,140,0,0)}}
 .k-item{position:relative;}
 .k-item.hpe-kanban-pulse{animation:hpeKanbanPulse 1.7s ease-in-out infinite;}
-.hpe-kanban-link{position:absolute;top:5px;right:5px;font-size:13px;line-height:1;text-decoration:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35));z-index:2;}
+.hpe-kanban-link{position:absolute;top:6px;right:27px;font-size:13px;line-height:1;text-decoration:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35));z-index:2;opacity:1;}
+.hpe-kanban-link:hover{transform:scale(1.15);}
 </style>
 <script id="hpe-ui-v1-script">
 (function(){
@@ -6743,9 +6744,15 @@ function markKanbanCards(){
     if(hit){
       card.classList.add('hpe-kanban-pulse');
       if(!link){ link=document.createElement('a'); link.className='hpe-kanban-link'; link.href='#'; card.appendChild(link); }
-      link.title='Nouveau mail HPE reçu — '+String(hit.subject||'').slice(0,90);
+      link.title='Nouveau mail HPE reçu — '+String(hit.subject||'').slice(0,90)+' (clic = ouvrir + marquer lu)';
       link.textContent='✉️';
-      link.onclick=function(ev){ ev.preventDefault(); ev.stopPropagation(); if(hit.entryId) openHpeMail(hit.entryId); };
+      link.onclick=function(ev){
+        ev.preventDefault(); ev.stopPropagation();
+        if(hit.entryId) openHpeMail(hit.entryId);
+        dismissAlert(hit);
+        markKanbanCards();
+        renderDashboardBanner(lastAlerts);
+      };
     } else {
       card.classList.remove('hpe-kanban-pulse');
       if(link) link.remove();

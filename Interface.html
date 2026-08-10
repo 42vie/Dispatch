@@ -7015,7 +7015,7 @@ function copyReferencesList(){
   var rows = lastAlerts.map(function(a){ return {reference:a.reference, dossier:a.dossier}; })
     .concat(lastUnmapped.map(function(u){ return {reference:u.reference, dossier:''}; }));
   if(!rows.length){ toastMsg('Aucune référence à copier -- lance un scan.'); return; }
-  var text = rows.map(function(r){ return r.dossier ? (r.reference+'\t'+r.dossier) : r.reference; }).join('\n');
+  var text = rows.map(function(r){ var ref='R#'+r.reference; return r.dossier ? (ref+'\t'+r.dossier) : ref; }).join('\n');
   if(navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(text).then(function(){ toastMsg(rows.length+' référence(s) copiée(s).'); }, function(){ toastMsg('Copie impossible (permissions navigateur).'); });
   } else {

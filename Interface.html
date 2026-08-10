@@ -48,6 +48,7 @@
   --k5-c: #1A8C4E; --k5-bg: #E8F5EE;
   --k6-c: #1A6EBF; --k6-bg: #EBF3FB;
   --k7-c: #6B3FA0; --k7-bg: #F2EDF9;
+  --k10-c: #0E7C86; --k10-bg: #E3F6F7;
 
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
   --shadow:    0 2px 8px rgba(0,0,0,0.10);
@@ -92,6 +93,7 @@ html.dark {
   --k5-c: #3ABB6E; --k5-bg: #1A3328;
   --k6-c: #4A9FE5; --k6-bg: #1A2D44;
   --k7-c: #9B6FD0; --k7-bg: #2A1E40;
+  --k10-c: #35C7D1; --k10-bg: #123338;
 }
 html.dark input, html.dark textarea, html.dark select {
   background: var(--surface2); color: var(--text); border-color: var(--border2);
@@ -326,6 +328,7 @@ table.t-master tbody td {
 .b6 { background: var(--k6-bg); color: var(--k6-c); }
 .b7 { background: var(--k7-bg); color: var(--k7-c); }
 .b8 { background: #E6FAF5; color: #0D7A5A; }
+.b10 { background: var(--k10-bg); color: var(--k10-c); }
 
 .cc-yes { color: var(--green); font-weight: 600; }
 .cc-no  { color: var(--text3); }
@@ -1286,6 +1289,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
           <option value="3">3. Attente réponse</option>
           <option value="4">4. Pré-alerte &amp; 5. FC</option>
           <option value="5">5. Prêt pour FC</option>
+          <option value="10">BL / CMR</option>
           <option value="6">6. COMAT</option>
           <option value="7">7. NTO</option>
           <option value="8">8. Terminé</option>
@@ -1624,11 +1628,16 @@ function transpTarget(svct, client) {
 }
 function statutLabel(n) {
   const L = {'1':'1. Pas encore CC','2':'2. RDV à envoyer','3':'3. Attente réponse',
-    '4':'4. Pré-alerte & FC','5':'5. Prêt pour FC','6':'6. COMAT','7':'7. NTO','8':'8. Terminé'};
+    '4':'4. Pré-alerte & FC','5':'5. Prêt pour FC','6':'6. COMAT','7':'7. NTO','8':'8. Terminé',
+    '10':'BL / CMR'};
   return L[String(n)] || String(n);
 }
-function statutNum(s) { const m = String(s||'').match(/^(\d)/); return m?m[1]:'1'; }
+// (\d+) et pas (\d) : un statut sur 2 chiffres (ex: '10' = BL/CMR) doit rester
+// entier -- avec (\d) seul, statutNum('10') aurait renvoye '1' (mauvaise
+// colonne Kanban, mauvais badge) au lieu de '10'.
+function statutNum(s) { const m = String(s||'').match(/^(\d+)/); return m?m[1]:'1'; }
 function statutClass(n) {
+  if (String(n) === '10') return 'b10';
   return ['b1','b1','b2','b3','b4','b5','b6','b7','b8'][+n]||'b1';
 }
 function daysSince(dateStr) {
@@ -1888,7 +1897,8 @@ const K_CFG = [
   {n:2, title:'RDV à envoyer',   c:'--k2-c', bg:'--k2-bg', action:'ENVOYER →3'},
   {n:3, title:'Attente réponse', c:'--k3-c', bg:'--k3-bg', action:'VALIDER →5'},
   {n:4, title:'Pré-alerte S5',   c:'--k4-c', bg:'--k4-bg', action:'ALERTER →5'},
-  {n:5, title:'Prêt pour FC',    c:'--k5-c', bg:'--k5-bg', action:'FC →6'},
+  {n:5, title:'Prêt pour FC',    c:'--k5-c', bg:'--k5-bg', action:'FC →6/BL'},
+  {n:10, title:'BL / CMR',       c:'--k10-c', bg:'--k10-bg', action:'BL/CMR →7'},
   {n:6, title:'COMAT',           c:'--k6-c', bg:'--k6-bg', action:'COMAT →7'},
   {n:7, title:'NTO',             c:'--k7-c', bg:'--k7-bg', action:'NTO →8'},
   {n:9, title:'En attente',       c:'--k9-c', bg:'--k9-bg'},
@@ -1971,7 +1981,7 @@ function renderKanban() {
         <input type="checkbox" class="k-chk" ${sel?'checked':''} onclick="event.stopPropagation();kabToggle(event,'${fileE}')">
         <div class="k-file">${fileDisp}${isGrp?`<span class="tag-group" style="font-size:9px;margin-left:4px">GRP</span>`:''}</div>
         <div class="k-client">${trunc(r.client,20)}${getSiblingBadge(r, siblingsMap)}</div>
-        ${(k.n>=2&&k.n<=7||k.n===9) ? `<div class="k-meta">${daysBadge(days)}</div>` : ''}
+        ${(k.n>=2&&k.n<=7||k.n===9||k.n===10) ? `<div class="k-meta">${daysBadge(days)}</div>` : ''}
         ${fcRow}
       </div>`;
     }).join('');
@@ -2195,7 +2205,7 @@ function onCardDrop(event, targetFile) {
 }
 
 async function kanbanAction(from) {
-  const toMap = {2:3, 4:5, 5:6, 6:7, 7:8};
+  const toMap = {2:3, 4:5, 5:6, 6:7, 7:8, 10:7};
   const affected = g_master.filter(r => parseInt(statutNum(r.statut)) === from && (!g_operatorFilter || (r.operator||'') === g_operatorFilter));
 
   if (!affected.length) return toast('Aucun dossier dans cette colonne.');
@@ -2238,6 +2248,12 @@ async function kanbanAction(from) {
     // FC : ouvrir la modale de paramétrage dates/horaires
     fcOpenModal(affected);
     return; // fcLancer() gère la suite
+  } else if (from === 10) {
+    // BL/CMR : le vrai traitement (génération du BL) se fait dans l'onglet
+    // CMR/BL lui-même (le dossier y a déjà été ajouté automatiquement au
+    // passage FC, cf. fcLancer()) -- ce bouton ne fait qu'avancer le statut
+    // une fois le BL traité, sans repasser par AutoIt.
+    affected.forEach(r => { r.statut = String(to); });
   } else {
     toast(`Ordre envoyé à AutoIt pour ${affected.length} dossier(s)...`);
     const kanResult = await apiCall('action', { action: 'KANBAN_' + from, data: strData });
@@ -3151,7 +3167,7 @@ document.getElementById('btn-export-wf').onclick = () => {
   // Exporter uniquement les dossiers en cours (pas les terminés/archivés)
   const active = g_master.filter(r => {
     const s = parseInt(statutNum(r.statut));
-    return s >= 1 && s <= 9 && s !== 8; // Tout sauf "Terminé"
+    return s >= 1 && s <= 10 && s !== 8; // Tout sauf "Terminé" (10 = BL/CMR, inclus)
   });
   if (!active.length) return toast('Aucun dossier actif à exporter.');
 
@@ -3256,7 +3272,7 @@ function updateStats() {
   let total=visible.length, cc=0, fc=0, nto=0;
   visible.forEach(r=>{
     const sn=parseInt(statutNum(r.statut));
-    if (sn>=2&&sn<=7) cc++;
+    if ((sn>=2&&sn<=7)||sn===10) cc++;
     if (sn===5) fc++;
     if (sn===7) nto++;
   });
@@ -5413,7 +5429,7 @@ function fcRecalcDates() {
 }
 
 
-// ── FC : envoi séquentiel un par un (pause/stop via hotkeys F9/Echap dans au3) ──
+// ── FC : envoi séquentiel un par un (pause/stop via hotkeys Ctrl+F9/Ctrl+F10 dans au3) ──
 let _fcRunning = false;
 
 async function fcLancer() {
@@ -5455,7 +5471,18 @@ async function fcLancer() {
     done++;
     const parentSubs = (job.masterRef.file||'').split(/\s*\+\s*/).map(s=>s.trim()).filter(Boolean);
     const allDone = parentSubs.every(sf => !jobs.slice(done).some(q => q.masterRef === job.masterRef));
-    if (allDone) job.masterRef.statut = '6';
+    if (allDone) {
+      // Routage post-FC selon transporteur : UPS/DGS → COMAT (6, inchangé) ;
+      // FLEX/EFDS/Groussard et tous les autres → colonne BL/CMR (10), avec
+      // le dossier ajouté directement à la queue de l'onglet CMR/BL (même
+      // mécanisme que le bouton "Kanban = 1 BL" de cet onglet).
+      const transpLower = (job.masterRef.transp || '').toLowerCase();
+      const isComatCarrier = transpLower.includes('ups') || transpLower.includes('dgs');
+      job.masterRef.statut = isComatCarrier ? '6' : '10';
+      if (!isComatCarrier && typeof window.cmrAddGroups === 'function') {
+        window.cmrAddGroups([parentSubs]);
+      }
+    }
     renderMaster(); renderKanban(); updateStats(); markDirty();
     _batchShowBar('FC', done, total);
     // Yield : laisse le navigateur respirer entre chaque requête
@@ -5482,7 +5509,7 @@ function _batchShowBar(label, done, total, currentFile) {
         <div style="width:${pct}%;height:100%;background:var(--blue);border-radius:4px;transition:width .3s"></div>
       </div>
       <span style="font-family:var(--mono);font-weight:600;min-width:90px">${done} / ${total}${cur}</span>
-      <span style="color:var(--text3);font-size:10px;white-space:nowrap">⏸ F9 = Pause &nbsp;|&nbsp; ⏭ Passer &nbsp;|&nbsp; ⏹ Echap = Stop &nbsp;— fenêtre AutoIt</span>
+      <span style="color:var(--text3);font-size:10px;white-space:nowrap">⏸ Ctrl+F9 = Pause &nbsp;|&nbsp; ⏭ Passer &nbsp;|&nbsp; ⏹ Ctrl+F10 = Stop &nbsp;— raccourcis globaux (fonctionnent même sans être sur Dispatch)</span>
     </div>`;
   bar.style.display = 'flex';
 }
@@ -5492,7 +5519,7 @@ function _batchHideBar() {
   if (bar) bar.remove();
 }
 
-// ── COMAT : envoi séquentiel un par un (pause/stop via hotkeys F9/Echap dans au3) ──
+// ── COMAT : envoi séquentiel un par un (pause/stop via hotkeys Ctrl+F9/Ctrl+F10 dans au3) ──
 let _comatRunning = false;
 
 async function comatStartBatch(affected, toStatus) {
@@ -5534,8 +5561,8 @@ async function comatStartBatch(affected, toStatus) {
 }
 
 
-const STATUT_LABELS = {'1':'Import','2':'CC','3':'Attente','4':'Pré-alerte','5':'Prêt FC','6':'COMAT','7':'NTO','8':'Terminé','9':'En attente'};
-const STATUT_COLORS = {'1':'var(--text3)','2':'var(--blue)','3':'var(--orange)','4':'var(--purple)','5':'#00c08b','6':'#ff6b35','7':'var(--teal)','8':'var(--green)','9':'#d4a017'};
+const STATUT_LABELS = {'1':'Import','2':'CC','3':'Attente','4':'Pré-alerte','5':'Prêt FC','6':'COMAT','7':'NTO','8':'Terminé','9':'En attente','10':'BL/CMR'};
+const STATUT_COLORS = {'1':'var(--text3)','2':'var(--blue)','3':'var(--orange)','4':'var(--purple)','5':'#00c08b','6':'#ff6b35','7':'var(--teal)','8':'var(--green)','9':'#d4a017','10':'var(--k10-c)'};
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  UNDO — historique de 5 actions                                          ║
@@ -6180,6 +6207,7 @@ document.addEventListener('change',function(e){var q=e.target.closest('.cmr4-qch
 document.addEventListener('click',function(e){var tab=e.target.closest('.tab[data-tab="cmr"]');if(tab){e.preventDefault();e.stopPropagation();ensureTab();switchToCmr();return}var rm=e.target.closest('[data-q-remove]');if(rm){queue.splice(Number(rm.dataset.qRemove),1);saveQ();renderQueue();return}var p=e.target.closest('[data-pdf]');if(p)return void apiAction({action:'CMR_OPEN_PDF',path:p.dataset.pdf});var h=e.target.closest('[data-html]');if(h)return void apiAction({action:'CMR_OPEN_HTML',path:h.dataset.html});var ed=e.target.closest('[data-edit]');if(ed)return void apiAction({action:'CMR_EDIT',index:ed.dataset.edit});var rb=e.target.closest('[data-rebuild]');if(rb)return void apiAction({action:'CMR_REBUILD_PDF',index:rb.dataset.rebuild});var m=e.target.closest('[data-mail]');if(m)return void apiAction({action:'CMR_MAIL',index:m.dataset.mail});var d=e.target.closest('[data-edoc]');if(d)return void apiAction({action:'CMR_EDOC',index:d.dataset.edoc})},true);
 function init(){loadQ();ensureTab();renderQueue();renderResults()}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){setTimeout(init,600)});else setTimeout(init,600);window.addEventListener('load',function(){setTimeout(init,1200)});
+window.cmrAddGroups = addGroups; // permet au routage Kanban (BL/CMR) d'ajouter directement a la queue sans passer par cet onglet
 })();
 </script>
 
@@ -6439,22 +6467,60 @@ function extractRef(s){
   if(!m) return '';
   return m[1].toUpperCase() + m[2];
 }
+// ── Recherche rapide : accepte une référence INC/FXC/ARN, mais aussi
+// directement un numéro de dossier (J1A/H1A) ou un numéro de tracking --
+// dans ce cas pas d'extraction par regex possible, on passe la saisie brute
+// telle quelle à HPE_MAPPING_LOOKUP (qui sait déjà chercher dans les deux
+// sens côté AutoIt, cf. _HPE_MappingLookupJSON). ──
 function quickSearch(){
   var raw = id('hpe-quick-ref').value;
   var ref = extractRef(raw);
+  var lookupVal = ref || String(raw||'').trim().toUpperCase();
   var out = id('hpe-quick-result');
-  if(!ref){ out.innerHTML = '<span style="color:var(--orange)">Aucune référence INC/FXC/ARN reconnue.</span>'; return; }
-  var field = document.getElementById('hdr-file');
-  if(field){ field.value = 'R#'+ref; field.focus(); }
-  out.innerHTML = '<span style="color:var(--green);font-weight:700">✓ R#'+esc(ref)+'</span> prêt dans le champ de recherche en haut — clique LOG / NOTES / DIMS...';
-  apiAction({action:'HPE_MAPPING_LOOKUP', value:ref}).then(function(r){
+  if(!lookupVal){ out.innerHTML = '<span style="color:var(--orange)">Saisis une référence, un numéro de dossier (J/H) ou de tracking.</span>'; return; }
+  if(ref){
+    var field = document.getElementById('hdr-file');
+    if(field){ field.value = 'R#'+ref; field.focus(); }
+    out.innerHTML = '<span style="color:var(--green);font-weight:700">✓ R#'+esc(ref)+'</span> prêt dans le champ de recherche en haut — clique LOG / NOTES / DIMS...';
+  } else {
+    out.innerHTML = 'Recherche de <b>'+esc(lookupVal)+'</b>...';
+  }
+  apiAction({action:'HPE_MAPPING_LOOKUP', value:lookupVal}).then(function(r){
     if(r && r.status==='ok' && r.found){
-      out.innerHTML += '<br><span style="color:var(--blue)">↔ Lié au dossier <b>'+esc(r.dossier)+'</b></span> — <a href="#" id="hpe-quick-load-dossier" style="color:var(--blue)">charger son suivi</a>';
-      var link = id('hpe-quick-load-dossier');
-      if(link) link.onclick=function(ev){ ev.preventDefault(); id('hpe-suivi-dossier').value=r.dossier; loadDossier(); };
+      out.innerHTML = (ref ? out.innerHTML : ('<span style="color:var(--blue)">Trouvé.</span>')) +
+        '<br><span style="color:var(--blue)">↔ Lié au dossier <b>'+esc(r.dossier)+'</b></span> — ' +
+        '<a href="#" data-qs-suivi="'+esc(r.dossier)+'" style="color:var(--blue)">📁 Suivi HPE</a> · ' +
+        '<a href="#" data-qs-kanban="'+esc(r.dossier)+'" style="color:var(--blue)">🧭 Voir dans le Kanban</a>';
+    } else if(!ref){
+      out.innerHTML = '<span style="color:var(--orange)">Aucun dossier ni référence trouvé pour "'+esc(lookupVal)+'".</span>';
     }
   }).catch(function(){});
 }
+function jumpToKanban(dossier){
+  var d = String(dossier||'').trim().toUpperCase();
+  var tab = document.querySelector('.tab[data-tab="workflow"]');
+  if(tab) tab.click();
+  setTimeout(function(){
+    var cards = document.querySelectorAll('.k-item[data-file]');
+    var card = Array.prototype.find.call(cards, function(el){
+      return el.dataset.file.split(' + ').map(function(p){ return p.trim().toUpperCase(); }).indexOf(d)!==-1;
+    });
+    if(card){
+      card.scrollIntoView({behavior:'smooth', block:'center'});
+      card.style.transition='box-shadow .3s';
+      card.style.boxShadow='0 0 0 3px var(--blue)';
+      setTimeout(function(){ card.style.boxShadow=''; }, 2500);
+    } else {
+      toastMsg('Dossier non visible dans le Kanban actuel (filtré par opérateur, ou statut hors tableau).');
+    }
+  }, 350);
+}
+document.addEventListener('click', function(e){
+  var s=e.target.closest('[data-qs-suivi]');
+  if(s){ e.preventDefault(); id('hpe-suivi-dossier').value=s.dataset.qsSuivi; switchHpePanel('workflows'); loadDossier(); return; }
+  var k=e.target.closest('[data-qs-kanban]');
+  if(k){ e.preventDefault(); jumpToKanban(k.dataset.qsKanban); }
+});
 
 function renderMapping(){
   var b=id('hpe-map-body'); if(!b) return;

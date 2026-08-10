@@ -11,8 +11,8 @@ Func _Batch_COMAT($sData)
     $bCOMAT_Stop = False
     $bCOMAT_Pause = False
     $bCOMAT_Skip = False
-    HotKeySet("{F9}", "_HK_COMAT_PauseToggle")
-    HotKeySet("{ESCAPE}", "_HK_COMAT_Stop")
+    HotKeySet("^{F9}", "_HK_COMAT_PauseToggle")
+    HotKeySet("^{F10}", "_HK_COMAT_Stop")
 
     Local $aJobs = StringSplit($sData, "|")
     Local $aValid[$aJobs[0]]
@@ -67,8 +67,8 @@ Func _Batch_COMAT($sData)
             _COMAT_SmartSleep(150)
         EndIf
     Next
-    HotKeySet("{F9}")
-    HotKeySet("{ESCAPE}")
+    HotKeySet("^{F9}")
+    HotKeySet("^{F10}")
     _Tracker_End()
     ; Bilan final
     If $iStopped And $sRemaining <> "" Then
@@ -141,8 +141,8 @@ EndIf
                 ReDim $aValidGui[$iTotalGui]
                 If MsgBox(1+32+262144, "Confirmation", $iTotalGui & " dossier(s) à traiter. GO ?") = 2 Then Return
                 _Tracker_Start("COMAT Multi - Suivi", $aValidGui)
-                HotKeySet("{F9}", "_HK_COMAT_PauseToggle")
-                HotKeySet("{ESCAPE}", "_HK_COMAT_Stop")
+                HotKeySet("^{F9}", "_HK_COMAT_PauseToggle")
+                HotKeySet("^{F10}", "_HK_COMAT_Stop")
                 $bCOMAT_Stop = False
                 $bCOMAT_Pause = False
                 $bCOMAT_Skip = False
@@ -184,8 +184,8 @@ EndIf
                     _Tracker_PollButtons()
                     _COMAT_SmartSleep(300)
                 Next
-                HotKeySet("{F9}")
-                HotKeySet("{ESCAPE}")
+                HotKeySet("^{F9}")
+                HotKeySet("^{F10}")
                 _Tracker_End()
                 If $iStoppedG And $sRemainingG <> "" Then
                     ClipPut(StringStripWS($sRemainingG, 2))

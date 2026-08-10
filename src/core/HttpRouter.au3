@@ -374,6 +374,18 @@ Func HttpServer_HandleClient($iSocket)
                 _SendHttpResponse($iSocket, 200, "application/json", _HPE_OpenMailJSON($sBody))
                 TCPCloseSocket($iSocket)
                 Return
+            Case "HPE_MAPPING_IMPORT"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_MappingImportJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "HPE_DOSSIER_TIMELINE"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_DossierTimelineJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "HPE_MAIL_COMPOSE"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_ComposeMailJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
 
             Case "EDOC_MASTER_OPEN"
                 _EDOCMasterGUI()

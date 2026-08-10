@@ -6544,7 +6544,47 @@ function loadDossier(){
     notes = (r && r.notes) || [];
     renderNotes();
   }).catch(function(e){ toastMsg('Erreur notes : '+(e.message||e)); });
+  loadTimeline(dossier);
 }
+
+// ── Chronologie d'un dossier : fusion mails + notes, triee par date. Les
+// notes utilisent le format "JJ/MM/AAAA hh:mm:ss" (_NowText cote AutoIt) et
+// les mails "AAAA/MM/JJ hh:mm:ss" (_FmtDate) -- parseHpeDate gere les deux,
+// un tri texte brut donnerait un ordre incorrect entre les deux sources. ──
+function parseHpeDate(s){
+  s = String(s||'').trim();
+  var m = s.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})[ T]?(\d{1,2})?:?(\d{1,2})?:?(\d{1,2})?/);
+  if(m) return new Date(+m[1], (+m[2])-1, +m[3], +(m[4]||0), +(m[5]||0), +(m[6]||0)).getTime();
+  var m2 = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})[ T]?(\d{1,2})?:?(\d{1,2})?:?(\d{1,2})?/);
+  if(m2) return new Date(+m2[3], (+m2[2])-1, +m2[1], +(m2[4]||0), +(m2[5]||0), +(m2[6]||0)).getTime();
+  return 0;
+}
+function renderTimeline(events, warning){
+  var b=id('hpe-timeline-list'), hint=id('hpe-timeline-hint');
+  if(!b) return;
+  if(hint) hint.innerHTML = warning ? '<span style="color:var(--orange)">Outlook indisponible pour le moment — notes uniquement.</span>' : '';
+  var sorted = (events||[]).slice().sort(function(a,c){ return parseHpeDate(c.date)-parseHpeDate(a.date); });
+  if(!sorted.length){ b.innerHTML='<div class="hpe-empty">Aucun échange enregistré.</div>'; return; }
+  var lastMail = sorted.find(function(e){ return e.type==='mail'; });
+  var lastLine = lastMail ? ('<div class="hpe-hint" style="margin-bottom:8px">Dernier message : <b style="color:'+(lastMail.direction==='envoyé'?'var(--purple)':'var(--teal)')+'">'+esc(lastMail.direction)+'</b> — '+esc(lastMail.who)+' ('+esc(lastMail.date)+')</div>') : '';
+  b.innerHTML = lastLine + sorted.map(function(e){
+    if(e.type==='note') return '<div class="hpe-note" style="border-left:3px solid var(--purple)"><div class="hpe-note-meta">📝 '+esc(e.date)+' — '+esc(e.who)+'</div>'+esc(e.text)+'</div>';
+    var dirColor = e.direction==='envoyé' ? 'var(--purple)' : 'var(--teal)';
+    var dirIcon = e.direction==='envoyé' ? '↗' : '↙';
+    return '<div class="hpe-note" style="border-left:3px solid '+dirColor+'"><div class="hpe-note-meta">'+dirIcon+' '+esc(e.date)+' — '+esc(e.who)+'</div>'+esc(e.text)+
+      (e.entryId?'<div style="margin-top:6px"><button class="btn btn-blue-out hpe-mini" data-tl-open="'+esc(e.entryId)+'" style="height:20px;padding:0 7px;font-size:9.5px">✉ Ouvrir</button></div>':'')+'</div>';
+  }).join('');
+}
+function loadTimeline(dossier){
+  var b=id('hpe-timeline-list'); if(b) b.innerHTML='<div class="hpe-empty">Chargement...</div>';
+  apiAction({action:'HPE_DOSSIER_TIMELINE', dossier:dossier, mailbox:getMailbox()}).then(function(r){
+    if(!r || r.status!=='ok'){ if(b) b.innerHTML='<div class="hpe-empty">Erreur de chargement.</div>'; return; }
+    renderTimeline(r.events||[], r.mailWarning);
+  }).catch(function(e){ if(b) b.innerHTML='<div class="hpe-empty">Erreur : '+esc(e.message||e)+'</div>'; });
+}
+document.addEventListener('click', function(e){
+  var b=e.target.closest('[data-tl-open]'); if(b) openHpeMail(b.dataset.tlOpen);
+});
 function saveSuivi(){
   if(!curDossier){ toastMsg('Charge d\'abord un dossier.'); return; }
   apiAction({action:'HPE_SUIVI_SAVE', dossier:curDossier, owner:id('hpe-suivi-owner').value, status:id('hpe-suivi-status').value}).then(function(r){
@@ -6590,8 +6630,10 @@ function logRefInEtms(ref){
   if(typeof sendActionHeader === 'function') sendActionHeader('ETMS_CMD', 'LOG');
 }
 
-// ── Popup de notification (nouveau mail sur une référence déjà liée) ──
+// ── Popup de notification (nouveau mail sur une référence déjà liée, OU
+// nouvelle référence HPE jamais vue encore sans dossier lié) ──
 var seenAlertKeys = null; // null tant qu'aucun scan n'a encore tourné (pas de notif au tout 1er scan)
+var seenUnmappedKeys = null;
 function ensureNotifWrap(){
   var w=id('hpe-notif-wrap');
   if(!w){ w=document.createElement('div'); w.id='hpe-notif-wrap';
@@ -6610,8 +6652,21 @@ function notifyNewMail(a){
   w.appendChild(card);
   setTimeout(function(){ card.style.opacity='0'; setTimeout(function(){ card.remove(); }, 300); }, 9000);
 }
+function notifyNewUnmapped(a){
+  var w=ensureNotifWrap();
+  var card=document.createElement('div');
+  card.style.cssText='background:var(--surface);border:1px solid var(--red);border-left:4px solid var(--red);border-radius:10px;box-shadow:var(--shadow-lg);padding:10px 14px;font-size:12px;color:var(--text);width:290px;line-height:1.5;transition:opacity .3s;';
+  card.innerHTML='🆕 <b style="color:var(--red)">Nouvelle référence HPE non liée</b><br>Référence : <b>'+esc(a.reference)+'</b><br>Objet : '+esc(String(a.subject||'').slice(0,70))+
+    '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">'+
+    (a.entryId ? '<button class="btn btn-blue-out hpe-mini" data-notif-open="'+esc(a.entryId)+'" style="height:22px;padding:0 8px;font-size:10px">✉ Ouvrir</button>' : '')+
+    '<button class="btn btn-orange-out hpe-mini" data-notif-goto-import="1" style="height:22px;padding:0 8px;font-size:10px">📥 Lier</button>' +
+    '</div>';
+  w.appendChild(card);
+  setTimeout(function(){ card.style.opacity='0'; setTimeout(function(){ card.remove(); }, 300); }, 9000);
+}
 document.addEventListener('click', function(e){
   var b=e.target.closest('[data-notif-open]'); if(b) openHpeMail(b.dataset.notifOpen);
+  var g=e.target.closest('[data-notif-goto-import]'); if(g){ var t=document.querySelector('.tab[data-tab="hpe"]'); if(t) t.click(); setTimeout(function(){ switchHpePanel('nouveaux'); }, 200); }
 });
 
 var LS_DISMISS_UNMAPPED = 'dispatch_hpe_unmapped_dismissed';
@@ -6683,6 +6738,10 @@ function scanMail(){
       lastAlerts.forEach(function(a){ if(!seenAlertKeys.has(dismissKey(a))) notifyNewMail(a); });
     }
     seenAlertKeys = new Set(lastAlerts.map(dismissKey));
+    if(seenUnmappedKeys){
+      lastUnmapped.forEach(function(a){ if(!seenUnmappedKeys.has(dismissKey(a))) notifyNewUnmapped(a); });
+    }
+    seenUnmappedKeys = new Set(lastUnmapped.map(dismissKey));
     renderAlerts(lastAlerts);
     renderUnmapped(lastUnmapped);
     renderDashboardBanner(lastAlerts);
@@ -6765,6 +6824,7 @@ function ensureTab(){
       '<div class="hpe-subnav-btn active" data-hpe-panel="nouveaux">📥 Nouveaux mails <span id="hpe-unmapped-badge" class="hpe-badge">0</span></div>' +
       '<div class="hpe-subnav-btn" data-hpe-panel="workflows">🧭 Workflows <span id="hpe-alerts-badge" class="hpe-badge">0</span></div>' +
       '<div class="hpe-subnav-btn" data-hpe-panel="recherche">🔎 Recherche</div>' +
+      '<div class="hpe-subnav-btn" data-hpe-panel="import">📋 Import</div>' +
       '</div>' +
 
       '<div class="hpe-panel active" id="hpe-panel-nouveaux">' +
@@ -6799,6 +6859,9 @@ function ensureTab(){
       '<div class="hpe-row-btn"><div class="hpe-field" style="margin-bottom:0"><input id="hpe-suivi-dossier" type="text" placeholder="N° Dossier (J1A/H1A)"></div><button class="btn btn-blue-out btn-sm" id="hpe-suivi-load">Charger</button></div>' +
       '<div class="hpe-row2" style="margin-top:10px"><div class="hpe-field" style="margin-bottom:0"><label>Propriétaire</label><input id="hpe-suivi-owner" type="text"></div><div class="hpe-field" style="margin-bottom:0"><label>Statut</label><input id="hpe-suivi-status" type="text" placeholder="En cours, Bloqué, Terminé..."></div></div>' +
       '<div class="hpe-actions"><button class="btn btn-primary btn-sm" id="hpe-suivi-save">💾 Enregistrer</button></div>' +
+      '<h4>🕒 Chronologie <span style="font-weight:400;color:var(--text3);font-size:10.5px">(mails + notes, 60 derniers jours)</span></h4>' +
+      '<div id="hpe-timeline-hint" class="hpe-hint"></div>' +
+      '<div id="hpe-timeline-list"></div>' +
       '<h4>📝 Notes</h4>' +
       '<div id="hpe-notes-list"></div>' +
       '<div class="hpe-field"><textarea id="hpe-note-text" placeholder="Nouvelle note..."></textarea></div>' +
@@ -6814,6 +6877,18 @@ function ensureTab(){
       '<div class="hpe-sub">Colle une référence HPE (INC/FXC/ARN...) ou un numéro de dossier (J1A/H1A) : prépare "R#..." dans le champ de recherche E.TMS en haut de l\'écran et affiche le lien s\'il existe.</div>' +
       '<div class="hpe-row-btn"><div class="hpe-field" style="margin-bottom:0"><input id="hpe-quick-ref" type="text" placeholder="Ex: FXC123456 ou un texte contenant la référence"></div><button class="btn btn-blue-out btn-sm" id="hpe-quick-go">Préparer</button></div>' +
       '<div id="hpe-quick-result" class="hpe-hint"></div>' +
+      '</section>' +
+      '</div>' +
+
+      '<div class="hpe-panel" id="hpe-panel-import">' +
+      '<section class="hpe-card hpe-card--mapping">' +
+      '<div class="hpe-card-head"><div class="hpe-card-title">📋 <span>Import du rapport HPE (File / SHPMNT_REF / SP_TRACKING_NUM)</span></div></div>' +
+      '<div class="hpe-sub">Colle directement le tableau copié depuis l\'outil interne (Ctrl+V dans le champ ci-dessous) ou choisis un fichier .xlsx/.csv exporté. La colonne "File" doit contenir la référence client (FXC/ARN/INC...), "SHPMNT_REF" le numéro de dossier (J1A/H1A) et "SP_TRACKING_NUM" le numéro de tracking transporteur — les dossiers sont créés/liés automatiquement.</div>' +
+      '<div class="hpe-field"><label>Fichier (.xlsx, .xls, .csv)</label><input id="hpe-import-file" type="file" accept=".xlsx,.xls,.csv"></div>' +
+      '<div class="hpe-field"><label>...ou coller le tableau (Ctrl+V)</label><textarea id="hpe-import-text" placeholder="File\tSHPMNT_REF\tSP_TRACKING_NUM&#10;R#FXC2446003\tJ1A0051078\t2773729" style="min-height:110px"></textarea></div>' +
+      '<div class="hpe-actions"><button class="btn btn-blue-out btn-sm" id="hpe-import-preview">🔎 Analyser</button><button class="btn btn-success btn-sm" id="hpe-import-run" disabled>✓ Importer les liens</button></div>' +
+      '<div id="hpe-import-hint" class="hpe-hint"></div>' +
+      '<div class="hpe-table-wrap" id="hpe-import-preview-wrap" style="display:none"><table class="hpe-table"><thead><tr><th>File</th><th>Référence détectée</th><th>SHPMNT_REF (dossier)</th><th>SP_TRACKING_NUM</th></tr></thead><tbody id="hpe-import-preview-body"></tbody></table></div>' +
       '</section>' +
       '</div>' +
 
@@ -6892,7 +6967,106 @@ function ensureTab(){
       id('hpe-suivi-dossier').value = tr.dataset.dossier;
       loadDossier();
     });
+    id('hpe-import-preview').onclick=previewImport;
+    id('hpe-import-run').onclick=runImport;
+    id('hpe-import-file').addEventListener('change', function(){ id('hpe-import-hint').textContent=''; });
   }
+}
+
+// ── Import en masse (paste/upload) : File / SHPMNT_REF / SP_TRACKING_NUM ──
+// (colonnes du rapport exporte par l'outil interne HPE, cf. panneau "Import")
+var importRowsParsed = [];
+function extractRefForImport(s){
+  var ref = extractRef(s);
+  if(ref) return ref;
+  return String(s||'').trim().toUpperCase().replace(/^R#/i, '');
+}
+function textToAOA(text){
+  var lines = String(text||'').split(/\r\n|\r|\n/).filter(function(l){ return l.trim()!==''; });
+  return lines.map(function(l){ return l.indexOf('\t')!==-1 ? l.split('\t') : l.split(','); });
+}
+function parseImportAOA(aoa){
+  if(!aoa || !aoa.length) return {rows:[], error:'Tableau vide.'};
+  function norm(h){ return String(h==null?'':h).toUpperCase().replace(/[^A-Z0-9_]/g,''); }
+  var header = aoa[0].map(norm);
+  function findCol(patterns){
+    for(var i=0;i<header.length;i++){ for(var p=0;p<patterns.length;p++){ if(header[i].indexOf(patterns[p])!==-1) return i; } }
+    return -1;
+  }
+  var fileIdx = findCol(['FILE']);
+  var shpIdx = findCol(['SHPMNT','SHPMT','SHIPMENT']);
+  var trkIdx = findCol(['TRACKING']);
+  if(fileIdx<0 || shpIdx<0) return {rows:[], error:'Colonnes "File" et "SHPMNT_REF" introuvables dans l\'en-tête (1re ligne du tableau).'};
+  var rows=[];
+  for(var i=1;i<aoa.length;i++){
+    var r=aoa[i]; if(!r) continue;
+    var file=String(r[fileIdx]==null?'':r[fileIdx]).trim();
+    var shp=String(r[shpIdx]==null?'':r[shpIdx]).trim();
+    var trk = trkIdx>=0 ? String(r[trkIdx]==null?'':r[trkIdx]).trim() : '';
+    if(!file && !shp) continue;
+    rows.push({file:file, ref:extractRefForImport(file), shp:shp.toUpperCase(), trk:trk.toUpperCase()});
+  }
+  return {rows:rows, error:rows.length?'':'Aucune ligne de données trouvée sous l\'en-tête.'};
+}
+function renderImportPreview(rows){
+  var wrap=id('hpe-import-preview-wrap'), body=id('hpe-import-preview-body');
+  if(!wrap || !body) return;
+  if(!rows.length){ wrap.style.display='none'; body.innerHTML=''; return; }
+  wrap.style.display='block';
+  body.innerHTML = rows.map(function(r){
+    var missing = (!r.ref || !r.shp);
+    return '<tr'+(missing?' style="opacity:.5"':'')+'><td>'+esc(r.file)+'</td><td><b>'+esc(r.ref||'—')+'</b></td><td>'+esc(r.shp||'—')+'</td><td>'+esc(r.trk||'—')+'</td></tr>';
+  }).join('');
+}
+function finishImportPreview(res){
+  var hint=id('hpe-import-hint');
+  if(res.error){ hint.innerHTML='<span style="color:var(--red)">'+esc(res.error)+'</span>'; importRowsParsed=[]; renderImportPreview([]); id('hpe-import-run').disabled=true; return; }
+  importRowsParsed=res.rows;
+  var missing=res.rows.filter(function(r){ return !r.ref || !r.shp; }).length;
+  hint.innerHTML='<span style="color:var(--green)">'+res.rows.length+' ligne(s) détectée(s)'+(missing?' — <span style="color:var(--orange)">'+missing+' seront ignorée(s) (référence ou dossier manquant)</span>':'')+'.</span>';
+  renderImportPreview(res.rows);
+  id('hpe-import-run').disabled = res.rows.length===0;
+}
+function previewImport(){
+  var fileInput=id('hpe-import-file');
+  var hint=id('hpe-import-hint');
+  id('hpe-import-run').disabled=true;
+  importRowsParsed=[];
+  if(fileInput && fileInput.files && fileInput.files.length){
+    var f=fileInput.files[0];
+    var reader=new FileReader();
+    reader.onload=function(ev){
+      try{
+        var wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+        var aoa=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+        finishImportPreview(parseImportAOA(aoa));
+      }catch(e){ hint.innerHTML='<span style="color:var(--red)">Erreur de lecture du fichier : '+esc(e.message||e)+'</span>'; }
+    };
+    reader.readAsArrayBuffer(f);
+    return;
+  }
+  var text=id('hpe-import-text').value;
+  if(!text.trim()){ hint.innerHTML='<span style="color:var(--orange)">Colle un tableau ou choisis un fichier.</span>'; return; }
+  finishImportPreview(parseImportAOA(textToAOA(text)));
+}
+function runImport(){
+  if(!importRowsParsed.length){ toastMsg('Analyse le tableau d\'abord (bouton "Analyser").'); return; }
+  var payload = importRowsParsed.map(function(r){
+    return [r.file, r.shp, r.trk].map(function(v){ return String(v||'').replace(/[|;]/g,' '); }).join(';');
+  }).join('|');
+  var hint=id('hpe-import-hint');
+  hint.textContent='Import en cours...';
+  apiAction({action:'HPE_MAPPING_IMPORT', rows: payload}).then(function(r){
+    if(!r || r.status!=='ok'){ hint.innerHTML='<span style="color:var(--red)">Erreur : '+esc((r&&r.message)||'inconnue')+'</span>'; return; }
+    hint.innerHTML='<span style="color:var(--green);font-weight:700">✓ '+r.added+' lien(s) créé(s)/mis à jour'+(r.skipped?', '+r.skipped+' ligne(s) ignorée(s)':'')+'.</span>';
+    toastMsg(r.added+' dossier(s) HPE lié(s).');
+    importRowsParsed=[];
+    id('hpe-import-run').disabled=true;
+    renderImportPreview([]);
+    id('hpe-import-text').value='';
+    if(id('hpe-import-file')) id('hpe-import-file').value='';
+    loadMapping();
+  }).catch(function(e){ hint.innerHTML='<span style="color:var(--red)">Erreur : '+esc(e.message||e)+'</span>'; });
 }
 
 function switchToHpe(){
@@ -6916,10 +7090,146 @@ document.addEventListener('click', function(e){
 }, true);
 
 window.hpeScanMail = scanMail; // permet au bouton "Scanner" de la carte Dashboard de declencher un vrai scan sans naviguer vers l'onglet HPE
+window.hpeGetState = function(){ return { lastAlerts: lastAlerts, lastUnmapped: lastUnmapped, suivi: suivi, mapping: mapping }; }; // lu par HPE_DASHBOARD_WIDGET_V1 (autre IIFE, meme page)
 function init(){ ensureTab(); wrapMasterRender(); loadMapping(); scanMail(); setInterval(scanMail, 300000); setTimeout(renderDashPreview, 2000); setTimeout(renderDashPreview, 5000); }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(init,700); });
 else setTimeout(init,700);
 window.addEventListener('load', function(){ setTimeout(init,1300); });
+})();
+</script>
+
+<!-- ============================================================
+     HPE_DASHBOARD_WIDGET_V1 - encart Dashboard "Mon suivi HPE" filtre par
+     operateur connecte (meme identite que le filtre "operator-filter" du
+     tableau principal), avec dernier expediteur/sens du dernier mail par
+     dossier, acces direct a la chronologie (onglet HPE) et creation d'un
+     mail HPE. Bloc independant de HPE_UI_V1 : recupere lastAlerts via
+     window.hpeGetState() (expose par HPE_UI_V1) pour eviter de relancer un
+     2e scan Outlook rien que pour ce widget.
+     ============================================================ -->
+<style id="hpe-dashboard-widget-v1-style">
+.hpe-mw-toggle{display:flex;gap:6px;}
+.hpe-mw-toggle .btn.active{color:var(--blue);background:var(--blue-bg);border-color:var(--blue);}
+.hpe-mw-row{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;padding:9px 10px;border:1px solid var(--border);border-radius:10px;margin-bottom:7px;font-size:12px;background:var(--surface2);}
+.hpe-mw-dossier{font-weight:800;color:var(--text);}
+.hpe-mw-last{font-size:11px;color:var(--text3);}
+@media(max-width:760px){.hpe-mw-row{grid-template-columns:1fr;}}
+</style>
+<script id="hpe-dashboard-widget-v1-script">
+(function(){
+'use strict';
+function id(x){return document.getElementById(x)}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function toastMsg(s){if(typeof toast==='function')toast(s);else console.log(s)}
+function apiAction(payload){return fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json().catch(function(){return {status:r.ok?'ok':'error'}});});}
+function getOperator(){ try{ return localStorage.getItem('dispatch_operator')||''; }catch(e){ return ''; } }
+function getScope(){ try{ return localStorage.getItem('dispatch_hpe_mw_scope')||'mine'; }catch(e){ return 'mine'; } }
+function setScope(v){ try{ localStorage.setItem('dispatch_hpe_mw_scope', v); }catch(e){} }
+function getMailbox(){ try{ return localStorage.getItem('dispatch_hpe_mailbox')||'CDG-HPE-Transcon@expeditors.com'; }catch(e){ return 'CDG-HPE-Transcon@expeditors.com'; } }
+
+var mwSuivi=[];
+
+function statusColorMw(s){
+  var t=String(s||'').toLowerCase();
+  if(!t) return {c:'var(--text3)',bg:'var(--surface2)'};
+  if(/bloq|probl|urgent|litige/.test(t)) return {c:'var(--red)',bg:'var(--red-bg)'};
+  if(/cours|attente|pending/.test(t)) return {c:'var(--orange)',bg:'var(--orange-bg)'};
+  if(/termin|clotur|resolu|done|ok/.test(t)) return {c:'var(--green)',bg:'var(--green-bg)'};
+  return {c:'var(--blue)',bg:'var(--blue-bg)'};
+}
+
+function ensureWidget(){
+  var dash=document.querySelector('#tab-dashboard .cr-page'); if(!dash) return null;
+  var el=id('hpe-mywidget');
+  if(!el){
+    el=document.createElement('section'); el.id='hpe-mywidget'; el.className='hpe-card hpe-card--suivi';
+    el.style.cssText='margin-bottom:10px;';
+    var banner=id('hpe-dash-banner');
+    if(banner) banner.insertAdjacentElement('afterend', el); else dash.insertBefore(el, dash.firstChild);
+  }
+  return el;
+}
+
+function renderWidget(){
+  var el=ensureWidget(); if(!el) return;
+  var scope=getScope();
+  var operator=getOperator();
+  var state=(typeof window.hpeGetState==='function') ? window.hpeGetState() : {lastAlerts:[]};
+  var lastAlerts = state.lastAlerts || [];
+  var list = mwSuivi.slice();
+  if(scope==='mine' && operator) list = list.filter(function(s){ return String(s.owner||'').trim()===operator; });
+
+  // Dernier mail connu (14 derniers jours, via le scan HPE_UI_V1) par dossier
+  // -- repond a "qui a envoye le dernier message sur ce dossier".
+  var lastByDossier={};
+  lastAlerts.forEach(function(a){
+    var cur=lastByDossier[a.dossier];
+    if(!cur || String(a.date) > String(cur.date)) lastByDossier[a.dossier]=a;
+  });
+  list.sort(function(a,b){
+    var da=(lastByDossier[a.dossier]||{}).date||'';
+    var db=(lastByDossier[b.dossier]||{}).date||'';
+    return db.localeCompare(da);
+  });
+
+  var head = '<div class="hpe-card-head"><div class="hpe-card-title">🎫 <span>Mon suivi HPE</span>'+(operator?(' — <span style="color:var(--blue)">'+esc(operator)+'</span>'):'')+'</div>'+
+    '<div class="hpe-mw-toggle"><button class="btn btn-ghost btn-sm'+(scope==='mine'?' active':'')+'" data-mw-scope="mine">Mes dossiers</button><button class="btn btn-ghost btn-sm'+(scope==='all'?' active':'')+'" data-mw-scope="all">Tous</button></div></div>';
+
+  var body;
+  if(!operator && scope==='mine'){
+    body = '<div class="hpe-empty">Choisis ton identité (filtre opérateur en haut, ou onglet Options) pour voir tes dossiers HPE ici — ou clique "Tous".</div>';
+  } else if(!list.length){
+    body = '<div class="hpe-empty">Aucun dossier HPE '+(scope==='mine'?'à ton nom':'suivi')+' pour l\'instant.</div>';
+  } else {
+    body = list.slice(0,8).map(function(s){
+      var c=statusColorMw(s.status);
+      var last=lastByDossier[s.dossier];
+      var lastTxt = last ? ((last.sent?'↗ Envoyé':'↙ Reçu')+' — '+esc(last.sender)+' ('+esc(last.date)+')') : 'Aucun mail récent (14j)';
+      return '<div class="hpe-mw-row">' +
+        '<div><div class="hpe-mw-dossier">'+esc(s.dossier)+'</div><div class="hpe-mw-last">'+lastTxt+'</div></div>' +
+        '<div>'+(s.owner?esc(s.owner):'<span style="color:var(--text3)">Non assigné</span>')+'</div>' +
+        '<div><span class="hpe-pill" style="color:'+c.c+';background:'+c.bg+'">'+(s.status?esc(s.status):'—')+'</span></div>' +
+        '<div style="display:flex;gap:6px"><a href="#" data-dash-hpe-open="'+esc(s.dossier)+'" class="btn btn-blue-out btn-sm" style="text-decoration:none">🕒 Suivi</a><button class="btn btn-orange-out btn-sm" data-mw-mail="'+esc(s.dossier)+'">✉ Mail</button></div>' +
+      '</div>';
+    }).join('') + (list.length>8 ? '<div class="hpe-hint">+ '+(list.length-8)+' autre(s) — voir l\'onglet HPE</div>' : '');
+  }
+  el.innerHTML = head + body;
+}
+
+function loadSuivi(){
+  apiAction({action:'HPE_SUIVI_LIST'}).then(function(r){
+    mwSuivi=(r&&r.suivi)||[];
+    renderWidget();
+  }).catch(function(){});
+}
+
+document.addEventListener('click', function(e){
+  var t=e.target.closest('[data-mw-scope]');
+  if(t){ setScope(t.dataset.mwScope); renderWidget(); return; }
+  var m=e.target.closest('[data-mw-mail]');
+  if(m){
+    e.preventDefault();
+    var dossier=m.dataset.mwMail;
+    m.disabled=true; var orig=m.textContent; m.textContent='...';
+    apiAction({action:'HPE_MAIL_COMPOSE', dossier:dossier, to:getMailbox()}).then(function(r){
+      m.disabled=false; m.textContent=orig;
+      if(!r || r.status!=='ok') toastMsg('Impossible de créer le mail : '+((r&&r.message)||'inconnue'));
+    }).catch(function(err){ m.disabled=false; m.textContent=orig; toastMsg('Erreur : '+(err.message||err)); });
+  }
+});
+
+function tick(){
+  if(id('tab-dashboard') && id('tab-dashboard').classList.contains('active')){
+    if(!id('hpe-mywidget')) loadSuivi(); else renderWidget();
+  }
+}
+function init(){
+  if(window.__hpeMwInit) return; window.__hpeMwInit=true;
+  loadSuivi(); setInterval(tick, 4000); setInterval(loadSuivi, 300000);
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(init,900); });
+else setTimeout(init,900);
+window.addEventListener('load', function(){ setTimeout(init,1500); });
 })();
 </script>
 

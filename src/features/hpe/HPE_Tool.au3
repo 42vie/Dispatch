@@ -56,6 +56,7 @@ Func _HPE_MappingListJSON()
                 $sJson &= '{"reference":"' & _JsonEscape($sRef) & '"' & _
                         ',"type":"' & _JsonEscape(IniRead($HPE_INI_PATH, $sections[$i], "TYPE", "")) & '"' & _
                         ',"dossier":"' & _JsonEscape(IniRead($HPE_INI_PATH, $sections[$i], "DOSSIER", "")) & '"' & _
+                        ',"tracking":"' & _JsonEscape(IniRead($HPE_INI_PATH, $sections[$i], "TRACKING", "")) & '"' & _
                         ',"dateAjout":"' & _JsonEscape(IniRead($HPE_INI_PATH, $sections[$i], "DATE", "")) & '"' & _
                         ',"operateur":"' & _JsonEscape(IniRead($HPE_INI_PATH, $sections[$i], "OPERATOR", "")) & '"}'
             EndIf
@@ -68,6 +69,7 @@ EndFunc
 Func _HPE_MappingAddJSON($sBody)
     Local $sRef = StringUpper(StringStripWS(_GetJsonValue($sBody, "reference"), 3))
     Local $sDossier = StringUpper(StringStripWS(_GetJsonValue($sBody, "dossier"), 3))
+    Local $sTracking = StringUpper(StringStripWS(_GetJsonValue($sBody, "tracking"), 3))
     If $sRef = "" Or $sDossier = "" Then Return '{"status":"error","message":"champs_vides"}'
     Local $sType = ""
     Local $aType = StringRegExp($sRef, "(?i)^(INC|FXC|ARN)", 1)
@@ -76,6 +78,7 @@ Func _HPE_MappingAddJSON($sBody)
     Local $sSec = _HPE_MapSec($sRef)
     IniWrite($HPE_INI_PATH, $sSec, "DOSSIER", $sDossier)
     IniWrite($HPE_INI_PATH, $sSec, "TYPE", $sType)
+    IniWrite($HPE_INI_PATH, $sSec, "TRACKING", $sTracking)
     IniWrite($HPE_INI_PATH, $sSec, "DATE", _NowText())
     IniWrite($HPE_INI_PATH, $sSec, "OPERATOR", @UserName)
     Return '{"status":"ok"}'
@@ -100,15 +103,16 @@ Func _HPE_MappingLookupJSON($sBody)
         Return '{"status":"ok","found":true,"reference":"' & _JsonEscape($sVal) & '","dossier":"' & _JsonEscape($sDirect) & '"}'
     EndIf
 
-    ; Repli : $sVal est peut-etre un numero de dossier -- on parcourt les
-    ; references pour trouver celle qui pointe dessus.
+    ; Repli : $sVal est peut-etre un numero de dossier ou un numero de tracking --
+    ; on parcourt les references pour trouver celle qui correspond.
     Local $sections = IniReadSectionNames($HPE_INI_PATH)
     If Not @error Then
         For $i = 1 To $sections[0]
             If StringLeft($sections[$i], 4) = "MAP:" Then
                 Local $sDoss = StringUpper(IniRead($HPE_INI_PATH, $sections[$i], "DOSSIER", ""))
-                If $sDoss = $sVal Then
-                    Return '{"status":"ok","found":true,"reference":"' & _JsonEscape(StringTrimLeft($sections[$i], 4)) & '","dossier":"' & _JsonEscape($sDoss) & '"}'
+                Local $sTrack = StringUpper(IniRead($HPE_INI_PATH, $sections[$i], "TRACKING", ""))
+                If $sDoss = $sVal Or ($sTrack <> "" And $sTrack = $sVal) Then
+                    Return '{"status":"ok","found":true,"reference":"' & _JsonEscape(StringTrimLeft($sections[$i], 4)) & '","dossier":"' & _JsonEscape($sDoss) & '","tracking":"' & _JsonEscape($sTrack) & '"}'
                 EndIf
             EndIf
         Next
@@ -193,57 +197,57 @@ EndFunc
 
 ; ============================================================================
 ; SCAN MAIL (Outlook) -- detecte les references INC/FXC/ARN dans l'objet des
-; mails recents, les relie au dossier via le Mapping. Les references HPE
-; sont dans l'objet du mail, et les reponses ("RE:", "TR:"...) portent le
-; meme objet/reference -- donc on regroupe par reference : une seule alerte
-; par conversation (la plus recente, les mails etant parcourus du plus
-; recent au plus ancien), avec le nombre de mails du fil.
+; mails recents (Reception ET Envoyes), les relie au dossier via le Mapping.
+; Si l'objet ne contient pas de reference INC/FXC/ARN mais contient un numero
+; de tracking deja enregistre dans le Mapping, il est rattache par ce biais
+; (utile pour les mails envoyes/recus qui ne reprennent pas la reference
+; client mais mentionnent le tracking transporteur). Les reponses ("RE:",
+; "TR:"...) portent le meme objet/reference -- donc on regroupe par
+; reference : une seule alerte par conversation (la plus recente, les mails
+; etant parcourus du plus recent au plus ancien), avec le nombre de mails du
+; fil, tous dossiers (Reception + Envoyes) confondus.
 ; ============================================================================
 
-; $sMailbox : nom de la boite partagee a scanner (ex: "CDG-Transcon-HPE@expeditors.com").
-; Si vide, scanne la boite par defaut de l'utilisateur (repli pratique pour
-; les tests, mais en usage reel la boite HPE doit etre precisee -- c'est
-; elle qui recoit les mails du client, pas la boite personnelle).
-Func _HPE_MailScanJSON($sMailbox = "")
-    If Not _EDOC_EnsureOutlook() Then Return '{"status":"error","message":"outlook_indisponible","alerts":[]}'
-
-    Local $oInbox = 0
-    If $sMailbox = "" Then
-        $oInbox = $g_oNamespace.GetDefaultFolder(6) ; olFolderInbox
+; Parcourt un dossier Outlook (Reception ou Envoyes) et alimente les
+; dictionnaires partages $oThreadData/$oThreadCount (references liees a un
+; dossier) et $oNoMatchData/$oNoMatchCount (references sans dossier). Les
+; objets Scripting.Dictionary sont deja des references -- pas besoin de ByRef
+; pour que les .Add/.Item faits ici soient visibles de l'appelant.
+Func _HPE_ScanFolder($oFolder, $bSent, $sDateLimit, $oTrackingMap, $oThreadData, $oThreadCount, $oNoMatchData, $oNoMatchCount)
+    If Not IsObj($oFolder) Then Return
+    Local $oItems = $oFolder.Items
+    If $bSent Then
+        $oItems.Sort("[SentOn]", True)
     Else
-        Local $sWanted = StringUpper(StringStripWS($sMailbox, 3))
-        Local $sWantedNoDomain = StringRegExpReplace($sWanted, "@.*$", "")
-        Local $oStoreTarget = Null
-        For $oStore In $g_oNamespace.Stores
-            Local $sDisp = StringUpper($oStore.DisplayName)
-            If $sDisp = $sWanted Or $sDisp = $sWantedNoDomain Or StringInStr($sDisp, $sWantedNoDomain) Then
-                $oStoreTarget = $oStore
-                ExitLoop
-            EndIf
-        Next
-        If $oStoreTarget = Null Then Return '{"status":"error","message":"mailbox_not_found","alerts":[]}'
-        $oInbox = $oStoreTarget.GetDefaultFolder(6)
+        $oItems.Sort("[ReceivedTime]", True)
     EndIf
-
-    Local $oItems = $oInbox.Items
-    $oItems.Sort("[ReceivedTime]", True) ; plus recent d'abord
-    Local $sDateLimit = _FmtDate(_DateAdd('d', -14, _NowCalc()))
-
-    Local $oThreadData = ObjCreate("Scripting.Dictionary")  ; reference -> champs (packe), dossier connu
-    Local $oThreadCount = ObjCreate("Scripting.Dictionary") ; reference -> nb de mails du fil
-    Local $oNoMatchData = ObjCreate("Scripting.Dictionary")  ; reference -> champs (packe), pas de dossier lie
-    Local $oNoMatchCount = ObjCreate("Scripting.Dictionary") ; reference -> nb de mails du fil (non lie)
 
     Local $iScanned = 0
     For $oItem In $oItems
         If $iScanned >= 500 Then ExitLoop
         If $oItem.Class <> 43 Then ContinueLoop ; olMail uniquement
-        Local $itemDate = _FmtDate($oItem.ReceivedTime)
+        Local $itemDate = ""
+        If $bSent Then
+            $itemDate = _FmtDate($oItem.SentOn)
+        Else
+            $itemDate = _FmtDate($oItem.ReceivedTime)
+        EndIf
         If $itemDate < $sDateLimit Then ExitLoop
         $iScanned += 1
 
         Local $sSubj = $oItem.Subject
         Local $sRef = _HPE_ExtractRef($sSubj)
+        If $sRef = "" And $oTrackingMap.Count > 0 Then
+            ; Repli : pas de INC/FXC/ARN dans l'objet -- peut-etre un numero de
+            ; tracking deja connu (mapping cree manuellement avec un tracking).
+            Local $sSubjUp = StringUpper($sSubj)
+            For $sTrackKey In $oTrackingMap.Keys
+                If StringInStr($sSubjUp, $sTrackKey) Then
+                    $sRef = $oTrackingMap.Item($sTrackKey)
+                    ExitLoop
+                EndIf
+            Next
+        EndIf
         If $sRef = "" Then ContinueLoop
 
         If $oThreadData.Exists($sRef) Then
@@ -261,13 +265,24 @@ Func _HPE_MailScanJSON($sMailbox = "")
         Local $sReply = "false"
         If StringRegExp($sSubj, "(?i)^(RE|TR|FW|FWD)\s*:") Then $sReply = "true"
 
+        ; Pour un mail envoye, "l'expediteur" affiche est en realite le/les
+        ; destinataire(s) -- plus utile pour retrouver le fil que son propre nom.
+        Local $sFrom = ""
+        If $bSent Then
+            $sFrom = "→ " & $oItem.To
+        Else
+            $sFrom = $oItem.SenderName
+        EndIf
+        Local $sSentFlag = "false"
+        If $bSent Then $sSentFlag = "true"
+
         Local $sDossier = IniRead($HPE_INI_PATH, _HPE_MapSec($sRef), "DOSSIER", "")
         If $sDossier = "" Then
             ; Reference HPE detectee dans l'objet mais pas encore liee a un
             ; dossier : on la garde quand meme (au lieu de la jeter) pour que
             ; l'utilisateur puisse la relier depuis l'onglet HPE -- c'est la
             ; le vrai interet du scan pour les *nouveaux* dossiers.
-            $oNoMatchData.Add($sRef, $oItem.EntryID & Chr(31) & $sSubj & Chr(31) & $oItem.SenderName & Chr(31) & $itemDate & Chr(31) & $sReply)
+            $oNoMatchData.Add($sRef, $oItem.EntryID & Chr(31) & $sSubj & Chr(31) & $sFrom & Chr(31) & $itemDate & Chr(31) & $sReply & Chr(31) & $sSentFlag)
             $oNoMatchCount.Add($sRef, 1)
             ContinueLoop
         EndIf
@@ -275,9 +290,62 @@ Func _HPE_MailScanJSON($sMailbox = "")
         Local $sOwner = IniRead($HPE_INI_PATH, _HPE_SuiviSec($sDossier), "OWNER", "")
         Local $sStatus = IniRead($HPE_INI_PATH, _HPE_SuiviSec($sDossier), "STATUS", "")
 
-        $oThreadData.Add($sRef, $oItem.EntryID & Chr(31) & $sDossier & Chr(31) & $sSubj & Chr(31) & $oItem.SenderName & Chr(31) & $itemDate & Chr(31) & $sOwner & Chr(31) & $sStatus & Chr(31) & $sReply)
+        $oThreadData.Add($sRef, $oItem.EntryID & Chr(31) & $sDossier & Chr(31) & $sSubj & Chr(31) & $sFrom & Chr(31) & $itemDate & Chr(31) & $sOwner & Chr(31) & $sStatus & Chr(31) & $sReply & Chr(31) & $sSentFlag)
         $oThreadCount.Add($sRef, 1)
     Next
+EndFunc
+
+; $sMailbox : nom de la boite partagee a scanner (ex: "CDG-Transcon-HPE@expeditors.com").
+; Si vide, scanne la boite par defaut de l'utilisateur (repli pratique pour
+; les tests, mais en usage reel la boite HPE doit etre precisee -- c'est
+; elle qui recoit les mails du client, pas la boite personnelle).
+Func _HPE_MailScanJSON($sMailbox = "")
+    If Not _EDOC_EnsureOutlook() Then Return '{"status":"error","message":"outlook_indisponible","alerts":[]}'
+
+    Local $oInbox = 0, $oSent = 0
+    If $sMailbox = "" Then
+        $oInbox = $g_oNamespace.GetDefaultFolder(6) ; olFolderInbox
+        $oSent = $g_oNamespace.GetDefaultFolder(5)  ; olFolderSentMail
+    Else
+        Local $sWanted = StringUpper(StringStripWS($sMailbox, 3))
+        Local $sWantedNoDomain = StringRegExpReplace($sWanted, "@.*$", "")
+        Local $oStoreTarget = Null
+        For $oStore In $g_oNamespace.Stores
+            Local $sDisp = StringUpper($oStore.DisplayName)
+            If $sDisp = $sWanted Or $sDisp = $sWantedNoDomain Or StringInStr($sDisp, $sWantedNoDomain) Then
+                $oStoreTarget = $oStore
+                ExitLoop
+            EndIf
+        Next
+        If $oStoreTarget = Null Then Return '{"status":"error","message":"mailbox_not_found","alerts":[]}'
+        $oInbox = $oStoreTarget.GetDefaultFolder(6)
+        $oSent = $oStoreTarget.GetDefaultFolder(5)
+    EndIf
+
+    Local $sDateLimit = _FmtDate(_DateAdd('d', -14, _NowCalc()))
+
+    ; Numeros de tracking connus (issus du Mapping) -> reference associee, pour
+    ; retrouver un fil meme quand l'objet du mail ne contient pas de INC/FXC/ARN.
+    Local $oTrackingMap = ObjCreate("Scripting.Dictionary")
+    Local $sections = IniReadSectionNames($HPE_INI_PATH)
+    If Not @error Then
+        For $i = 1 To $sections[0]
+            If StringLeft($sections[$i], 4) = "MAP:" Then
+                Local $sTrackKey = StringUpper(StringStripWS(IniRead($HPE_INI_PATH, $sections[$i], "TRACKING", ""), 3))
+                If $sTrackKey <> "" And Not $oTrackingMap.Exists($sTrackKey) Then
+                    $oTrackingMap.Add($sTrackKey, StringTrimLeft($sections[$i], 4))
+                EndIf
+            EndIf
+        Next
+    EndIf
+
+    Local $oThreadData = ObjCreate("Scripting.Dictionary")  ; reference -> champs (packe), dossier connu
+    Local $oThreadCount = ObjCreate("Scripting.Dictionary") ; reference -> nb de mails du fil
+    Local $oNoMatchData = ObjCreate("Scripting.Dictionary")  ; reference -> champs (packe), pas de dossier lie
+    Local $oNoMatchCount = ObjCreate("Scripting.Dictionary") ; reference -> nb de mails du fil (non lie)
+
+    _HPE_ScanFolder($oInbox, False, $sDateLimit, $oTrackingMap, $oThreadData, $oThreadCount, $oNoMatchData, $oNoMatchCount)
+    _HPE_ScanFolder($oSent, True, $sDateLimit, $oTrackingMap, $oThreadData, $oThreadCount, $oNoMatchData, $oNoMatchCount)
 
     Local $sJson = "["
     For $sKey In $oThreadData.Keys
@@ -292,6 +360,7 @@ Func _HPE_MailScanJSON($sMailbox = "")
                 ',"owner":"' & _JsonEscape($a[5]) & '"' & _
                 ',"status":"' & _JsonEscape($a[6]) & '"' & _
                 ',"reply":' & $a[7] & _
+                ',"sent":' & $a[8] & _
                 ',"threadCount":' & $oThreadCount.Item($sKey) & '}'
     Next
     $sJson &= "]"
@@ -306,17 +375,18 @@ Func _HPE_MailScanJSON($sMailbox = "")
                 ',"sender":"' & _JsonEscape($u[2]) & '"' & _
                 ',"date":"' & _JsonEscape($u[3]) & '"' & _
                 ',"reply":' & $u[4] & _
+                ',"sent":' & $u[5] & _
                 ',"threadCount":' & $oNoMatchCount.Item($sKey) & '}'
     Next
     $sUnmappedJson &= "]"
 
     ; mappingCount/suiviCount pour l'apercu Dashboard.
     Local $iMapCount = 0, $iSuiviCount = 0
-    Local $sections = IniReadSectionNames($HPE_INI_PATH)
+    Local $sectionsCount = IniReadSectionNames($HPE_INI_PATH)
     If Not @error Then
-        For $i = 1 To $sections[0]
-            If StringLeft($sections[$i], 4) = "MAP:" Then $iMapCount += 1
-            If StringLeft($sections[$i], 6) = "SUIVI:" Then $iSuiviCount += 1
+        For $i = 1 To $sectionsCount[0]
+            If StringLeft($sectionsCount[$i], 4) = "MAP:" Then $iMapCount += 1
+            If StringLeft($sectionsCount[$i], 6) = "SUIVI:" Then $iSuiviCount += 1
         Next
     EndIf
     Return '{"status":"ok","alerts":' & $sJson & ',"unmapped":' & $sUnmappedJson & ',"mappingCount":' & $iMapCount & ',"suiviCount":' & $iSuiviCount & '}'

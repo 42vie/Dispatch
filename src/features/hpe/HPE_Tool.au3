@@ -8,7 +8,7 @@
 ; Excel installe, pas de risque de fichier verrouille ou de process fantome).
 ; ============================================================================
 
-Global Const $HPE_INI_PATH = @ScriptDir & "\Config\HPE_Tool.ini"
+Global $HPE_INI_PATH = @ScriptDir & "\Config\HPE_Tool.ini"
 
 ; Extrait la premiere reference INC/FXC/ARN + chiffres trouvee dans une
 ; chaine (ex: objet de mail), normalisee en majuscules sans espace/tiret.

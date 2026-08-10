@@ -12,4 +12,4 @@
 ; valeur inchangee, toujours "robot_v15_config.ini" (a ne pas confondre
 ; avec le config.ini a la racine du projet, qui sert a autre chose :
 ; host/port serveur, taux fuel, chemins contacts/backups).
-Global Const $CFG_FILE = @ScriptDir & "\robot_v15_config.ini"
+Global $CFG_FILE = @ScriptDir & "\robot_v15_config.ini"

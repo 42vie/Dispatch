@@ -4585,7 +4585,6 @@ function optsUpdateMyName() {
 function showIdentityModal() {
   const saved = localStorage.getItem('dispatch_operator') || '';
   const names = [...new Set(g_master.map(r => r.operator || '').filter(Boolean))].sort();
-  if (!names.length) return; // pas de noms dans le CSV
   const sel = document.getElementById('identity-select');
   if (sel) {
     sel.innerHTML = '<option value="">— Voir tous les dossiers —</option>'
@@ -6555,6 +6554,8 @@ window.addEventListener('load', function(){ setTimeout(init,1250); });
 .k-item.hpe-kanban-pulse{animation:hpeKanbanPulse 1.7s ease-in-out infinite;}
 .hpe-kanban-link{position:absolute;top:6px;right:27px;font-size:13px;line-height:1;text-decoration:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35));z-index:2;opacity:1;}
 .hpe-kanban-link:hover{transform:scale(1.15);}
+.hpe-kanban-suivi{position:absolute;top:6px;right:47px;font-size:12px;line-height:1;text-decoration:none;z-index:2;opacity:.55;}
+.hpe-kanban-suivi:hover{opacity:1;transform:scale(1.15);}
 </style>
 <script id="hpe-ui-v1-script">
 (function(){
@@ -6736,10 +6737,17 @@ function markKanbanCards(){
     var key=String(a.dossier||'').trim().toUpperCase();
     if(!byDossier[key] || String(a.date) > String(byDossier[key].date)) byDossier[key]=a;
   });
+  var trackedByDossier={};
+  (suivi||[]).forEach(function(s){ trackedByDossier[String(s.dossier||'').trim().toUpperCase()]=s; });
+
   document.querySelectorAll('.k-item[data-file]').forEach(function(card){
     var parts=String(card.dataset.file||'').split(' + ');
-    var hit=null;
-    parts.some(function(p){ var k=p.trim().toUpperCase(); if(byDossier[k]){ hit=byDossier[k]; return true; } return false; });
+    var hit=null, tracked=null;
+    parts.forEach(function(p){
+      var k=p.trim().toUpperCase();
+      if(!hit && byDossier[k]) hit=byDossier[k];
+      if(!tracked && trackedByDossier[k]) tracked=trackedByDossier[k];
+    });
     var link=card.querySelector('.hpe-kanban-link');
     if(hit){
       card.classList.add('hpe-kanban-pulse');
@@ -6756,6 +6764,16 @@ function markKanbanCards(){
     } else {
       card.classList.remove('hpe-kanban-pulse');
       if(link) link.remove();
+    }
+
+    var sLink=card.querySelector('.hpe-kanban-suivi');
+    if(tracked){
+      if(!sLink){ sLink=document.createElement('a'); sLink.className='hpe-kanban-suivi'; sLink.href='#'; card.appendChild(sLink); }
+      sLink.title='Suivi HPE'+(tracked.owner?(' — '+tracked.owner):'')+(tracked.status?(' ('+tracked.status+')'):'');
+      sLink.textContent='📁';
+      sLink.onclick=function(ev){ ev.preventDefault(); ev.stopPropagation(); openHpeSuivi(tracked.dossier); };
+    } else if(sLink){
+      sLink.remove();
     }
   });
 }

@@ -1882,6 +1882,17 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key==='s'){e.preventDefault();autoSave();toast('Sauvegarde lancée.');return;}
   if (e.ctrlKey && e.key==='z'){e.preventDefault();undoLast();return;}
   if (e.ctrlKey && e.key==='b'){e.preventDefault();var tgl=document.getElementById('tabbar-toggle');if(tgl)tgl.click();return;}
+  // Ctrl+1..9 / Ctrl+0 : déplace les dossiers cochés dans le Kanban vers la
+  // colonne N (0 = colonne 10, BL/CMR). Ignoré si on est en train de taper
+  // dans un champ -- sinon impossible de saisir un chiffre normalement.
+  if (e.ctrlKey && !e.altKey && /^[0-9]$/.test(e.key)) {
+    const tag = (e.target && e.target.tagName || '').toLowerCase();
+    const editable = tag==='input' || tag==='textarea' || tag==='select' || (e.target && e.target.isContentEditable);
+    if (editable) return;
+    e.preventDefault();
+    kabMoveSelectedTo(e.key==='0' ? 10 : Number(e.key));
+    return;
+  }
 });
 
 function onCCCheck(idx, checked) {
@@ -2161,6 +2172,27 @@ function onKDrop(event, status) {
   g_kabSelected.clear();
   renderMaster(); renderKanban(); updateStats(); markDirty();
   toast(files.length + ' dossier(s) déplacé(s).');
+}
+
+// ── Déplacement clavier : Ctrl+1..9 / Ctrl+0 (= colonne 10, BL/CMR) déplace
+// les dossiers cochés dans le Kanban (g_kabSelected) directement vers la
+// colonne visée, sans repasser par les actions métier (FC/COMAT/NTO) --
+// même effet qu'un drag & drop groupé, cf. onKDrop() ci-dessus. ──
+function kabMoveSelectedTo(status) {
+  const files = Array.from(g_kabSelected);
+  if (!files.length) { toast('Coche au moins un dossier dans le Kanban avant d\'utiliser Ctrl+chiffre.'); return; }
+  pushUndo('Déplacement clavier → ' + statutLabel(String(status)));
+  files.forEach(f => {
+    const idx = g_master.findIndex(r => r.file===f);
+    if (idx < 0) return;
+    g_master[idx].statut = String(status);
+    stampRecord(g_master[idx]);
+    if (status>=2 && g_master[idx].cc!=='Cc') g_master[idx].cc='Cc';
+  });
+  cleanupCpData();
+  g_kabSelected.clear();
+  renderMaster(); renderKanban(); updateStats(); markDirty();
+  toast(files.length + ' dossier(s) déplacé(s) vers ' + statutLabel(String(status)) + '.');
 }
 
 function onCardDrop(event, targetFile) {

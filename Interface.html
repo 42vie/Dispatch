@@ -1550,6 +1550,25 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
   </div>
 </div>
 
+<!-- ══ MODAL BL RAPIDE ══ -->
+<div class="overlay" id="modal-bl-rapide">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-hd">
+      <h2>📄 BL rapide</h2>
+      <button class="modal-close" onclick="closeModal('modal-bl-rapide')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Colle un ou plusieurs numéros de dossier (J1A/H1A...) — un BL groupé sera généré pour l'ensemble.</div>
+      <textarea id="bl-rapide-input" placeholder="J1A0040247&#10;J1A0040248" style="width:100%;min-height:90px;resize:vertical;border:1px solid var(--border2);border-radius:8px;background:var(--surface2);color:var(--text);font-family:var(--mono);font-size:12px;padding:9px;outline:none;box-sizing:border-box"></textarea>
+      <div class="modal-ft" style="padding:12px 0 0;border-top:none;justify-content:flex-start;gap:8px">
+        <button class="btn btn-blue-out" id="bl-rapide-go">📄 Générer BL</button>
+        <button class="btn btn-purple-out" id="bl-rapide-edoc-go">📄➜📤 BL + EDOC</button>
+      </div>
+      <div id="bl-rapide-status" class="cmr4-live" style="display:none;margin-top:10px"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 'use strict';
 
@@ -5942,18 +5961,21 @@ function updateDashboard(){
     '<section class="cr-card"><h3>Terminés</h3><div class="cr-kpi">'+m.done+'</div><div class="cr-sub">Statut 8</div></section>'+
     '<section class="cr-card cr-full"><h3>Actions rapides</h3><div class="cr-actions"><button class="cr-alert-chip cr-warn" data-cr-open="both">🛠 Compléter infos manquantes <b>'+(m.noEmail+m.noContact)+'</b></button><button class="cr-alert-chip cr-danger" data-filter="late">⚠ Retard <b>'+m.late+'</b></button><button class="cr-alert-chip cr-danger" data-filter="rdl">📅 RDL dépassée <b>'+m.rdl+'</b></button><button class="cr-alert-chip cr-good" data-filter="groupable">🔗 Groupables <b>'+m.groupable+'</b></button></div>' +
       '<div class="cr-actions" style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;flex-wrap:wrap">' +
-      '<input id="qa-bl-input" type="text" placeholder="N° dossier (J1A...)" style="flex:1;min-width:160px;height:32px;border:1px solid var(--border2);border-radius:8px;background:var(--surface2);color:var(--text);padding:0 10px;font-family:var(--mono);font-size:12px">' +
-      '<button class="btn btn-blue-out btn-sm" id="qa-bl-go">📄 BL rapide</button>' +
-      '<button class="btn btn-purple-out btn-sm" id="qa-bl-edoc-go">📄➜📤 BL + EDOC rapide</button>' +
-      '</div><div id="qa-bl-hint" class="cr-sub" style="margin-top:4px"></div></section>'+
+      '<button class="btn btn-blue-out btn-sm" id="qa-bl-open">📄 BL rapide</button>' +
+      '</div></section>'+
     '<section class="cr-card cr-wide"><h3>Top transporteurs</h3>'+barRows(m.byTransp)+'</section>'+
     '<section class="cr-card cr-wide"><h3>Focus manquant</h3><div class="cr-sub">Clique sur Sans email / Sans contact pour compléter directement les informations.</div></section>';
 }
-// ── Actions rapides Dashboard : BL (et BL+EDOC) directement depuis un
-// numéro de dossier, sans passer par l'onglet CMR/BL. S'appuie sur
-// window.cmrQuickBL / window.cmrQuickBLThenEdoc (exposés par l'onglet
-// CMR/BL, autre IIFE) -- si ce dossier est actuellement dans la colonne
-// Kanban BL/CMR (statut 10), il avance automatiquement vers NTO (7). ──
+// ── Modale "BL rapide" (et BL+EDOC) directement depuis un ou plusieurs
+// numéros de dossier, sans passer par l'onglet CMR/BL. Volontairement
+// autonome (appelle CMR_GENERATE/CMR_STATUS/CMR_EDOC directement) plutôt
+// que de s'appuyer sur window.cmrQuickBL : ce dernier dépend du DOM interne
+// de l'onglet CMR/BL (#cmr4-qbody etc.), qui n'existe que si cet onglet a
+// déjà été ouvert au moins une fois -- avant ça, la génération partait bien
+// côté serveur mais rien ne s'affichait nulle part, d'où l'impression que
+// "ça ne fonctionne pas". Si le dossier est dans la colonne Kanban BL/CMR
+// (statut 10), il avance automatiquement vers NTO (7). ──
+var g_blRapidePoll = null;
 function quickBLAdvanceKanban(files){
   var moved = 0;
   files.forEach(function(f){
@@ -5963,26 +5985,52 @@ function quickBLAdvanceKanban(files){
   if(moved){ try{ renderMaster(); renderKanban(); updateStats(); markDirty(); }catch(e){} }
   return moved;
 }
-function quickBL(withEdoc){
-  var inp = id('qa-bl-input'), hint = id('qa-bl-hint');
-  var v = inp ? inp.value : '';
-  if(!v || !v.trim()){ if(hint) hint.textContent = 'Saisis un ou plusieurs numéros de dossier.'; return; }
-  if(typeof window.cmrQuickBL !== 'function'){ if(hint) hint.textContent = 'Onglet CMR/BL pas encore chargé -- réessaie dans un instant.'; return; }
-  var res = withEdoc ? window.cmrQuickBLThenEdoc(v) : window.cmrQuickBL(v);
-  if(!res.ok){ if(hint) hint.textContent = res.message; return; }
-  if(inp) inp.value = '';
-  var moved = quickBLAdvanceKanban(res.files);
-  if(hint) hint.textContent = (withEdoc ? 'BL + EDOC lancés' : 'BL lancé') + ' pour ' + res.files.join(', ') + (moved ? ' — '+moved+' dossier(s) Kanban avancé(s) vers NTO.' : '.');
-  toastMsg((withEdoc ? 'BL + EDOC' : 'BL') + ' rapide lancé pour ' + res.files.length + ' dossier(s).');
+function blRapideExtractFiles(txt){
+  return Array.from(new Set((String(txt||'').match(/J[A-Z0-9]{6,}/gi) || []).map(function(s){ return s.trim().toUpperCase(); })));
+}
+function blRapideStatus(msg){ var el = id('bl-rapide-status'); if(!el) return; el.style.display = 'block'; el.textContent = msg; }
+function openBlRapideModal(){
+  var inp = id('bl-rapide-input'); if(inp) inp.value = '';
+  var st = id('bl-rapide-status'); if(st){ st.style.display = 'none'; st.textContent = ''; }
+  if(g_blRapidePoll){ clearInterval(g_blRapidePoll); g_blRapidePoll = null; }
+  openModal('modal-bl-rapide');
+}
+function blRapideGenerate(withEdoc){
+  var files = blRapideExtractFiles(id('bl-rapide-input').value);
+  if(!files.length){ blRapideStatus('Saisis un ou plusieurs numéros de dossier.'); return; }
+  blRapideStatus('Génération en cours pour ' + files.join(', ') + '...');
+  apiAction({action:'CMR_GENERATE', data: files.join(',')}).then(function(){
+    var moved = quickBLAdvanceKanban(files);
+    var extra = moved ? (' — ' + moved + ' dossier(s) Kanban avancé(s) vers NTO.') : '';
+    if(!withEdoc){ blRapideStatus('BL lancé pour ' + files.join(', ') + '.' + extra); toastMsg('BL rapide lancé pour ' + files.length + ' dossier(s).'); return; }
+    blRapideStatus('BL lancé, en attente du résultat pour lancer EDOC...' + extra);
+    var attempts = 0;
+    if(g_blRapidePoll) clearInterval(g_blRapidePoll);
+    g_blRapidePoll = setInterval(function(){
+      attempts++;
+      apiAction({action:'CMR_STATUS'}).then(function(r){
+        var match = r && Array.isArray(r.results) && r.results.find(function(res){ return files.every(function(f){ return String(res.bl||'').toUpperCase().indexOf(f)!==-1; }); });
+        if(match){
+          clearInterval(g_blRapidePoll); g_blRapidePoll = null;
+          apiAction({action:'CMR_EDOC', index: match.index}).then(function(){
+            blRapideStatus('BL + EDOC lancés pour ' + files.join(', ') + '.' + extra);
+            toastMsg('BL + EDOC rapide lancé pour ' + files.length + ' dossier(s).');
+          }).catch(function(e){ blRapideStatus('BL généré, mais erreur EDOC : ' + (e.message || e)); });
+          return;
+        }
+        if(attempts >= 40){ clearInterval(g_blRapidePoll); g_blRapidePoll = null; blRapideStatus('BL généré mais toujours pas dans les résultats après 1 min -- vérifie l\'onglet CMR/BL.'); }
+      }).catch(function(){});
+    }, 1500);
+  }).catch(function(e){ blRapideStatus('Erreur génération : ' + (e.message || e)); });
 }
 function bindDashboardActions(){
   document.addEventListener('click', function(e){
     var open = e.target.closest('[data-cr-open]'); if(open){ openMissing(open.dataset.crOpen); return; }
     var f = e.target.closest('[data-filter]'); if(f){ crFilter = f.dataset.filter; switchTab('dispatch'); setTimeout(applyFilter,100); return; }
-    var bl = e.target.closest('#qa-bl-go'); if(bl){ quickBL(false); return; }
-    var ble = e.target.closest('#qa-bl-edoc-go'); if(ble){ quickBL(true); return; }
+    var qo = e.target.closest('#qa-bl-open'); if(qo){ openBlRapideModal(); return; }
+    var bl = e.target.closest('#bl-rapide-go'); if(bl){ blRapideGenerate(false); return; }
+    var ble = e.target.closest('#bl-rapide-edoc-go'); if(ble){ blRapideGenerate(true); return; }
   });
-  document.addEventListener('keydown', function(e){ if(e.key==='Enter' && e.target && e.target.id==='qa-bl-input'){ quickBL(false); } });
 }
 
 function injectDispatchFilter(){

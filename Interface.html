@@ -7015,7 +7015,10 @@ function copyReferencesList(){
   var rows = lastAlerts.map(function(a){ return {reference:a.reference, dossier:a.dossier}; })
     .concat(lastUnmapped.map(function(u){ return {reference:u.reference, dossier:''}; }));
   if(!rows.length){ toastMsg('Aucune référence à copier -- lance un scan.'); return; }
-  var text = rows.map(function(r){ var ref='R#'+r.reference; return r.dossier ? (ref+'\t'+r.dossier) : ref; }).join('\n');
+  // Colle direct dans le tableau ETMS File(B)/Events(C)/Refs(D)/Log(E) :
+  // B = R#reference, E = dossier (equivalent SHPMNT_REF) quand connu --
+  // 3 tabs pour sauter Events/Refs et ne pas les ecraser si vides.
+  var text = rows.map(function(r){ var ref='R#'+r.reference; return r.dossier ? (ref+'\t\t\t'+r.dossier) : ref; }).join('\n');
   if(navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(text).then(function(){ toastMsg(rows.length+' référence(s) copiée(s).'); }, function(){ toastMsg('Copie impossible (permissions navigateur).'); });
   } else {

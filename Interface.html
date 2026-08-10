@@ -1346,6 +1346,7 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
         <button class="btn btn-orange-out btn-sm" style="margin-left:6px" onclick="recalcTranspAdd()">↺ Auto</button>
       </div>
       <div class="form-row"><label>Transporteur</label><input id="add-transp" type="text"></div>
+      <div class="form-row"><label>Opérateur</label><select id="add-operator"><option value="">— Non assigné —</option></select></div>
     </div>
     <div class="modal-ft">
       <button class="btn btn-ghost" onclick="closeModal('modal-add')">Annuler</button>
@@ -3069,6 +3070,10 @@ document.getElementById('btn-add-manual').onclick = () => {
   ['add-file','add-client','add-svct','add-dept','add-transp'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('add-poids').value='0';
   document.getElementById('add-vol').value='0';
+  const opSel=document.getElementById('add-operator');
+  const names=[...new Set(g_master.map(r=>r.operator||'').filter(Boolean))].sort();
+  opSel.innerHTML='<option value="">— Non assigné —</option>'+names.map(n=>'<option value="'+n+'">'+n+'</option>').join('');
+  opSel.value = g_operatorFilter || '';
   openModal('modal-add');
 };
 
@@ -3092,9 +3097,10 @@ function saveManual() {
   const t=calcTaxable(p,v);
   const dept=document.getElementById('add-dept').value;
   let transp=document.getElementById('add-transp').value||calcTransp(svct,t,dept,isCP(client));
+  const operator=document.getElementById('add-operator').value;
   const today=new Date().toISOString().slice(0,10);
   g_master.push({file,client,rdl:'',svct,transp,poids:p,vol:v,taxable:t,
-    dept,contact:'',tel:'',email:'',cc:'Non',comment:'',statut:'1',operator:'',_dateCreated:today});
+    dept,contact:'',tel:'',email:'',cc:'Non',comment:'',statut:'1',operator,_dateCreated:today});
   storeRaw(file,client,svct,p,v,t,dept,'');
   autoFillContact(file,client);
   closeModal('modal-add');

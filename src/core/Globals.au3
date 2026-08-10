@@ -120,7 +120,6 @@ Global $g_sStatusFile   = @ScriptDir & "\dispatch_status.json"
 Global $g_sDataFile     = @ScriptDir & "\dispatch_data.json"
 Global $g_sContactsFile       = @ScriptDir & "\dispatch_contacts.tsv"
 Global $g_sContactsLegacyFile = @ScriptDir & "\dispatch_contacts.json"
-Global $CFG_FILE = @ScriptDir & "\config.ini"
 Global $g_sHtmlFile = @ScriptDir & "\interface.html"
 ; CMR_FULL_FUSION_V1 - moteur CMR fusionné dans le serveur Dispatch
 Global $g_sCMRStatus = "Prêt."

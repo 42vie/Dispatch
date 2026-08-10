@@ -17,21 +17,21 @@ Func _GetPJConfig()
 EndFunc
 
 Func _InitConfig()
-    If FileExists($gsConfigFile) Then Return
-    IniWrite($gsConfigFile, "System", "ProfilesList", "HPE")
-    IniWrite($gsConfigFile, "HPE_Actions", "List", "Pre-Alertes|Rendez-Vous")
-    IniWrite($gsConfigFile, "HPE_Pre-Alertes", "Folder", "5")
-    IniWrite($gsConfigFile, "HPE_Pre-Alertes", "Keywords", "Livraison,Commande")
-    IniWrite($gsConfigFile, "HPE_Pre-Alertes", "Sender", "")
-    IniWrite($gsConfigFile, "HPE_Pre-Alertes", "Prefix", "J")
-    IniWrite($gsConfigFile, "HPE_Pre-Alertes", "Length", "9")
-    IniWrite($gsConfigFile, "HPE_Pre-Alertes", "DocType", "Delivery Order")
-    IniWrite($gsConfigFile, "HPE_Rendez-Vous", "Folder", "5")
-    IniWrite($gsConfigFile, "HPE_Rendez-Vous", "Keywords", "RDV,HPE")
-    IniWrite($gsConfigFile, "HPE_Rendez-Vous", "Sender", "")
-    IniWrite($gsConfigFile, "HPE_Rendez-Vous", "Prefix", "J")
-    IniWrite($gsConfigFile, "HPE_Rendez-Vous", "Length", "9")
-    IniWrite($gsConfigFile, "HPE_Rendez-Vous", "DocType", "Appointment Requested")
+    If FileExists($CFG_FILE) Then Return
+    IniWrite($CFG_FILE, "System", "ProfilesList", "HPE")
+    IniWrite($CFG_FILE, "HPE_Actions", "List", "Pre-Alertes|Rendez-Vous")
+    IniWrite($CFG_FILE, "HPE_Pre-Alertes", "Folder", "5")
+    IniWrite($CFG_FILE, "HPE_Pre-Alertes", "Keywords", "Livraison,Commande")
+    IniWrite($CFG_FILE, "HPE_Pre-Alertes", "Sender", "")
+    IniWrite($CFG_FILE, "HPE_Pre-Alertes", "Prefix", "J")
+    IniWrite($CFG_FILE, "HPE_Pre-Alertes", "Length", "9")
+    IniWrite($CFG_FILE, "HPE_Pre-Alertes", "DocType", "Delivery Order")
+    IniWrite($CFG_FILE, "HPE_Rendez-Vous", "Folder", "5")
+    IniWrite($CFG_FILE, "HPE_Rendez-Vous", "Keywords", "RDV,HPE")
+    IniWrite($CFG_FILE, "HPE_Rendez-Vous", "Sender", "")
+    IniWrite($CFG_FILE, "HPE_Rendez-Vous", "Prefix", "J")
+    IniWrite($CFG_FILE, "HPE_Rendez-Vous", "Length", "9")
+    IniWrite($CFG_FILE, "HPE_Rendez-Vous", "DocType", "Appointment Requested")
 EndFunc
 
 Func _LoadActions($sProf, $sMail)
@@ -42,14 +42,14 @@ Func _LoadActions($sProf, $sMail)
     Next
     $g_iDynCount = 0
     If $sProf = "" Then Return
-    Local $sList = IniRead($gsConfigFile, $sProf & "_Actions", "List", "")
+    Local $sList = IniRead($CFG_FILE, $sProf & "_Actions", "List", "")
     If $sList = "" Then Return
     Local $a = StringSplit($sList, "|")
     Local $y = 338
     For $i = 1 To $a[0]
         If $i > 8 Then ExitLoop
         Local $sSec = $sProf & "_" & $a[$i]
-        Local $sLast = IniRead($gsConfigFile, $sSec, "LastUpload_" & $sMail, "Jamais")
+        Local $sLast = IniRead($CFG_FILE, $sSec, "LastUpload_" & $sMail, "Jamais")
         If $sLast <> "Jamais" Then $sLast = StringRight($sLast, 8)
         $g_aDynCtrls[$g_iDynCount][0] = GUICtrlCreateCheckbox($a[$i], 55, $y, 175, 22)
         GUICtrlSetState(-1, $GUI_UNCHECKED)
@@ -101,7 +101,7 @@ Func _RulesGUI()
     Local $idSave = GUICtrlCreateButton("Sauvegarder", 235, 480, 130, 34)
     GUICtrlSetBkColor($idSave, $C_ACCENT)
     Local $idClose = GUICtrlCreateButton("Fermer", 380, 480, 100, 34)
-    Local $sPList = IniRead($gsConfigFile, "System", "ProfilesList", "")
+    Local $sPList = IniRead($CFG_FILE, "System", "ProfilesList", "")
     If $sPList <> "" Then GUICtrlSetData($idP, "|" & $sPList, StringSplit($sPList, "|")[1])
     _ReloadActionsCombo($idP, $idA)
     _LoadActionData($idP, $idA, $idFolder, $idKeys, $idPrefix, $idLen, $idSender, $idDoc)
@@ -115,29 +115,29 @@ Func _RulesGUI()
             Case $idNewP
                 Local $sNewP = InputBox("Nouveau profil", "Nom du profil :")
                 If $sNewP <> "" Then
-                    Local $sCurrP = IniRead($gsConfigFile, "System", "ProfilesList", "")
+                    Local $sCurrP = IniRead($CFG_FILE, "System", "ProfilesList", "")
                     If Not _PipeContains($sCurrP, $sNewP) Then
                         If $sCurrP = "" Then
                             $sCurrP = $sNewP
                         Else
                             $sCurrP &= "|" & $sNewP
                         EndIf
-                        IniWrite($gsConfigFile, "System", "ProfilesList", $sCurrP)
-                        IniWrite($gsConfigFile, $sNewP & "_Actions", "List", "")
+                        IniWrite($CFG_FILE, "System", "ProfilesList", $sCurrP)
+                        IniWrite($CFG_FILE, $sNewP & "_Actions", "List", "")
                         GUICtrlSetData($idP, "|" & $sCurrP, $sNewP)
                     EndIf
                 EndIf
             Case $idDelP
                 Local $sP = GUICtrlRead($idP)
                 If $sP <> "" And MsgBox($MB_YESNO + $MB_ICONWARNING, "Confirmer", "Supprimer le profil " & $sP & " ?") = $IDYES Then
-                    Local $sActs = IniRead($gsConfigFile, $sP & "_Actions", "List", "")
+                    Local $sActs = IniRead($CFG_FILE, $sP & "_Actions", "List", "")
                     Local $aActs = StringSplit($sActs, "|")
                     For $i = 1 To $aActs[0]
-                        If $aActs[$i] <> "" Then IniDelete($gsConfigFile, $sP & "_" & $aActs[$i])
+                        If $aActs[$i] <> "" Then IniDelete($CFG_FILE, $sP & "_" & $aActs[$i])
                     Next
-                    IniDelete($gsConfigFile, $sP & "_Actions")
-                    Local $sNewList = _RemoveFromPipeList(IniRead($gsConfigFile, "System", "ProfilesList", ""), $sP)
-                    IniWrite($gsConfigFile, "System", "ProfilesList", $sNewList)
+                    IniDelete($CFG_FILE, $sP & "_Actions")
+                    Local $sNewList = _RemoveFromPipeList(IniRead($CFG_FILE, "System", "ProfilesList", ""), $sP)
+                    IniWrite($CFG_FILE, "System", "ProfilesList", $sNewList)
                     GUICtrlSetData($idP, "|" & $sNewList, "")
                     _ReloadActionsCombo($idP, $idA)
                 EndIf
@@ -146,23 +146,23 @@ Func _RulesGUI()
                 If $sP2 = "" Then ContinueLoop
                 Local $sNewA = InputBox("Nouvelle action", "Nom de l'action :")
                 If $sNewA <> "" Then
-                    Local $sCurrA = IniRead($gsConfigFile, $sP2 & "_Actions", "List", "")
+                    Local $sCurrA = IniRead($CFG_FILE, $sP2 & "_Actions", "List", "")
                     If Not _PipeContains($sCurrA, $sNewA) Then
                         If $sCurrA = "" Then
                             $sCurrA = $sNewA
                         Else
                             $sCurrA &= "|" & $sNewA
                         EndIf
-                        IniWrite($gsConfigFile, $sP2 & "_Actions", "List", $sCurrA)
+                        IniWrite($CFG_FILE, $sP2 & "_Actions", "List", $sCurrA)
                         GUICtrlSetData($idA, "|" & $sCurrA, $sNewA)
                     EndIf
                 EndIf
             Case $idDelA
                 Local $sP3 = GUICtrlRead($idP), $sA3 = GUICtrlRead($idA)
                 If $sP3 <> "" And $sA3 <> "" And MsgBox($MB_YESNO, "Confirmer", "Supprimer l'action " & $sA3 & " ?") = $IDYES Then
-                    Local $sNewAList = _RemoveFromPipeList(IniRead($gsConfigFile, $sP3 & "_Actions", "List", ""), $sA3)
-                    IniWrite($gsConfigFile, $sP3 & "_Actions", "List", $sNewAList)
-                    IniDelete($gsConfigFile, $sP3 & "_" & $sA3)
+                    Local $sNewAList = _RemoveFromPipeList(IniRead($CFG_FILE, $sP3 & "_Actions", "List", ""), $sA3)
+                    IniWrite($CFG_FILE, $sP3 & "_Actions", "List", $sNewAList)
+                    IniDelete($CFG_FILE, $sP3 & "_" & $sA3)
                     _ReloadActionsCombo($idP, $idA)
                     _LoadActionData($idP, $idA, $idFolder, $idKeys, $idPrefix, $idLen, $idSender, $idDoc)
                 EndIf
@@ -172,12 +172,12 @@ Func _RulesGUI()
                     Local $sSec = $sP4 & "_" & $sA4
                     Local $sFolderID = "5"
                     If GUICtrlRead($idFolder) = "Boîte de réception" Then $sFolderID = "6"
-                    IniWrite($gsConfigFile, $sSec, "Folder", $sFolderID)
-                    IniWrite($gsConfigFile, $sSec, "Keywords", GUICtrlRead($idKeys))
-                    IniWrite($gsConfigFile, $sSec, "Prefix", GUICtrlRead($idPrefix))
-                    IniWrite($gsConfigFile, $sSec, "Length", GUICtrlRead($idLen))
-                    IniWrite($gsConfigFile, $sSec, "Sender", GUICtrlRead($idSender))
-                    IniWrite($gsConfigFile, $sSec, "DocType", GUICtrlRead($idDoc))
+                    IniWrite($CFG_FILE, $sSec, "Folder", $sFolderID)
+                    IniWrite($CFG_FILE, $sSec, "Keywords", GUICtrlRead($idKeys))
+                    IniWrite($CFG_FILE, $sSec, "Prefix", GUICtrlRead($idPrefix))
+                    IniWrite($CFG_FILE, $sSec, "Length", GUICtrlRead($idLen))
+                    IniWrite($CFG_FILE, $sSec, "Sender", GUICtrlRead($idSender))
+                    IniWrite($CFG_FILE, $sSec, "DocType", GUICtrlRead($idDoc))
                     MsgBox(64, "OK", "Règle sauvegardée.", 2, $h)
                 EndIf
         EndSwitch
@@ -194,7 +194,7 @@ Func _RulesGUI()
 EndFunc
 
 Func _ReloadActionsCombo($idP, $idA)
-    Local $s = IniRead($gsConfigFile, GUICtrlRead($idP) & "_Actions", "List", "")
+    Local $s = IniRead($CFG_FILE, GUICtrlRead($idP) & "_Actions", "List", "")
     Local $first = ""
     If $s <> "" Then $first = StringSplit($s, "|")[1]
     GUICtrlSetData($idA, "|" & $s, $first)
@@ -202,16 +202,16 @@ EndFunc
 
 Func _LoadActionData($idP, $idA, $idF, $idK, $idPre, $idLen, $idS, $idD)
     Local $sSec = GUICtrlRead($idP) & "_" & GUICtrlRead($idA)
-    If IniRead($gsConfigFile, $sSec, "Folder", "5") = "6" Then
+    If IniRead($CFG_FILE, $sSec, "Folder", "5") = "6" Then
         GUICtrlSetData($idF, "Boîte de réception")
     Else
         GUICtrlSetData($idF, "Éléments envoyés")
     EndIf
-    GUICtrlSetData($idK, IniRead($gsConfigFile, $sSec, "Keywords", ""))
-    GUICtrlSetData($idPre, IniRead($gsConfigFile, $sSec, "Prefix", ""))
-    GUICtrlSetData($idLen, IniRead($gsConfigFile, $sSec, "Length", ""))
-    GUICtrlSetData($idS, IniRead($gsConfigFile, $sSec, "Sender", ""))
-    GUICtrlSetData($idD, IniRead($gsConfigFile, $sSec, "DocType", ""))
+    GUICtrlSetData($idK, IniRead($CFG_FILE, $sSec, "Keywords", ""))
+    GUICtrlSetData($idPre, IniRead($CFG_FILE, $sSec, "Prefix", ""))
+    GUICtrlSetData($idLen, IniRead($CFG_FILE, $sSec, "Length", ""))
+    GUICtrlSetData($idS, IniRead($CFG_FILE, $sSec, "Sender", ""))
+    GUICtrlSetData($idD, IniRead($CFG_FILE, $sSec, "DocType", ""))
 EndFunc
 
 ; ==================================================================================================

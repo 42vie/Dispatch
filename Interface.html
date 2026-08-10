@@ -6788,11 +6788,21 @@ function renderNotes(){
     return '<div class="hpe-note"><div class="hpe-note-meta">'+esc(n.date)+' — '+esc(n.auteur)+'</div>'+esc(n.note)+'</div>';
   }).join('') : '<div class="hpe-empty">Aucune note.</div>';
 }
+// Boutons ACTIONS de la modale Suivi -- reutilise le meme dispatch ETMS que
+// les boutons du header principal (sendActionHeader lit #hdr-file), en y
+// placant le J du dossier HPE ouvert le temps de l'appel.
+function hpeSuiviEtms(cmd){
+  if(!curDossier){ toastMsg('Aucun dossier chargé.'); return; }
+  var f=document.getElementById('hdr-file');
+  if(f) f.value=curDossier;
+  sendActionHeader('ETMS_CMD', cmd);
+}
 function openHpeSuivi(dossier){
   dossier = String(dossier||'').trim().toUpperCase();
   if(!dossier){ toastMsg('Saisir un numéro de dossier.'); return; }
   id('hpe-suivi-dossier').value = dossier;
   id('hpe-suivi-modal-title').textContent = '📁 ' + dossier;
+  var bar=id('hpe-suivi-etms-bar'); if(bar) bar.style.display = /^[JH]/i.test(dossier) ? 'flex' : 'none';
   openModal('modal-hpe-suivi');
   loadDossier();
 }
@@ -7210,6 +7220,17 @@ function ensureTab(){
         '<div class="modal-hd"><h2 id="hpe-suivi-modal-title">📁 Suivi</h2><button class="modal-close" onclick="closeModal(\'modal-hpe-suivi\')">✕</button></div>' +
         '<div class="modal-body">' +
         '<input type="hidden" id="hpe-suivi-dossier">' +
+        '<div id="hpe-suivi-etms-bar" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px;padding:6px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;">' +
+        '<span style="font-size:10px;font-weight:600;color:var(--text3);margin-top:5px;margin-right:2px">ACTIONS</span>' +
+        '<button class="etms-btn" data-hpe-etms="EDOC">EDOC</button>' +
+        '<button class="etms-btn" data-hpe-etms="LOG">LOG</button>' +
+        '<button class="etms-btn" data-hpe-etms="DIMS">DIMS</button>' +
+        '<button class="etms-btn" data-hpe-etms="NOTES">NOTES</button>' +
+        '<button class="etms-btn" data-hpe-etms="HIST">HIST</button>' +
+        '<button class="etms-btn" data-hpe-etms="REFS">REFS</button>' +
+        '<button class="etms-btn" style="color:var(--orange);font-weight:700" data-hpe-etms="F8">F8</button>' +
+        '<button class="etms-btn warn" data-hpe-etms="LOG X">LOG X</button>' +
+        '</div>' +
         '<div class="form-row"><label>Propriétaire</label><input id="hpe-suivi-owner" type="text"></div>' +
         '<div class="form-row"><label>Statut</label><input id="hpe-suivi-status" type="text" placeholder="En cours, Bloqué, Terminé..."></div>' +
         '<h4>🕒 Chronologie <span style="font-weight:400;color:var(--text3);font-size:10.5px">(mails + notes, 60 derniers jours)</span></h4>' +
@@ -7223,6 +7244,10 @@ function ensureTab(){
         '<div class="modal-ft"><button class="btn btn-ghost" onclick="closeModal(\'modal-hpe-suivi\')">Fermer</button><button class="btn btn-primary" id="hpe-suivi-save">💾 Enregistrer</button></div>' +
         '</div>';
       document.body.appendChild(suiviModal);
+      id('hpe-suivi-etms-bar').addEventListener('click', function(e){
+        var b=e.target.closest('[data-hpe-etms]'); if(!b) return;
+        hpeSuiviEtms(b.dataset.hpeEtms);
+      });
       id('hpe-suivi-save').onclick=saveSuivi;
       id('hpe-suivi-owner').addEventListener('keydown', function(e){ if(e.key==='Enter') saveSuivi(); });
       id('hpe-suivi-status').addEventListener('keydown', function(e){ if(e.key==='Enter') saveSuivi(); });

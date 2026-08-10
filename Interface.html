@@ -6481,6 +6481,21 @@ function delMapping(ref){
     .catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
 }
 
+function loadNames(){
+  var input=id('hpe-names-input'); if(!input) return;
+  apiAction({action:'HPE_NAMES_LIST'}).then(function(r){
+    input.value = ((r && r.names) || []).join(', ');
+  }).catch(function(e){ toastMsg('Erreur chargement noms : '+(e.message||e)); });
+}
+function saveNames(){
+  var input=id('hpe-names-input'); if(!input) return;
+  var names = input.value.split(',').map(function(s){ return s.trim(); }).filter(Boolean).join('|');
+  apiAction({action:'HPE_NAMES_SAVE', names:names}).then(function(r){
+    if(r && r.status==='ok') toastMsg('Liste de noms enregistrée.');
+    else toastMsg('Erreur : '+((r&&r.message)||'inconnue'));
+  }).catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
+}
+
 // ── Astérisque dans le tableau Dispatch principal, sur les dossiers ayant
 // une référence HPE liée (colonne "File J", 2e <td> de chaque ligne). ──
 function markMasterRows(){
@@ -6793,6 +6808,13 @@ function ensureTab(){
       '<div class="hpe-table-wrap"><table class="hpe-table"><thead><tr><th>Référence</th><th>Dossier</th><th>Tracking</th><th>Ajouté</th><th></th></tr></thead><tbody id="hpe-map-body"></tbody></table></div>' +
       '</section>' +
 
+      '<section class="hpe-card hpe-card--mapping">' +
+      '<div class="hpe-card-head"><div class="hpe-card-title">👤 <span>Détection auto du propriétaire</span></div></div>' +
+      '<div class="hpe-sub">Au scan, si un dossier n\'a pas encore de propriétaire, le nom cherché dans l\'objet, l\'expéditeur et le corps (signature incluse) du mail le plus récent du fil — parmi la liste ci-dessous — est enregistré automatiquement. Ne remplace jamais un propriétaire déjà saisi à la main.</div>' +
+      '<div class="hpe-field"><label>Noms connus (séparés par une virgule)</label><input id="hpe-names-input" type="text" placeholder="Jason, Nabil, Chloé, Abderrahman, Charles"></div>' +
+      '<div class="hpe-actions"><button class="btn btn-success btn-sm" id="hpe-names-save">💾 Enregistrer</button></div>' +
+      '</section>' +
+
       '<section class="hpe-card hpe-card--suivi">' +
       '<div class="hpe-card-head"><div class="hpe-card-title">📁 <span>Suivi dossier</span></div><span id="hpe-suivi-badge" class="hpe-badge">0</span></div>' +
       '<div class="hpe-sub">Propriétaire, statut libre et notes horodatées, par dossier J1A/H1A — ton historique automatique par workflow.</div>' +
@@ -6873,6 +6895,7 @@ function ensureTab(){
     id('hpe-quick-ref').addEventListener('keydown', function(e){ if(e.key==='Enter') quickSearch(); });
     id('hpe-map-add').onclick=addMapping;
     id('hpe-map-reload').onclick=loadMapping;
+    if(id('hpe-names-save')) id('hpe-names-save').onclick=saveNames;
     id('hpe-map-ref').addEventListener('keydown', function(e){ if(e.key==='Enter') addMapping(); });
     id('hpe-map-dossier').addEventListener('keydown', function(e){ if(e.key==='Enter') addMapping(); });
     if(id('hpe-map-tracking')) id('hpe-map-tracking').addEventListener('keydown', function(e){ if(e.key==='Enter') addMapping(); });
@@ -6900,7 +6923,7 @@ function switchToHpe(){
   document.querySelectorAll('.tabpane').forEach(function(p){p.classList.remove('active')});
   var t=document.querySelector('.tab[data-tab="hpe"]'), p=id('tab-hpe');
   if(t) t.classList.add('active'); if(p) p.classList.add('active');
-  loadMapping(); loadSuiviList(); renderKpis(); renderDashPreview();
+  loadMapping(); loadSuiviList(); loadNames(); renderKpis(); renderDashPreview();
 }
 
 function switchHpePanel(name){

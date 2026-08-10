@@ -374,6 +374,14 @@ Func HttpServer_HandleClient($iSocket)
                 _SendHttpResponse($iSocket, 200, "application/json", _HPE_OpenMailJSON($sBody))
                 TCPCloseSocket($iSocket)
                 Return
+            Case "HPE_NAMES_LIST"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_NamesListJSON())
+                TCPCloseSocket($iSocket)
+                Return
+            Case "HPE_NAMES_SAVE"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_NamesSaveJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
 
             Case "EDOC_MASTER_OPEN"
                 _EDOCMasterGUI()

@@ -5884,13 +5884,50 @@ function updateDashboard(){
     '<section class="cr-card"><h3>Alertes</h3><div class="cr-kpi">'+(m.late+m.noEmail+m.noContact+m.rdl)+'</div><div class="cr-sub">Retard / email / contact / RDL</div></section>'+
     '<section class="cr-card"><h3>NTO</h3><div class="cr-kpi">'+m.nto+'</div><div class="cr-sub">À traiter</div></section>'+
     '<section class="cr-card"><h3>Terminés</h3><div class="cr-kpi">'+m.done+'</div><div class="cr-sub">Statut 8</div></section>'+
-    '<section class="cr-card cr-full"><h3>Actions rapides</h3><div class="cr-actions"><button class="cr-alert-chip cr-warn" data-cr-open="both">🛠 Compléter infos manquantes <b>'+(m.noEmail+m.noContact)+'</b></button><button class="cr-alert-chip cr-danger" data-filter="late">⚠ Retard <b>'+m.late+'</b></button><button class="cr-alert-chip cr-danger" data-filter="rdl">📅 RDL dépassée <b>'+m.rdl+'</b></button><button class="cr-alert-chip cr-good" data-filter="groupable">🔗 Groupables <b>'+m.groupable+'</b></button></div></section>'+
-    '<section class="cr-card cr-wide"><h3>Répartition par statut</h3><div class="cr-status-grid">'+statusHtml+'</div></section>'+
-    '<section class="cr-card cr-wide"><h3>Charge opérateur</h3>'+barRows(m.byOp)+'</section>'+
+    '<section class="cr-card cr-full"><h3>Actions rapides</h3><div class="cr-actions"><button class="cr-alert-chip cr-warn" data-cr-open="both">🛠 Compléter infos manquantes <b>'+(m.noEmail+m.noContact)+'</b></button><button class="cr-alert-chip cr-danger" data-filter="late">⚠ Retard <b>'+m.late+'</b></button><button class="cr-alert-chip cr-danger" data-filter="rdl">📅 RDL dépassée <b>'+m.rdl+'</b></button><button class="cr-alert-chip cr-good" data-filter="groupable">🔗 Groupables <b>'+m.groupable+'</b></button></div>' +
+      '<div class="cr-actions" style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;flex-wrap:wrap">' +
+      '<input id="qa-bl-input" type="text" placeholder="N° dossier (J1A...)" style="flex:1;min-width:160px;height:32px;border:1px solid var(--border2);border-radius:8px;background:var(--surface2);color:var(--text);padding:0 10px;font-family:var(--mono);font-size:12px">' +
+      '<button class="btn btn-blue-out btn-sm" id="qa-bl-go">📄 BL rapide</button>' +
+      '<button class="btn btn-purple-out btn-sm" id="qa-bl-edoc-go">📄➜📤 BL + EDOC rapide</button>' +
+      '</div><div id="qa-bl-hint" class="cr-sub" style="margin-top:4px"></div></section>'+
     '<section class="cr-card cr-wide"><h3>Top transporteurs</h3>'+barRows(m.byTransp)+'</section>'+
     '<section class="cr-card cr-wide"><h3>Focus manquant</h3><div class="cr-sub">Clique sur Sans email / Sans contact pour compléter directement les informations.</div></section>';
 }
-function bindDashboardActions(){ document.addEventListener('click', function(e){ var open = e.target.closest('[data-cr-open]'); if(open){ openMissing(open.dataset.crOpen); return; } var f = e.target.closest('[data-filter]'); if(f){ crFilter = f.dataset.filter; switchTab('dispatch'); setTimeout(applyFilter,100); } }); }
+// ── Actions rapides Dashboard : BL (et BL+EDOC) directement depuis un
+// numéro de dossier, sans passer par l'onglet CMR/BL. S'appuie sur
+// window.cmrQuickBL / window.cmrQuickBLThenEdoc (exposés par l'onglet
+// CMR/BL, autre IIFE) -- si ce dossier est actuellement dans la colonne
+// Kanban BL/CMR (statut 10), il avance automatiquement vers NTO (7). ──
+function quickBLAdvanceKanban(files){
+  var moved = 0;
+  files.forEach(function(f){
+    var r = rows().find(function(x){ return (x.file||'').split(/\s*\+\s*/).map(function(s){return s.trim().toUpperCase();}).indexOf(f)!==-1; });
+    if(r && stat(r)==='10'){ r.statut='7'; try{ if(typeof stampRecord==='function') stampRecord(r); }catch(e){} moved++; }
+  });
+  if(moved){ try{ renderMaster(); renderKanban(); updateStats(); markDirty(); }catch(e){} }
+  return moved;
+}
+function quickBL(withEdoc){
+  var inp = id('qa-bl-input'), hint = id('qa-bl-hint');
+  var v = inp ? inp.value : '';
+  if(!v || !v.trim()){ if(hint) hint.textContent = 'Saisis un ou plusieurs numéros de dossier.'; return; }
+  if(typeof window.cmrQuickBL !== 'function'){ if(hint) hint.textContent = 'Onglet CMR/BL pas encore chargé -- réessaie dans un instant.'; return; }
+  var res = withEdoc ? window.cmrQuickBLThenEdoc(v) : window.cmrQuickBL(v);
+  if(!res.ok){ if(hint) hint.textContent = res.message; return; }
+  if(inp) inp.value = '';
+  var moved = quickBLAdvanceKanban(res.files);
+  if(hint) hint.textContent = (withEdoc ? 'BL + EDOC lancés' : 'BL lancé') + ' pour ' + res.files.join(', ') + (moved ? ' — '+moved+' dossier(s) Kanban avancé(s) vers NTO.' : '.');
+  toastMsg((withEdoc ? 'BL + EDOC' : 'BL') + ' rapide lancé pour ' + res.files.length + ' dossier(s).');
+}
+function bindDashboardActions(){
+  document.addEventListener('click', function(e){
+    var open = e.target.closest('[data-cr-open]'); if(open){ openMissing(open.dataset.crOpen); return; }
+    var f = e.target.closest('[data-filter]'); if(f){ crFilter = f.dataset.filter; switchTab('dispatch'); setTimeout(applyFilter,100); return; }
+    var bl = e.target.closest('#qa-bl-go'); if(bl){ quickBL(false); return; }
+    var ble = e.target.closest('#qa-bl-edoc-go'); if(ble){ quickBL(true); return; }
+  });
+  document.addEventListener('keydown', function(e){ if(e.key==='Enter' && e.target && e.target.id==='qa-bl-input'){ quickBL(false); } });
+}
 
 function injectDispatchFilter(){
   var pane = id('tab-dispatch'); if(!pane || id('cr-filter-panel')) return; var wrap = pane.querySelector('.table-wrap'); if(!wrap) return;
@@ -6252,6 +6289,48 @@ document.addEventListener('click',function(e){var tab=e.target.closest('.tab[dat
 function init(){loadQ();ensureTab();renderQueue();renderResults();loadDocType()}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){setTimeout(init,600)});else setTimeout(init,600);window.addEventListener('load',function(){setTimeout(init,1200)});
 window.cmrAddGroups = addGroups; // permet au routage Kanban (BL/CMR) d'ajouter directement a la queue sans passer par cet onglet
+
+// ── Actions rapides Dashboard : genere (et, en option, upload EDOC) un BL
+// directement depuis un numero de dossier brut, sans passer par cet
+// onglet -- expose sur window pour etre appelable depuis le Dashboard
+// (autre IIFE). Ne touche pas les cases a cocher des autres lignes deja
+// dans la queue (generateOne cible directement ce groupe, pas checkedQueue()). ──
+function extractFiles(rawText){
+  return Array.from(new Set((String(rawText||'').match(/J[A-Z0-9]{6,}/gi)||[]).map(jclean)));
+}
+function generateOne(files){
+  return apiAction({action:'CMR_GENERATE', data: files.join(',')}).then(function(){ startPoll(); });
+}
+window.cmrQuickBL = function(rawText){
+  var files = extractFiles(rawText);
+  if(!files.length) return {ok:false, message:'Aucun numéro de dossier reconnu.'};
+  addGroups([files]);
+  generateOne(files).catch(function(e){ toastMsg('Erreur génération : '+(e.message||e)); });
+  return {ok:true, files:files};
+};
+window.cmrQuickBLThenEdoc = function(rawText){
+  var files = extractFiles(rawText);
+  if(!files.length) return {ok:false, message:'Aucun numéro de dossier reconnu.'};
+  addGroups([files]);
+  generateOne(files).catch(function(e){ toastMsg('Erreur génération : '+(e.message||e)); });
+  var attempts=0;
+  var timer=setInterval(function(){
+    attempts++;
+    apiAction({action:'CMR_STATUS'}).then(function(r){
+      if(r && Array.isArray(r.results)){
+        results = r.results; renderResults();
+        var match = r.results.find(function(res){ return files.every(function(f){ return String(res.bl||'').toUpperCase().indexOf(f)!==-1; }); });
+        if(match){
+          clearInterval(timer);
+          apiAction({action:'CMR_EDOC', index:match.index}).then(function(){ toastMsg('EDOC lancé pour '+files.join(', ')); }).catch(function(e){ toastMsg('Erreur EDOC : '+(e.message||e)); });
+          return;
+        }
+      }
+      if(attempts>=40) clearInterval(timer); // ~1 min : le BL n'est pas apparu dans les resultats, on abandonne l'auto-EDOC
+    }).catch(function(){});
+  }, 1500);
+  return {ok:true, files:files};
+};
 })();
 </script>
 

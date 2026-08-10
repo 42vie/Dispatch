@@ -173,6 +173,22 @@ EndFunc
 ; note, et les notes se lisent/s'ecrivent toujours toutes ensemble).
 ; ============================================================================
 
+; Liste "|" -> tableau JSON de chaines -- utilise pour CONTRIBUTORS (tous les
+; operateurs ayant deja envoye un mail sur un dossier, pas seulement le
+; proprietaire principal : un dossier peut avoir plusieurs intervenants).
+Func _HPE_PipeListJSON($sPacked)
+    If $sPacked = "" Then Return "[]"
+    Local $a = StringSplit($sPacked, "|", 2)
+    Local $s = "["
+    For $i = 0 To UBound($a) - 1
+        If $a[$i] = "" Then ContinueLoop
+        If $s <> "[" Then $s &= ","
+        $s &= '"' & _JsonEscape($a[$i]) & '"'
+    Next
+    $s &= "]"
+    Return $s
+EndFunc
+
 Func _HPE_SuiviListJSON()
     Local $sections = IniReadSectionNames($HPE_INI_PATH)
     Local $sJson = "["
@@ -184,7 +200,8 @@ Func _HPE_SuiviListJSON()
                 $sJson &= '{"dossier":"' & _JsonEscape($sDoss) & '"' & _
                         ',"owner":"' & _JsonEscape(IniRead($HPE_INI_PATH, $sections[$i], "OWNER", "")) & '"' & _
                         ',"status":"' & _JsonEscape(IniRead($HPE_INI_PATH, $sections[$i], "STATUS", "")) & '"' & _
-                        ',"maj":"' & _JsonEscape(IniRead($HPE_INI_PATH, $sections[$i], "MAJ", "")) & '"}'
+                        ',"maj":"' & _JsonEscape(IniRead($HPE_INI_PATH, $sections[$i], "MAJ", "")) & '"' & _
+                        ',"contributors":' & _HPE_PipeListJSON(IniRead($HPE_INI_PATH, $sections[$i], "CONTRIBUTORS", "")) & '}'
             EndIf
         Next
     EndIf
@@ -263,6 +280,8 @@ EndFunc
 ; dans le tableau partage $aRows (ByRef), une ligne par mail :
 ; [0]=date triable [1]=reference [2]=entryId [3]=objet [4]=expediteur/destinataire
 ; [5]=reponse(true/false) [6]=envoye(true/false)
+; [7]=expediteur reel pour un mail envoye (utilise pour l'auto-attribution du
+; proprietaire/contributeurs -- vide pour un mail recu, non pertinent)
 Func _HPE_CollectFolder($oFolder, $bSent, $sDateLimit, $oTrackingMap, ByRef $aRows, ByRef $iRows)
     If Not IsObj($oFolder) Then Return
     Local $oItems = $oFolder.Items
@@ -307,8 +326,25 @@ Func _HPE_CollectFolder($oFolder, $bSent, $sDateLimit, $oTrackingMap, ByRef $aRo
         ; Pour un mail envoye, "l'expediteur" affiche est en realite le/les
         ; destinataire(s) -- plus utile pour retrouver le fil que son propre nom.
         Local $sFrom = ""
+        Local $sSenderId = ""
         If $bSent Then
             $sFrom = "→ " & $oItem.To
+            ; Expediteur reel : utile quand $oFolder est celui d'une boite
+            ; partagee (ex: CDG-HPE-Transcon@...) envoyee "de la part de" par
+            ; un operateur -- SentOnBehalfOfName porte alors son nom.
+            ; SenderName/Sender.Name reste le repli correct pour une boite
+            ; personnelle (ou SentOnBehalfOfName est vide).
+            $sSenderId = $oItem.SentOnBehalfOfName
+            If @error Then $sSenderId = ""
+            If $sSenderId = "" Then
+                Local $oSenderObj = $oItem.Sender
+                If IsObj($oSenderObj) Then
+                    $sSenderId = $oSenderObj.Name
+                    If @error Then $sSenderId = ""
+                EndIf
+            EndIf
+            If $sSenderId = "" Then $sSenderId = @UserName
+            $sSenderId = StringReplace($sSenderId, "|", " ")
         Else
             $sFrom = $oItem.SenderName
         EndIf
@@ -322,6 +358,7 @@ Func _HPE_CollectFolder($oFolder, $bSent, $sDateLimit, $oTrackingMap, ByRef $aRo
         $aRows[$iRows][4] = $sFrom
         $aRows[$iRows][5] = $sReply
         $aRows[$iRows][6] = $sSentFlag
+        $aRows[$iRows][7] = $sSenderId
         $iRows += 1
     Next
 EndFunc
@@ -391,7 +428,7 @@ Func _HPE_MailScanJSON($sMailbox = "")
 
     ; Collecte Reception + Envoyes dans un seul tableau (max 500 par dossier),
     ; puis tri global par date decroissante -- voir note en tete de section.
-    Local $aRows[1010][7]
+    Local $aRows[1010][8]
     Local $iRows = 0
     _HPE_CollectFolder($oInbox, False, $sDateLimit, $oTrackingMap, $aRows, $iRows)
     _HPE_CollectFolder($oSent, True, $sDateLimit, $oTrackingMap, $aRows, $iRows)
@@ -411,8 +448,59 @@ Func _HPE_MailScanJSON($sMailbox = "")
     Local $iAutoStaleDays = 2
     Local $sAutoStatusLabel = "⏳ En attente de réponse"
 
+    ; Auto-attribution proprietaire/contributeurs -- $oOwnerAssignedThisScan
+    ; garde une seule tentative d'attribution du PROPRIETAIRE principal par
+    ; dossier ce scan (le 1er mail envoye rencontre est le plus recent grace
+    ; au tri global, donc "le proprietaire actuel" -- mais jamais d'ecrasement
+    ; si un proprietaire est deja renseigne, manuellement ou automatiquement).
+    ; $oContribAddedThisScan est independant : TOUS les operateurs ayant
+    ; envoye un mail sur ce dossier sont ajoutes a CONTRIBUTORS, pas
+    ; seulement le proprietaire -- si Nabil ET Jason ont chacun repondu sur
+    ; le meme dossier, il doit apparaitre dans le suivi Dashboard des deux.
+    Local $oOwnerAssignedThisScan = ObjCreate("Scripting.Dictionary")
+    Local $oContribAddedThisScan = ObjCreate("Scripting.Dictionary")
+
     For $iR = 0 To $iRows - 1
         Local $sRef = $aRows[$iR][1]
+
+        If $aRows[$iR][6] = "true" And $aRows[$iR][7] <> "" Then
+            Local $sDossierForOwner = IniRead($HPE_INI_PATH, _HPE_MapSec($sRef), "DOSSIER", "")
+            If $sDossierForOwner <> "" Then
+                Local $sSenderName = $aRows[$iR][7]
+                Local $sSuiviSec = _HPE_SuiviSec($sDossierForOwner)
+
+                If Not $oOwnerAssignedThisScan.Exists($sDossierForOwner) Then
+                    $oOwnerAssignedThisScan.Add($sDossierForOwner, True)
+                    If IniRead($HPE_INI_PATH, $sSuiviSec, "OWNER", "") = "" Then
+                        IniWrite($HPE_INI_PATH, $sSuiviSec, "OWNER", $sSenderName)
+                        IniWrite($HPE_INI_PATH, $sSuiviSec, "MAJ", _NowText())
+                    EndIf
+                EndIf
+
+                Local $sContribKey = $sDossierForOwner & "|" & StringUpper($sSenderName)
+                If Not $oContribAddedThisScan.Exists($sContribKey) Then
+                    $oContribAddedThisScan.Add($sContribKey, True)
+                    Local $sContribList = IniRead($HPE_INI_PATH, $sSuiviSec, "CONTRIBUTORS", "")
+                    Local $aContribs = StringSplit($sContribList, "|", 2)
+                    Local $bAlready = False
+                    For $c = 0 To UBound($aContribs) - 1
+                        If StringUpper(StringStripWS($aContribs[$c], 3)) = StringUpper($sSenderName) Then
+                            $bAlready = True
+                            ExitLoop
+                        EndIf
+                    Next
+                    If Not $bAlready Then
+                        If $sContribList = "" Then
+                            $sContribList = $sSenderName
+                        Else
+                            $sContribList &= "|" & $sSenderName
+                        EndIf
+                        IniWrite($HPE_INI_PATH, $sSuiviSec, "CONTRIBUTORS", $sContribList)
+                    EndIf
+                EndIf
+            EndIf
+        EndIf
+
         If $oThreadData.Exists($sRef) Then
             ; Mail plus ancien du meme fil : incremente juste le compteur, ne
             ; cree pas de 2e alerte (le 1er rencontre, donc le plus recent
@@ -579,7 +667,7 @@ Func _HPE_DossierTimelineJSON($sBody)
 
     If IsObj($oInbox) Or IsObj($oSent) Then
         Local $sDateLimit = _FmtDate(_DateAdd('d', -60, _NowCalc())) ; fenetre plus large que le scan global (14j) : c'est un historique
-        Local $aRows[1010][7]
+        Local $aRows[1010][8]
         Local $iRows = 0
         _HPE_CollectFolder($oInbox, False, $sDateLimit, $oTrackingMap, $aRows, $iRows)
         _HPE_CollectFolder($oSent, True, $sDateLimit, $oTrackingMap, $aRows, $iRows)

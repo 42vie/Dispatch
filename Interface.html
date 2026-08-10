@@ -6392,6 +6392,11 @@ window.addEventListener('load', function(){ setTimeout(init,1250); });
 .hpe-panel{display:none;flex-direction:column;gap:14px;}
 .hpe-panel.active{display:flex;}
 @media(max-width:640px){.hpe-row2,.hpe-row-btn{grid-template-columns:1fr}}
+/* Kanban : mail HPE recu non traite sur ce dossier -- animation + lien direct */
+@keyframes hpeKanbanPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,140,0,.55)}50%{box-shadow:0 0 0 5px rgba(255,140,0,0)}}
+.k-item{position:relative;}
+.k-item.hpe-kanban-pulse{animation:hpeKanbanPulse 1.7s ease-in-out infinite;}
+.hpe-kanban-link{position:absolute;top:5px;right:5px;font-size:13px;line-height:1;text-decoration:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35));z-index:2;}
 </style>
 <script id="hpe-ui-v1-script">
 (function(){
@@ -6507,6 +6512,43 @@ function wrapMasterRender(){
   wrapped.__hpe=true;
   window.renderMaster=wrapped;
   try{ renderMaster=wrapped; }catch(e){}
+}
+
+// ── Kanban : animation + lien mail direct sur les cartes dont le dossier a
+// reçu un nouveau mail HPE (alerte active, non ignorée). Meme principe que
+// markMasterRows() ci-dessus, applique aux cartes .k-item (attribut
+// data-file, y compris les cartes groupées "DOSSIER1 + DOSSIER2"). ──
+function markKanbanCards(){
+  var byDossier={};
+  lastAlerts.forEach(function(a){
+    if(isDismissed(a) || a.sent) return; // seulement les mails RECUS, pas encore ignorés
+    var key=String(a.dossier||'').trim().toUpperCase();
+    if(!byDossier[key] || String(a.date) > String(byDossier[key].date)) byDossier[key]=a;
+  });
+  document.querySelectorAll('.k-item[data-file]').forEach(function(card){
+    var parts=String(card.dataset.file||'').split(' + ');
+    var hit=null;
+    parts.some(function(p){ var k=p.trim().toUpperCase(); if(byDossier[k]){ hit=byDossier[k]; return true; } return false; });
+    var link=card.querySelector('.hpe-kanban-link');
+    if(hit){
+      card.classList.add('hpe-kanban-pulse');
+      if(!link){ link=document.createElement('a'); link.className='hpe-kanban-link'; link.href='#'; card.appendChild(link); }
+      link.title='Nouveau mail HPE reçu — '+String(hit.subject||'').slice(0,90);
+      link.textContent='✉️';
+      link.onclick=function(ev){ ev.preventDefault(); ev.stopPropagation(); if(hit.entryId) openHpeMail(hit.entryId); };
+    } else {
+      card.classList.remove('hpe-kanban-pulse');
+      if(link) link.remove();
+    }
+  });
+}
+function wrapKanbanRender(){
+  if(typeof window.renderKanban!=='function' || window.renderKanban.__hpe) return;
+  var orig=window.renderKanban;
+  var wrapped=function(){ var r=orig.apply(this, arguments); setTimeout(markKanbanCards, 0); return r; };
+  wrapped.__hpe=true;
+  window.renderKanban=wrapped;
+  try{ renderKanban=wrapped; }catch(e){}
 }
 
 function renderSuiviList(){
@@ -6747,6 +6789,7 @@ function scanMail(){
     renderDashboardBanner(lastAlerts);
     renderDashPreview();
     markMasterRows();
+    markKanbanCards();
   }).catch(function(e){ if(st) st.textContent='Erreur : '+(e.message||e); });
 }
 
@@ -6909,7 +6952,7 @@ function ensureTab(){
       var dismissBtn=e.target.closest('[data-alert-dismiss]');
       if(dismissBtn){
         var a=lastAlerts.find(function(x){ return x.reference===card.dataset.alertRef && x.date===card.dataset.alertDate; });
-        if(a){ dismissAlert(a); renderAlerts(lastAlerts); renderDashboardBanner(lastAlerts); }
+        if(a){ dismissAlert(a); renderAlerts(lastAlerts); renderDashboardBanner(lastAlerts); markKanbanCards(); }
       }
     });
     id('hpe-unmapped-list').addEventListener('click', function(e){
@@ -7091,7 +7134,7 @@ document.addEventListener('click', function(e){
 
 window.hpeScanMail = scanMail; // permet au bouton "Scanner" de la carte Dashboard de declencher un vrai scan sans naviguer vers l'onglet HPE
 window.hpeGetState = function(){ return { lastAlerts: lastAlerts, lastUnmapped: lastUnmapped, suivi: suivi, mapping: mapping }; }; // lu par HPE_DASHBOARD_WIDGET_V1 (autre IIFE, meme page)
-function init(){ ensureTab(); wrapMasterRender(); loadMapping(); scanMail(); setInterval(scanMail, 300000); setTimeout(renderDashPreview, 2000); setTimeout(renderDashPreview, 5000); }
+function init(){ ensureTab(); wrapMasterRender(); wrapKanbanRender(); loadMapping(); scanMail(); setInterval(scanMail, 300000); setTimeout(renderDashPreview, 2000); setTimeout(renderDashPreview, 5000); }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(init,700); });
 else setTimeout(init,700);
 window.addEventListener('load', function(){ setTimeout(init,1300); });
@@ -7157,7 +7200,15 @@ function renderWidget(){
   var state=(typeof window.hpeGetState==='function') ? window.hpeGetState() : {lastAlerts:[]};
   var lastAlerts = state.lastAlerts || [];
   var list = mwSuivi.slice();
-  if(scope==='mine' && operator) list = list.filter(function(s){ return String(s.owner||'').trim()===operator; });
+  if(scope==='mine' && operator){
+    // "Mien" = proprietaire OU contributeur (a deja envoye un mail sur ce
+    // dossier) -- si Nabil ET Jason ont chacun repondu sur le meme dossier,
+    // il doit apparaitre chez les deux, pas seulement chez le proprietaire.
+    list = list.filter(function(s){
+      if(String(s.owner||'').trim()===operator) return true;
+      return (s.contributors||[]).some(function(c){ return String(c||'').trim()===operator; });
+    });
+  }
 
   // Dernier mail connu (14 derniers jours, via le scan HPE_UI_V1) par dossier
   // -- repond a "qui a envoye le dernier message sur ce dossier".
@@ -7185,8 +7236,10 @@ function renderWidget(){
       var c=statusColorMw(s.status);
       var last=lastByDossier[s.dossier];
       var lastTxt = last ? ((last.sent?'↗ Envoyé':'↙ Reçu')+' — '+esc(last.sender)+' ('+esc(last.date)+')') : 'Aucun mail récent (14j)';
+      var others = (s.contributors||[]).filter(function(cn){ return String(cn||'').trim()!==String(s.owner||'').trim(); });
+      var othersTxt = others.length ? ('<div class="hpe-mw-last">👥 aussi : '+esc(others.join(', '))+'</div>') : '';
       return '<div class="hpe-mw-row">' +
-        '<div><div class="hpe-mw-dossier">'+esc(s.dossier)+'</div><div class="hpe-mw-last">'+lastTxt+'</div></div>' +
+        '<div><div class="hpe-mw-dossier">'+esc(s.dossier)+'</div><div class="hpe-mw-last">'+lastTxt+'</div>'+othersTxt+'</div>' +
         '<div>'+(s.owner?esc(s.owner):'<span style="color:var(--text3)">Non assigné</span>')+'</div>' +
         '<div><span class="hpe-pill" style="color:'+c.c+';background:'+c.bg+'">'+(s.status?esc(s.status):'—')+'</span></div>' +
         '<div style="display:flex;gap:6px"><a href="#" data-dash-hpe-open="'+esc(s.dossier)+'" class="btn btn-blue-out btn-sm" style="text-decoration:none">🕒 Suivi</a><button class="btn btn-orange-out btn-sm" data-mw-mail="'+esc(s.dossier)+'">✉ Mail</button></div>' +

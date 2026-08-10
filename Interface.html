@@ -6700,10 +6700,36 @@ function scanMail(){
     seenAlertKeys = new Set(lastAlerts.map(dismissKey));
     renderAlerts(lastAlerts);
     renderUnmapped(lastUnmapped);
+    renderReferencesList();
     renderDashboardBanner(lastAlerts);
     renderDashPreview();
     markMasterRows();
   }).catch(function(e){ if(st) st.textContent='Erreur : '+(e.message||e); });
+}
+
+function renderReferencesList(){
+  var b=id('hpe-refs-body'); if(!b) return;
+  var rows = lastAlerts.map(function(a){ return {reference:a.reference, dossier:a.dossier, date:a.date, subject:a.subject}; })
+    .concat(lastUnmapped.map(function(u){ return {reference:u.reference, dossier:'', date:u.date, subject:u.subject}; }));
+  var badge=id('hpe-refs-badge'); if(badge) badge.textContent=rows.length;
+  b.innerHTML = rows.length ? rows.map(function(r){
+    return '<tr><td class="hpe-ref-cell"><b>'+esc(r.reference)+'</b></td>'+
+      '<td>'+(r.dossier?esc(r.dossier):'<span style="color:var(--text3)">—</span>')+'</td>'+
+      '<td>'+esc(r.date)+'</td>'+
+      '<td title="'+esc(r.subject)+'">'+esc(String(r.subject||'').slice(0,60))+'</td>'+
+      '<td><button class="btn btn-orange-out hpe-mini" data-log-ref="'+esc(r.reference)+'" style="height:20px;padding:0 6px;font-size:9.5px">📋 LOG</button></td></tr>';
+  }).join('') : '<tr><td colspan="5" class="hpe-empty">Aucune référence -- lance un scan.</td></tr>';
+}
+function copyReferencesList(){
+  var rows = lastAlerts.map(function(a){ return {reference:a.reference, dossier:a.dossier}; })
+    .concat(lastUnmapped.map(function(u){ return {reference:u.reference, dossier:''}; }));
+  if(!rows.length){ toastMsg('Aucune référence à copier -- lance un scan.'); return; }
+  var text = rows.map(function(r){ return r.dossier ? (r.reference+'\t'+r.dossier) : r.reference; }).join('\n');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){ toastMsg(rows.length+' référence(s) copiée(s).'); }, function(){ toastMsg('Copie impossible (permissions navigateur).'); });
+  } else {
+    toastMsg('Copie non supportée par ce navigateur.');
+  }
 }
 
 function renderDashPreview(){
@@ -6780,6 +6806,7 @@ function ensureTab(){
       '<div class="hpe-subnav-btn active" data-hpe-panel="nouveaux">📥 Nouveaux mails <span id="hpe-unmapped-badge" class="hpe-badge">0</span></div>' +
       '<div class="hpe-subnav-btn" data-hpe-panel="workflows">🧭 Workflows <span id="hpe-alerts-badge" class="hpe-badge">0</span></div>' +
       '<div class="hpe-subnav-btn" data-hpe-panel="recherche">🔎 Recherche</div>' +
+      '<div class="hpe-subnav-btn" data-hpe-panel="references">📋 Références</div>' +
       '</div>' +
 
       '<div class="hpe-panel active" id="hpe-panel-nouveaux">' +
@@ -6839,6 +6866,15 @@ function ensureTab(){
       '</section>' +
       '</div>' +
 
+      '<div class="hpe-panel" id="hpe-panel-references">' +
+      '<section class="hpe-card hpe-card--search">' +
+      '<div class="hpe-card-head"><div class="hpe-card-title">📋 <span>Toutes les références détectées</span></div><span id="hpe-refs-badge" class="hpe-badge">0</span></div>' +
+      '<div class="hpe-sub">Liste à plat de toutes les références INC/FXC/ARN vues au dernier scan (liées et non liées) — pour copier/coller dans ETMS ou ailleurs.</div>' +
+      '<div class="hpe-actions"><button class="btn btn-blue-out btn-sm" id="hpe-refs-copy">📎 Copier la liste</button></div>' +
+      '<div class="hpe-table-wrap"><table class="hpe-table"><thead><tr><th>Référence</th><th>Dossier</th><th>Date</th><th>Objet</th><th></th></tr></thead><tbody id="hpe-refs-body"></tbody></table></div>' +
+      '</section>' +
+      '</div>' +
+
       '</div>';
     content.appendChild(pane);
     var mbField=id('hpe-mailbox');
@@ -6892,6 +6928,11 @@ function ensureTab(){
       }
     });
     id('hpe-quick-go').onclick=quickSearch;
+    if(id('hpe-refs-copy')) id('hpe-refs-copy').onclick=copyReferencesList;
+    if(id('hpe-refs-body')) id('hpe-refs-body').addEventListener('click', function(e){
+      var logBtn=e.target.closest('[data-log-ref]');
+      if(logBtn) logRefInEtms(logBtn.dataset.logRef);
+    });
     id('hpe-quick-ref').addEventListener('keydown', function(e){ if(e.key==='Enter') quickSearch(); });
     id('hpe-map-add').onclick=addMapping;
     id('hpe-map-reload').onclick=loadMapping;

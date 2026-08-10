@@ -2,6 +2,15 @@
 Opt("MustDeclareVars", 0)
 Opt("GUIOnEventMode", 0)
 
+; Globales utilisees par MainDispatch()/DispatchInitialize()/DispatchStartServer()/
+; DispatchOpenInterface()/DispatchProcessClients() ci-dessous. Declarees explicitement
+; ici (plutot que par simple affectation dans DispatchInitialize()) pour eviter la
+; meme classe de bug "Variable used without being declared" que $gsConfigFile : une
+; affectation nue dans une fonction ne cree qu'une variable locale a cette fonction,
+; invisible pour les autres fonctions qui lisent le meme nom.
+Global $giPort = 9500
+Global $giMainSocket = -1
+
 #include <File.au3>
 #include <String.au3>
 #include <Date.au3>
@@ -95,7 +104,7 @@ Func MainDispatch()
     DispatchOpenInterface()
     GUICtrlSetData($lblURL, "http://localhost:9500")
     
-    AuditLog("Dispatch d marr")
+    _AuditLog("INFO", "Dispatch demarre")
     
     While 1
         Local $iMsg = GUIGetMsg()
@@ -127,7 +136,7 @@ Func DispatchInitialize()
     ; si aucune fenetre CMR classique n'est jamais ouverte.
     DirCreate(@ScriptDir & "\Config")
     _SP_InitDefaultsIfNeeded()
-    AuditLog("Dispatch initialisation")
+    _AuditLog("INFO", "Dispatch initialisation")
 EndFunc
 
 Func DispatchStartServer()
@@ -136,13 +145,13 @@ Func DispatchStartServer()
         MsgBox(16, "Erreur", "Impossible de d marrer le serveur HTTP sur le port " & $giPort)
         Exit
     EndIf
-    AuditLog("Serveur HTTP d marr sur port " & $giPort)
+    _AuditLog("INFO", "Serveur HTTP demarre sur port " & $giPort)
 EndFunc
 
 Func DispatchOpenInterface()
     Local $sURL = "http://localhost:" & $giPort & "/"
     ShellExecute($sURL)
-    AuditLog("Interface ouverte: " & $sURL)
+    _AuditLog("INFO", "Interface ouverte: " & $sURL)
 EndFunc
 
 Func DispatchProcessClients()

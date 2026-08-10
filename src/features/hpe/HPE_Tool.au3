@@ -321,3 +321,17 @@ Func _HPE_MailScanJSON($sMailbox = "")
     EndIf
     Return '{"status":"ok","alerts":' & $sJson & ',"unmapped":' & $sUnmappedJson & ',"mappingCount":' & $iMapCount & ',"suiviCount":' & $iSuiviCount & '}'
 EndFunc
+
+; Ouvre directement un mail Outlook depuis son EntryID (renvoye par
+; _HPE_MailScanJSON) -- meme logique que _OpenMail() dans Mail_Common.au3.
+Func _HPE_OpenMailJSON($sBody)
+    Local $sEntryId = _GetJsonValue($sBody, "entryId")
+    If $sEntryId = "" Then Return '{"status":"error","message":"entryId_vide"}'
+    If Not _EDOC_EnsureOutlook() Then Return '{"status":"error","message":"outlook_indisponible"}'
+
+    Local $oMail = 0
+    If IsObj($g_oNamespace) Then $oMail = $g_oNamespace.GetItemFromID($sEntryId)
+    If Not IsObj($oMail) Then Return '{"status":"error","message":"mail_introuvable"}'
+    $oMail.Display()
+    Return '{"status":"ok"}'
+EndFunc

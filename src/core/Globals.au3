@@ -222,6 +222,11 @@ ShellExecute("http://127.0.0.1:" & $g_iPort)
 ; Créer les dossiers nécessaires
 If Not FileExists(@ScriptDir & "\logs") Then DirCreate(@ScriptDir & "\logs")
 If Not FileExists(@ScriptDir & "\backups") Then DirCreate(@ScriptDir & "\backups")
+; \Config : stockage ini de plusieurs outils (HPE_Tool.au3, CMR_SP.au3...). Sans
+; ce dossier, IniWrite echoue silencieusement (il ne cree pas les dossiers parents
+; manquants) -- les liens crees via l'onglet HPE ne survivaient donc jamais a un
+; redemarrage du serveur.
+If Not FileExists(@ScriptDir & "\Config") Then DirCreate(@ScriptDir & "\Config")
 _AuditLog("INFO", "Serveur démarré sur le port " & $g_iPort)
 $g_iAuditCheckTimer = TimerInit()
 

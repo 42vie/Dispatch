@@ -303,6 +303,14 @@ Func HttpServer_HandleClient($iSocket)
             Case "CMR_EDOC"
                 $sData_a = _GetJsonValue($sBody, "index")
                 _CMR_EdocByIndex(Number($sData_a))
+            Case "EDOC_DOCTYPE_LIST"
+                _SendHttpResponse($iSocket, 200, "application/json", _Edoc_DocTypeListJSON())
+                TCPCloseSocket($iSocket)
+                Return
+            Case "EDOC_DOCTYPE_SET"
+                _SendHttpResponse($iSocket, 200, "application/json", _Edoc_DocTypeSetJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
             Case "CMR_EDIT"
                 ; Ouvre la fenetre d'apercu/edition (mise en forme Expeditors
                 ; deja integree au HTML genere, champs contenteditable). Le
@@ -380,6 +388,18 @@ Func HttpServer_HandleClient($iSocket)
                 Return
             Case "HPE_NAMES_SAVE"
                 _SendHttpResponse($iSocket, 200, "application/json", _HPE_NamesSaveJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "HPE_MAPPING_IMPORT"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_MappingImportJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "HPE_DOSSIER_TIMELINE"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_DossierTimelineJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
+            Case "HPE_MAIL_COMPOSE"
+                _SendHttpResponse($iSocket, 200, "application/json", _HPE_ComposeMailJSON($sBody))
                 TCPCloseSocket($iSocket)
                 Return
 

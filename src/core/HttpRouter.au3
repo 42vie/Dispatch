@@ -303,6 +303,14 @@ Func HttpServer_HandleClient($iSocket)
             Case "CMR_EDOC"
                 $sData_a = _GetJsonValue($sBody, "index")
                 _CMR_EdocByIndex(Number($sData_a))
+            Case "EDOC_DOCTYPE_LIST"
+                _SendHttpResponse($iSocket, 200, "application/json", _Edoc_DocTypeListJSON())
+                TCPCloseSocket($iSocket)
+                Return
+            Case "EDOC_DOCTYPE_SET"
+                _SendHttpResponse($iSocket, 200, "application/json", _Edoc_DocTypeSetJSON($sBody))
+                TCPCloseSocket($iSocket)
+                Return
             Case "CMR_EDIT"
                 ; Ouvre la fenetre d'apercu/edition (mise en forme Expeditors
                 ; deja integree au HTML genere, champs contenteditable). Le

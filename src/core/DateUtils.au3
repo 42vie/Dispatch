@@ -185,8 +185,13 @@ Func _EdocValidateUploadWindow($sDocType, ByRef $aNums)
     If Not WinWaitActive("Upload Documents CDG", "", 8) Then Return False
     Sleep(3500)
 
-    ; 1 seul dossier : TAB -> Delivery Order -> ENTER.
-    ; Plusieurs dossiers : TAB -> Delivery Order -> TAB 1 -> TAB 2 -> collage numéros -> validation.
+    ; 1 seul dossier : TAB -> type de document -> ENTER (le numero est deja
+    ; pre-rempli par edoc au debut de l'upload, pas besoin d'aller le
+    ; toucher). Plusieurs dossiers : TAB -> type de document -> TAB x2 ->
+    ; collage numeros -> validation -- exactement 2 tabs, PAS 3 : l'ancien
+    ; code faisait Send("{TAB}") PUIS Send("{TAB 2}"), et "{TAB 2}" en
+    ; AutoIt envoie le Tab 2 FOIS (et non "le 2e Tab"), donc 1+2 = 3 tabs au
+    ; lieu des 2 documentes ci-dessus -- d'ou le decalage de champ au collage.
     Send("{TAB}")
     Sleep(900)
     Send($sDocType)
@@ -195,8 +200,6 @@ Func _EdocValidateUploadWindow($sDocType, ByRef $aNums)
     If UBound($aNums) <= 1 Then
         Send("{ENTER}")
     Else
-        Send("{TAB}")
-        Sleep(900)
         Send("{TAB 2}")
         Sleep(1000)
         ClipPut(_ArrayNumsClipboard($aNums))

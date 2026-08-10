@@ -76,6 +76,63 @@ Func _FindEdocPrinter()
     Return ""
 EndFunc
 
+; ============================================================================
+; TYPE DE DOCUMENT EDOC -- avant, "Delivery Order" etait fige en dur dans
+; l'appel a _EdocValidateUploadWindow(). Rendu configurable : une valeur
+; active (utilisee au prochain upload) + une liste de presets dans laquelle
+; piocher, editables depuis l'onglet CMR/BL cote HTML.
+; ============================================================================
+
+Func _Edoc_DocTypeActive()
+    Return IniRead($CFG_FILE, "EDOC", "DocType", "Delivery Order")
+EndFunc
+
+Func _Edoc_DocTypeListJSON()
+    Local $sActive = _Edoc_DocTypeActive()
+    Local $sList = IniRead($CFG_FILE, "EDOC", "DocTypeList", "Delivery Order|Invoice|Packing List")
+    Local $aList = StringSplit($sList, "|", 2)
+    ; L'active doit toujours apparaitre dans les options, meme si elle a ete
+    ; saisie librement et n'est pas (encore) dans la liste de presets.
+    Local $bFound = False
+    For $i = 0 To UBound($aList) - 1
+        If StringUpper(StringStripWS($aList[$i], 3)) = StringUpper(StringStripWS($sActive, 3)) Then
+            $bFound = True
+            ExitLoop
+        EndIf
+    Next
+    If Not $bFound And $sActive <> "" Then
+        ReDim $aList[UBound($aList) + 1]
+        $aList[UBound($aList) - 1] = $sActive
+    EndIf
+    Local $sJson = "["
+    For $i = 0 To UBound($aList) - 1
+        If $aList[$i] = "" Then ContinueLoop
+        If $sJson <> "[" Then $sJson &= ","
+        $sJson &= '"' & _JsonEscape($aList[$i]) & '"'
+    Next
+    $sJson &= "]"
+    Return '{"status":"ok","active":"' & _JsonEscape($sActive) & '","options":' & $sJson & '}'
+EndFunc
+
+; Change la valeur active, et l'ajoute a la liste de presets si elle n'y
+; est pas deja (permet de "choisir ou creer" une regle depuis un seul champ).
+Func _Edoc_DocTypeSetJSON($sBody)
+    Local $sValue = StringStripWS(_GetJsonValue($sBody, "value"), 3)
+    If $sValue = "" Then Return '{"status":"error","message":"valeur_vide"}'
+    IniWrite($CFG_FILE, "EDOC", "DocType", $sValue)
+    Local $sList = IniRead($CFG_FILE, "EDOC", "DocTypeList", "Delivery Order|Invoice|Packing List")
+    Local $aList = StringSplit($sList, "|", 2)
+    Local $bFound = False
+    For $i = 0 To UBound($aList) - 1
+        If StringUpper(StringStripWS($aList[$i], 3)) = StringUpper($sValue) Then
+            $bFound = True
+            ExitLoop
+        EndIf
+    Next
+    If Not $bFound Then IniWrite($CFG_FILE, "EDOC", "DocTypeList", $sList & "|" & $sValue)
+    Return '{"status":"ok"}'
+EndFunc
+
 Func _PrintPdfToEdoc($sPdf, ByRef $aNums)
     If Not FileExists($sPdf) Then
         _Status("EDOC KO : PDF introuvable" & @CRLF & $sPdf)
@@ -96,7 +153,7 @@ Func _PrintPdfToEdoc($sPdf, ByRef $aNums)
         Sleep(700)
     EndIf
     ShellExecute($sPdf, "", "", "print", @SW_HIDE)
-    Return _EdocValidateUploadWindow("Delivery Order", $aNums)
+    Return _EdocValidateUploadWindow(_Edoc_DocTypeActive(), $aNums)
 EndFunc
 
 Func _EdocOpenFirstDossier(ByRef $aNums)

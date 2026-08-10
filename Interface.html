@@ -1569,6 +1569,32 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
   </div>
 </div>
 
+<!-- ══ MODAL HPE RAPIDE ══ -->
+<div class="overlay" id="modal-hpe-rapide">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-hd">
+      <h2>🎫 HPE rapide</h2>
+      <button class="modal-close" onclick="closeModal('modal-hpe-rapide')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Cherche une référence HPE (INC/FXC/ARN), un numéro de dossier ou de tracking.</div>
+      <div class="hpe-ac-wrap">
+        <input id="hpe-rapide-search" type="text" autocomplete="off" placeholder="Ex: FXC123456, J1A0051246..." style="width:100%;height:34px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:12.5px;padding:0 10px;border-radius:7px;outline:none;box-sizing:border-box">
+        <div class="hpe-ac-list" id="hpe-rapide-search-ac"></div>
+      </div>
+      <div id="hpe-rapide-result" style="margin-top:10px;font-size:12px"></div>
+      <div class="form-section" style="margin-top:14px">Pas trouvé ? Lier maintenant</div>
+      <div class="form-row"><label>Référence</label><input id="hpe-rapide-ref" type="text" placeholder="FXC123456"></div>
+      <div class="form-row"><label>Dossier</label><input id="hpe-rapide-dossier" type="text" placeholder="J1A..."></div>
+      <div class="form-row"><label>Tracking</label><input id="hpe-rapide-tracking" type="text" placeholder="Optionnel"></div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="closeModal('modal-hpe-rapide')">Fermer</button>
+      <button class="btn btn-success" id="hpe-rapide-link">+ Lier</button>
+    </div>
+  </div>
+</div>
+
 <script>
 'use strict';
 
@@ -6276,7 +6302,7 @@ function ensureToolsPanel(){
     '<div class="cr-tool-card" style="border-left-color:var(--blue)"><div class="cr-tool-title">📦 CMR / BL</div><div id="cmr-dash-preview" class="cr-tool-sub">Chargement...</div><div class="cr-actions" style="margin:0"><button class="btn btn-blue-out btn-sm" id="cmr-dash-refresh">🔄 Statut</button><button class="btn btn-ghost btn-sm" id="tool-cmr">Queue →</button></div></div>' +
     '<div class="cr-tool-card" style="border-left-color:var(--green)"><div class="cr-tool-title">📤 EDOC Master</div><div class="cr-tool-sub">Scan Outlook + upload EDOC dans HTML.</div><div class="cr-actions" style="margin:0"><button class="btn btn-success btn-sm" id="tool-edoc">▶ Lancer un scan</button></div></div>' +
     '<div class="cr-tool-card" style="border-left-color:var(--teal)"><div class="cr-tool-title">🧭 Workflow</div><div id="wf-dash-preview" class="cr-tool-sub">Kanban + filtres transporteur.</div><div class="cr-actions" style="margin:0"><button class="btn btn-ghost btn-sm" id="tool-workflow">Voir le tableau →</button></div></div>' +
-    '<div class="cr-tool-card" style="border-left-color:var(--orange)"><div class="cr-tool-title">🎫 HPE</div><div id="hpe-dash-preview" class="cr-tool-sub">Chargement...</div><div class="cr-actions" style="margin:0"><button class="btn btn-orange-out btn-sm" id="hpe-dash-scan">🔄 Scanner</button><button class="btn btn-ghost btn-sm" id="hpe-dash-open">Ouvrir →</button></div></div>';
+    '<div class="cr-tool-card" style="border-left-color:var(--orange)"><div class="cr-tool-title">🎫 HPE</div><div id="hpe-dash-preview" class="cr-tool-sub">Chargement...</div><div class="cr-actions" style="margin:0"><button class="btn btn-orange-out btn-sm" id="hpe-dash-rapide">🎫 HPE rapide</button><button class="btn btn-orange-out btn-sm" id="hpe-dash-scan">🔄 Scanner</button><button class="btn btn-ghost btn-sm" id="hpe-dash-open">Ouvrir →</button></div></div>';
   var g=id('cr-dashboard-grid');if(g)g.insertAdjacentElement('afterend',panel);else dash.insertBefore(panel,dash.firstChild);
 
   // Infos manquantes : compte reel (meme filtre que openMissing('both'))
@@ -6315,6 +6341,7 @@ function ensureToolsPanel(){
     setTimeout(function(){ if(btn){ btn.disabled=false; btn.textContent='🔄 Scanner'; } }, 2000);
   };
   id('hpe-dash-open').onclick=function(){var t=document.querySelector('.tab[data-tab="hpe"]');if(t)t.click();};
+  id('hpe-dash-rapide').onclick=function(e){ e.stopPropagation(); if(typeof window.openHpeRapideModal==='function') window.openHpeRapideModal(); };
 }
 function patchTabs(){document.addEventListener('click',function(e){var t=e.target.closest('.tab[data-tab="edocmaster"]');if(!t)return;e.preventDefault();e.stopPropagation();switchTabClean('edocmaster');},true)}
 function initEdocHtml(){ensureEdocTab();bindEdocHtml();if(!edocState.stores.length)loadEdocConfig();}
@@ -6706,6 +6733,57 @@ function extractRef(s){
   if(!m) return '';
   return m[1].toUpperCase() + m[2];
 }
+// ── Modale "HPE rapide" (Dashboard) : cherche une référence/dossier/tracking
+// sans quitter le Dashboard, avec lien direct vers le Suivi/Kanban si trouvé,
+// et un mini-formulaire pour créer le lien immédiatement si absent. ──
+function openHpeRapideModal(){
+  var s=id('hpe-rapide-search'); if(s) s.value='';
+  var out=id('hpe-rapide-result'); if(out) out.innerHTML='';
+  ['hpe-rapide-ref','hpe-rapide-dossier','hpe-rapide-tracking'].forEach(function(x){ var el=id(x); if(el) el.value=''; });
+  openModal('modal-hpe-rapide');
+}
+window.openHpeRapideModal = openHpeRapideModal;
+function hpeRapideLookup(){
+  var raw = id('hpe-rapide-search').value;
+  var ref = extractRef(raw);
+  var lookupVal = ref || String(raw||'').trim().toUpperCase();
+  var out = id('hpe-rapide-result');
+  if(!lookupVal){ out.innerHTML=''; return; }
+  out.innerHTML = 'Recherche de <b>'+esc(lookupVal)+'</b>...';
+  apiAction({action:'HPE_MAPPING_LOOKUP', value:lookupVal}).then(function(r){
+    if(r && r.status==='ok' && r.found){
+      out.innerHTML = '<span style="color:var(--blue)">↔ Lié au dossier <b>'+esc(r.dossier)+'</b></span> — '+
+        '<a href="#" data-hr-suivi="'+esc(r.dossier)+'" style="color:var(--blue)">📁 Suivi</a> · '+
+        '<a href="#" data-hr-kanban="'+esc(r.dossier)+'" style="color:var(--blue)">🧭 Kanban</a>';
+      id('hpe-rapide-ref').value = r.reference || ref || '';
+      id('hpe-rapide-dossier').value = r.dossier || '';
+      id('hpe-rapide-tracking').value = r.tracking || '';
+    } else {
+      out.innerHTML = '<span style="color:var(--orange)">Aucun lien trouvé pour "'+esc(lookupVal)+'" — complète ci-dessous pour créer le lien.</span>';
+      id('hpe-rapide-ref').value = ref || lookupVal;
+      id('hpe-rapide-dossier').value = '';
+      id('hpe-rapide-tracking').value = '';
+    }
+  }).catch(function(e){ out.innerHTML = '<span style="color:var(--red)">Erreur : '+esc(e.message||e)+'</span>'; });
+}
+function hpeRapideLink(){
+  var ref = id('hpe-rapide-ref').value.trim();
+  var dossier = id('hpe-rapide-dossier').value.trim();
+  var tracking = id('hpe-rapide-tracking').value.trim();
+  if(!ref || !dossier){ toastMsg('Référence et dossier obligatoires.'); return; }
+  apiAction({action:'HPE_MAPPING_ADD', reference:ref, dossier:dossier, tracking:tracking}).then(function(r){
+    if(r && r.status==='ok'){ toastMsg('Lien enregistré : '+ref+' → '+dossier+'.'); loadMapping(); closeModal('modal-hpe-rapide'); }
+    else toastMsg('Erreur : '+((r&&r.message)||'inconnue'));
+  }).catch(function(e){ toastMsg('Erreur : '+(e.message||e)); });
+}
+id('hpe-rapide-search').addEventListener('keydown', function(e){ if(e.key==='Enter') hpeRapideLookup(); });
+if(typeof wireHpeAutocomplete==='function') wireHpeAutocomplete('hpe-rapide-search', 'hpe-rapide-search-ac');
+id('hpe-rapide-link').onclick = hpeRapideLink;
+id('hpe-rapide-result').addEventListener('click', function(e){
+  var sv=e.target.closest('[data-hr-suivi]'); if(sv){ e.preventDefault(); closeModal('modal-hpe-rapide'); openHpeSuivi(sv.dataset.hrSuivi); return; }
+  var kb=e.target.closest('[data-hr-kanban]'); if(kb){ e.preventDefault(); closeModal('modal-hpe-rapide'); jumpToKanban(kb.dataset.hrKanban); return; }
+});
+
 // ── Recherche rapide : accepte une référence INC/FXC/ARN, mais aussi
 // directement un numéro de dossier (J1A/H1A) ou un numéro de tracking --
 // dans ce cas pas d'extraction par regex possible, on passe la saisie brute

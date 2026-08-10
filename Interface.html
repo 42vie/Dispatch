@@ -607,7 +607,8 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
   <div id="header-actions">
     <span style="font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.5px;margin-right:4px">E.TMS</span>
     <!-- Champ N° dossier rapide pour les boutons du header -->
-    <input id="hdr-file" type="text" placeholder="N° dossier J…"
+    <div class="hpe-ac-wrap">
+    <input id="hdr-file" type="text" placeholder="N° dossier J…" autocomplete="off"
       style="width:130px;height:26px;border:1px solid var(--border2);background:var(--surface2);
              color:var(--text);font-family:var(--mono);font-size:11px;padding:0 8px;
              border-radius:4px;outline:none;transition:border-color .15s;"
@@ -615,6 +616,8 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
       onblur="this.style.borderColor='var(--border2)'"
       onkeydown="if(event.key==='Enter'){ document.getElementById('hdr-btn-log').click(); }"
       title="Saisir le N° de dossier puis cliquer sur un bouton E.TMS">
+    <div class="hpe-ac-list" id="hdr-file-ac"></div>
+    </div>
     <div class="etms-sep"></div>
     <button class="etms-btn" onclick="sendActionHeader('ETMS_CMD','EDOC')">EDOC</button>
     <button class="etms-btn" id="hdr-btn-log" onclick="sendActionHeader('ETMS_CMD','LOG')">LOG</button>
@@ -4944,8 +4947,42 @@ window.addEventListener('load', () => {
     // Charger l'état réseau au démarrage (contacts inclus dans le même fichier)
     const path = localStorage.getItem('dispatch_state_path') || DEFAULT_STATE_PATH;
     if (path) reseauForceLoad();
+    wireHpeAutocomplete('hdr-file', 'hdr-file-ac');
   }, 800); // après que g_master soit peuplé depuis AutoIt
 });
+
+// ── Menu déroulant de suggestions (référence/dossier HPE + dossiers du
+// tableau principal) partagé entre le champ "N° dossier" du header et le
+// champ de recherche rapide de l'onglet HPE. La liste vient de
+// window.hpeSearchSuggestions (exposée par HPE_UI_V1) ; cliquer une
+// suggestion remplit le champ, cliquer 📁/🧭 ouvre le suivi ou saute au
+// Kanban sans quitter la recherche. ──
+function wireHpeAutocomplete(inputId, listId) {
+  const inp = document.getElementById(inputId), list = document.getElementById(listId);
+  if (!inp || !list) return;
+  const esc2 = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  function render() {
+    const sugg = (typeof window.hpeSearchSuggestions === 'function') ? window.hpeSearchSuggestions(inp.value) : [];
+    if (!sugg.length) { list.classList.remove('open'); list.innerHTML = ''; return; }
+    list.innerHTML = sugg.map(s => `<div class="hpe-ac-item" data-ac-fill="${esc2(s.dossier)}">` +
+      `<span><b>${esc2(s.dossier)}</b>${s.sub ? ' <span style="color:var(--text3);font-weight:400">' + esc2(s.sub) + '</span>' : ''}</span>` +
+      `<span class="hpe-ac-actions"><a href="#" data-ac-suivi="${esc2(s.dossier)}" title="Ouvrir le suivi">📁</a><a href="#" data-ac-kanban="${esc2(s.dossier)}" title="Voir dans le Kanban">🧭</a></span>` +
+      `</div>`).join('');
+    list.classList.add('open');
+  }
+  inp.addEventListener('input', render);
+  inp.addEventListener('focus', render);
+  inp.addEventListener('keydown', e => { if (e.key === 'Escape') list.classList.remove('open'); });
+  list.addEventListener('click', e => {
+    const sv = e.target.closest('[data-ac-suivi]');
+    if (sv) { e.preventDefault(); e.stopPropagation(); if (typeof window.openHpeSuivi === 'function') window.openHpeSuivi(sv.dataset.acSuivi); list.classList.remove('open'); return; }
+    const kb = e.target.closest('[data-ac-kanban]');
+    if (kb) { e.preventDefault(); e.stopPropagation(); if (typeof window.hpeJumpToKanban === 'function') window.hpeJumpToKanban(kb.dataset.acKanban); list.classList.remove('open'); return; }
+    const f = e.target.closest('[data-ac-fill]');
+    if (f) { inp.value = f.dataset.acFill; list.classList.remove('open'); inp.focus(); }
+  });
+  document.addEventListener('click', e => { if (e.target !== inp && !list.contains(e.target)) list.classList.remove('open'); });
+}
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -6556,6 +6593,15 @@ window.addEventListener('load', function(){ setTimeout(init,1250); });
 .hpe-kanban-link:hover{transform:scale(1.15);}
 .hpe-kanban-suivi{position:absolute;top:6px;right:47px;font-size:12px;line-height:1;text-decoration:none;z-index:2;opacity:.55;}
 .hpe-kanban-suivi:hover{opacity:1;transform:scale(1.15);}
+.hpe-ac-wrap{position:relative;}
+.hpe-ac-list{position:absolute;top:100%;left:0;right:0;margin-top:3px;background:var(--surface);border:1px solid var(--border);border-radius:7px;box-shadow:var(--shadow-lg);max-height:260px;overflow:auto;z-index:120;display:none;}
+.hpe-ac-list.open{display:block;}
+.hpe-ac-item{padding:7px 9px;font-size:11.5px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid var(--border);}
+.hpe-ac-item:last-child{border-bottom:none;}
+.hpe-ac-item:hover{background:var(--blue-bg);}
+.hpe-ac-actions{display:flex;gap:6px;flex-shrink:0;}
+.hpe-ac-actions a{text-decoration:none;font-size:12px;opacity:.7;}
+.hpe-ac-actions a:hover{opacity:1;}
 </style>
 <script id="hpe-ui-v1-script">
 (function(){
@@ -6652,6 +6698,38 @@ document.addEventListener('click', function(e){
   var k=e.target.closest('[data-qs-kanban]');
   if(k){ e.preventDefault(); jumpToKanban(k.dataset.qsKanban); }
 });
+
+// ── Suggestions pour l'autocomplete partage (barre du haut + onglet HPE) --
+// combine mapping (ref<->dossier HPE), suivi (dossiers suivis) et g_master
+// (dossiers du tableau principal), sans appel reseau : tout est deja charge
+// en memoire cote client. Exposees sur window car l'input #hdr-file vit hors
+// de cette IIFE (HPE_UI_V1). ──
+function hpeSearchSuggestions(q){
+  q = String(q||'').trim().toUpperCase();
+  if(q.length < 2) return [];
+  var out = [], seen = {};
+  function add(dossier, sub){
+    dossier = String(dossier||'').trim().toUpperCase();
+    if(!dossier || seen[dossier]) return;
+    seen[dossier] = true;
+    out.push({dossier:dossier, sub:sub||''});
+  }
+  (mapping||[]).forEach(function(m){
+    if(String(m.reference||'').toUpperCase().indexOf(q)!==-1 || String(m.dossier||'').toUpperCase().indexOf(q)!==-1) add(m.dossier, m.reference);
+  });
+  (suivi||[]).forEach(function(s){
+    if(String(s.dossier||'').toUpperCase().indexOf(q)!==-1) add(s.dossier, s.owner||s.status||'');
+  });
+  if(typeof g_master!=='undefined'){
+    g_master.forEach(function(r){
+      if(String(r.file||'').toUpperCase().indexOf(q)!==-1 || String(r.client||'').toUpperCase().indexOf(q)!==-1) add(r.file, r.client||'');
+    });
+  }
+  return out.slice(0, 8);
+}
+window.hpeSearchSuggestions = hpeSearchSuggestions;
+window.openHpeSuivi = openHpeSuivi;
+window.hpeJumpToKanban = jumpToKanban;
 
 function renderMapping(){
   var b=id('hpe-map-body'); if(!b) return;
@@ -7203,7 +7281,7 @@ function ensureTab(){
       '<section class="hpe-card hpe-card--search">' +
       '<div class="hpe-card-head"><div class="hpe-card-title">🔎 <span>Recherche rapide E.TMS</span></div></div>' +
       '<div class="hpe-sub">Colle une référence HPE (INC/FXC/ARN...) ou un numéro de dossier (J1A/H1A) : prépare "R#..." dans le champ de recherche E.TMS en haut de l\'écran et affiche le lien s\'il existe.</div>' +
-      '<div class="hpe-row-btn"><div class="hpe-field" style="margin-bottom:0"><input id="hpe-quick-ref" type="text" placeholder="Ex: FXC123456 ou un texte contenant la référence"></div><button class="btn btn-blue-out btn-sm" id="hpe-quick-go">Préparer</button></div>' +
+      '<div class="hpe-row-btn"><div class="hpe-field hpe-ac-wrap" style="margin-bottom:0"><input id="hpe-quick-ref" type="text" autocomplete="off" placeholder="Ex: FXC123456 ou un texte contenant la référence"><div class="hpe-ac-list" id="hpe-quick-ref-ac"></div></div><button class="btn btn-blue-out btn-sm" id="hpe-quick-go">Préparer</button></div>' +
       '<div id="hpe-quick-result" class="hpe-hint"></div>' +
       '</section>' +
       '</div>' +
@@ -7329,6 +7407,7 @@ function ensureTab(){
       if(logBtn) logRefInEtms(logBtn.dataset.logRef);
     });
     id('hpe-quick-ref').addEventListener('keydown', function(e){ if(e.key==='Enter') quickSearch(); });
+    if(typeof wireHpeAutocomplete==='function') wireHpeAutocomplete('hpe-quick-ref', 'hpe-quick-ref-ac');
     id('hpe-map-add').onclick=addMapping;
     id('hpe-map-reload').onclick=loadMapping;
     if(id('hpe-names-save')) id('hpe-names-save').onclick=saveNames;

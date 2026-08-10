@@ -222,7 +222,8 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   transition: all .15s; white-space: nowrap; letter-spacing: 0.1px;
   margin-bottom: 2px; overflow: hidden;
 }
-#tabbar.collapsed .tab { padding: 0 0 0 10px; }
+#tabbar.collapsed .tab { padding: 0; justify-content: center; font-size: 16px; }
+#tabbar.collapsed .tab .ttx { display: none; }
 .tab:hover { color: var(--text); background: var(--surface2); }
 .tab.active { color: var(--blue); border-left-color: var(--blue); background: var(--blue-bg); font-weight: 600; }
 #tabbar-toggle {
@@ -670,6 +671,30 @@ table.t-contacts tbody td { padding: 6px 10px; border-right: 1px solid var(--bor
     apply(next);
     try{ localStorage.setItem(LS_KEY, next ? '1' : '0'); }catch(e){}
   });
+
+  // Découpe chaque libellé d'onglet en "emoji" + <span class="ttx">reste</span>
+  // pour que le mode réduit puisse n'afficher que l'emoji proprement (au lieu
+  // de tronquer le texte à mi-mot). Les onglets ajoutés dynamiquement (CMR,
+  // Transporteurs, HPE, EDOC...) sont créés après coup par leurs propres
+  // scripts -- on repasse donc dessus régulièrement, même motif que le reste
+  // du fichier (cf. SUBNAV_V1 plus bas) pour les repérer.
+  function wrapTabLabels(){
+    tb.querySelectorAll('.tab').forEach(function(t){
+      if(t.querySelector('.ttx')) return;
+      var text = (t.textContent || '').trim();
+      var m = text.match(/^(\S+)\s+([\s\S]*)$/);
+      if(!m || !m[2]) return;
+      t.title = text;
+      t.textContent = '';
+      t.appendChild(document.createTextNode(m[1] + ' '));
+      var span = document.createElement('span');
+      span.className = 'ttx';
+      span.textContent = m[2];
+      t.appendChild(span);
+    });
+  }
+  wrapTabLabels();
+  setInterval(wrapTabLabels, 1000);
 })();
 </script>
 
@@ -6555,6 +6580,16 @@ function openHpeMail(entryId){
   }).catch(function(e){ toastMsg('Erreur ouverture mail : '+(e.message||e)); });
 }
 
+// ── Écrit "LOG R#<référence>" dans E.TMS et lance F8 (même mécanisme que le
+// champ "N° dossier J…" du header : sendActionHeader lit #hdr-file). ──
+function logRefInEtms(ref){
+  if(!ref) return;
+  var field = document.getElementById('hdr-file');
+  if(!field){ toastMsg('Champ de recherche E.TMS introuvable.'); return; }
+  field.value = 'R#' + ref;
+  if(typeof sendActionHeader === 'function') sendActionHeader('ETMS_CMD', 'LOG');
+}
+
 // ── Popup de notification (nouveau mail sur une référence déjà liée) ──
 var seenAlertKeys = null; // null tant qu'aucun scan n'a encore tourné (pas de notif au tout 1er scan)
 function ensureNotifWrap(){
@@ -6598,7 +6633,7 @@ function renderUnmapped(list){
     var dirBadge = a.sent ? ' <span style="color:var(--purple);font-size:10px">↗ envoyé</span>' : ' <span style="color:var(--teal);font-size:10px">↙ reçu</span>';
     return '<div class="hpe-note" data-um-ref="'+esc(a.reference)+'" data-um-date="'+esc(a.date)+'">' +
       '<div class="hpe-note-meta">'+esc(a.date)+' — '+esc(a.sender)+threadBadge+replyBadge+dirBadge+'</div>' +
-      '<div><b style="color:var(--red)">'+esc(a.reference)+'</b> — pas encore liée à un dossier</div>' +
+      '<div><b style="color:var(--red)">'+esc(a.reference)+'</b> — pas encore liée à un dossier <button class="btn btn-orange-out hpe-mini" data-log-ref="'+esc(a.reference)+'" style="height:20px;padding:0 6px;font-size:9.5px" title="Écrit LOG R#'+esc(a.reference)+' dans ETMS et lance F8">📋 LOG</button></div>' +
       '<div style="color:var(--text2)">'+esc(a.subject)+'</div>' +
       '<div class="hpe-row-btn" style="margin-top:8px"><div class="hpe-field" style="margin-bottom:0"><input type="text" data-um-dossier placeholder="N° Dossier (J1A/H1A)" style="font-size:11.5px;padding:7px 9px"></div><button class="btn btn-success hpe-mini" data-um-link="1" style="height:30px;padding:0 10px;font-size:11px">+ Lier</button></div>' +
       '<div class="hpe-field" style="margin:6px 0 0"><input type="text" data-um-tracking placeholder="N° tracking (optionnel)" style="font-size:11.5px;padding:7px 9px"></div>' +
@@ -6619,7 +6654,7 @@ function renderAlerts(list){
     var ownerTxt = a.owner ? (' — Propriétaire : <b>'+esc(a.owner)+'</b>') : '';
     return '<div class="hpe-note" data-alert-ref="'+esc(a.reference)+'" data-alert-date="'+esc(a.date)+'">' +
       '<div class="hpe-note-meta">'+esc(a.date)+' — '+esc(a.sender)+threadBadge+replyBadge+dirBadge+'</div>' +
-      '<div><b>'+esc(a.reference)+'</b> ↔ dossier <b>'+esc(a.dossier)+'</b>'+ownerTxt+'</div>' +
+      '<div><b>'+esc(a.reference)+'</b> ↔ dossier <b>'+esc(a.dossier)+'</b>'+ownerTxt+' <button class="btn btn-orange-out hpe-mini" data-log-ref="'+esc(a.reference)+'" style="height:20px;padding:0 6px;font-size:9.5px" title="Écrit LOG R#'+esc(a.reference)+' dans ETMS et lance F8">📋 LOG</button></div>' +
       '<div style="color:var(--text2)">'+esc(a.subject)+'</div>' +
       '<div class="hpe-actions" style="margin:6px 0 0"><button class="btn btn-blue-out hpe-mini" data-alert-open="'+esc(a.dossier)+'" style="height:22px;padding:0 7px;font-size:10px">Ouvrir suivi</button>'+(a.entryId?'<button class="btn btn-blue-out hpe-mini" data-alert-mail="'+esc(a.entryId)+'" style="height:22px;padding:0 7px;font-size:10px">✉ Ouvrir le mail</button>':'')+'<button class="btn btn-ghost hpe-mini" data-alert-dismiss="1" style="height:22px;padding:0 7px;font-size:10px">✕ Ignorer</button></div>' +
       '</div>';
@@ -6792,6 +6827,8 @@ function ensureTab(){
       var card=e.target.closest('[data-alert-ref]'); if(!card) return;
       var mailBtn=e.target.closest('[data-alert-mail]');
       if(mailBtn){ openHpeMail(mailBtn.dataset.alertMail); return; }
+      var logBtn=e.target.closest('[data-log-ref]');
+      if(logBtn){ logRefInEtms(logBtn.dataset.logRef); return; }
       var openBtn=e.target.closest('[data-alert-open]');
       if(openBtn){ id('hpe-suivi-dossier').value=openBtn.dataset.alertOpen; loadDossier(); return; }
       var dismissBtn=e.target.closest('[data-alert-dismiss]');
@@ -6804,6 +6841,8 @@ function ensureTab(){
       var card=e.target.closest('[data-um-ref]'); if(!card) return;
       var mailBtn=e.target.closest('[data-um-mail]');
       if(mailBtn){ openHpeMail(mailBtn.dataset.umMail); return; }
+      var logBtn=e.target.closest('[data-log-ref]');
+      if(logBtn){ logRefInEtms(logBtn.dataset.logRef); return; }
       var dismissBtn=e.target.closest('[data-um-dismiss]');
       if(dismissBtn){
         var a=lastUnmapped.find(function(x){ return x.reference===card.dataset.umRef && x.date===card.dataset.umDate; });

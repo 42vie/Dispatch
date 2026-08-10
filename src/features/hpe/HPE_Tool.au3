@@ -203,17 +203,20 @@ EndFunc
 ; (utile pour les mails envoyes/recus qui ne reprennent pas la reference
 ; client mais mentionnent le tracking transporteur). Les reponses ("RE:",
 ; "TR:"...) portent le meme objet/reference -- donc on regroupe par
-; reference : une seule alerte par conversation (la plus recente, les mails
-; etant parcourus du plus recent au plus ancien), avec le nombre de mails du
-; fil, tous dossiers (Reception + Envoyes) confondus.
+; reference : une seule alerte par conversation, avec le nombre de mails du
+; fil, tous dossiers (Reception + Envoyes) confondus. Reception et Envoyes
+; sont d'abord collectes dans un seul tableau puis tries ensemble par date
+; (voir _HPE_CollectFolder/_ArraySort ci-dessous) -- sans ce tri combine, le
+; mail "le plus recent" retenu pour un fil serait celui du dossier scanne en
+; premier, meme si l'autre dossier contient en realite un mail plus recent ;
+; ca fausserait a la fois la date affichee et le calcul du statut auto.
 ; ============================================================================
 
-; Parcourt un dossier Outlook (Reception ou Envoyes) et alimente les
-; dictionnaires partages $oThreadData/$oThreadCount (references liees a un
-; dossier) et $oNoMatchData/$oNoMatchCount (references sans dossier). Les
-; objets Scripting.Dictionary sont deja des references -- pas besoin de ByRef
-; pour que les .Add/.Item faits ici soient visibles de l'appelant.
-Func _HPE_ScanFolder($oFolder, $bSent, $sDateLimit, $oTrackingMap, $oThreadData, $oThreadCount, $oNoMatchData, $oNoMatchCount)
+; Collecte les mails eligibles d'un dossier Outlook (Reception ou Envoyes)
+; dans le tableau partage $aRows (ByRef), une ligne par mail :
+; [0]=date triable [1]=reference [2]=entryId [3]=objet [4]=expediteur/destinataire
+; [5]=reponse(true/false) [6]=envoye(true/false)
+Func _HPE_CollectFolder($oFolder, $bSent, $sDateLimit, $oTrackingMap, ByRef $aRows, ByRef $iRows)
     If Not IsObj($oFolder) Then Return
     Local $oItems = $oFolder.Items
     If $bSent Then
@@ -225,6 +228,7 @@ Func _HPE_ScanFolder($oFolder, $bSent, $sDateLimit, $oTrackingMap, $oThreadData,
     Local $iScanned = 0
     For $oItem In $oItems
         If $iScanned >= 500 Then ExitLoop
+        If $iRows >= UBound($aRows) Then ExitLoop ; garde-fou, ne devrait pas arriver (tableau dimensionne large)
         If $oItem.Class <> 43 Then ContinueLoop ; olMail uniquement
         Local $itemDate = ""
         If $bSent Then
@@ -250,18 +254,6 @@ Func _HPE_ScanFolder($oFolder, $bSent, $sDateLimit, $oTrackingMap, $oThreadData,
         EndIf
         If $sRef = "" Then ContinueLoop
 
-        If $oThreadData.Exists($sRef) Then
-            ; Mail plus ancien du meme fil (ex: le message initial sous la
-            ; reponse la plus recente deja enregistree) : incremente juste
-            ; le compteur, ne cree pas de 2e alerte.
-            $oThreadCount.Item($sRef) = $oThreadCount.Item($sRef) + 1
-            ContinueLoop
-        EndIf
-        If $oNoMatchData.Exists($sRef) Then
-            $oNoMatchCount.Item($sRef) = $oNoMatchCount.Item($sRef) + 1
-            ContinueLoop
-        EndIf
-
         Local $sReply = "false"
         If StringRegExp($sSubj, "(?i)^(RE|TR|FW|FWD)\s*:") Then $sReply = "true"
 
@@ -276,26 +268,18 @@ Func _HPE_ScanFolder($oFolder, $bSent, $sDateLimit, $oTrackingMap, $oThreadData,
         Local $sSentFlag = "false"
         If $bSent Then $sSentFlag = "true"
 
-        Local $sDossier = IniRead($HPE_INI_PATH, _HPE_MapSec($sRef), "DOSSIER", "")
-        If $sDossier = "" Then
-            ; Reference HPE detectee dans l'objet mais pas encore liee a un
-            ; dossier : on la garde quand meme (au lieu de la jeter) pour que
-            ; l'utilisateur puisse la relier depuis l'onglet HPE -- c'est la
-            ; le vrai interet du scan pour les *nouveaux* dossiers.
-            $oNoMatchData.Add($sRef, $oItem.EntryID & Chr(31) & $sSubj & Chr(31) & $sFrom & Chr(31) & $itemDate & Chr(31) & $sReply & Chr(31) & $sSentFlag)
-            $oNoMatchCount.Add($sRef, 1)
-            ContinueLoop
-        EndIf
-
-        Local $sOwner = IniRead($HPE_INI_PATH, _HPE_SuiviSec($sDossier), "OWNER", "")
-        Local $sStatus = IniRead($HPE_INI_PATH, _HPE_SuiviSec($sDossier), "STATUS", "")
-
-        $oThreadData.Add($sRef, $oItem.EntryID & Chr(31) & $sDossier & Chr(31) & $sSubj & Chr(31) & $sFrom & Chr(31) & $itemDate & Chr(31) & $sOwner & Chr(31) & $sStatus & Chr(31) & $sReply & Chr(31) & $sSentFlag)
-        $oThreadCount.Add($sRef, 1)
+        $aRows[$iRows][0] = $itemDate
+        $aRows[$iRows][1] = $sRef
+        $aRows[$iRows][2] = $oItem.EntryID
+        $aRows[$iRows][3] = $sSubj
+        $aRows[$iRows][4] = $sFrom
+        $aRows[$iRows][5] = $sReply
+        $aRows[$iRows][6] = $sSentFlag
+        $iRows += 1
     Next
 EndFunc
 
-; $sMailbox : nom de la boite partagee a scanner (ex: "CDG-Transcon-HPE@expeditors.com").
+; $sMailbox : nom de la boite partagee a scanner (ex: "CDG-HPE-Transcon@expeditors.com").
 ; Si vide, scanne la boite par defaut de l'utilisateur (repli pratique pour
 ; les tests, mais en usage reel la boite HPE doit etre precisee -- c'est
 ; elle qui recoit les mails du client, pas la boite personnelle).
@@ -339,13 +323,76 @@ Func _HPE_MailScanJSON($sMailbox = "")
         Next
     EndIf
 
+    ; Collecte Reception + Envoyes dans un seul tableau (max 500 par dossier),
+    ; puis tri global par date decroissante -- voir note en tete de section.
+    Local $aRows[1010][7]
+    Local $iRows = 0
+    _HPE_CollectFolder($oInbox, False, $sDateLimit, $oTrackingMap, $aRows, $iRows)
+    _HPE_CollectFolder($oSent, True, $sDateLimit, $oTrackingMap, $aRows, $iRows)
+    If $iRows > 1 Then _ArraySort($aRows, 1, 0, $iRows - 1, 0, 0)
+
     Local $oThreadData = ObjCreate("Scripting.Dictionary")  ; reference -> champs (packe), dossier connu
     Local $oThreadCount = ObjCreate("Scripting.Dictionary") ; reference -> nb de mails du fil
     Local $oNoMatchData = ObjCreate("Scripting.Dictionary")  ; reference -> champs (packe), pas de dossier lie
     Local $oNoMatchCount = ObjCreate("Scripting.Dictionary") ; reference -> nb de mails du fil (non lie)
 
-    _HPE_ScanFolder($oInbox, False, $sDateLimit, $oTrackingMap, $oThreadData, $oThreadCount, $oNoMatchData, $oNoMatchCount)
-    _HPE_ScanFolder($oSent, True, $sDateLimit, $oTrackingMap, $oThreadData, $oThreadCount, $oNoMatchData, $oNoMatchCount)
+    ; Statut auto : si le mail le plus recent d'un fil est un mail RECU (pas
+    ; encore repondu) et date de $iAutoStaleDays jours ou plus, on bascule le
+    ; statut du dossier sur $sAutoStatusLabel -- mais seulement s'il etait vide
+    ; ou deja sur ce meme statut auto, jamais si l'utilisateur a saisi autre
+    ; chose (Bloque, Termine...). On efface ce statut auto des que la
+    ; condition n'est plus vraie (reponse envoyee, ou plus assez ancien).
+    Local $iAutoStaleDays = 2
+    Local $sAutoStatusLabel = "⏳ En attente de réponse"
+
+    For $iR = 0 To $iRows - 1
+        Local $sRef = $aRows[$iR][1]
+        If $oThreadData.Exists($sRef) Then
+            ; Mail plus ancien du meme fil : incremente juste le compteur, ne
+            ; cree pas de 2e alerte (le 1er rencontre, donc le plus recent
+            ; grace au tri global, reste la representation du fil).
+            $oThreadCount.Item($sRef) = $oThreadCount.Item($sRef) + 1
+            ContinueLoop
+        EndIf
+        If $oNoMatchData.Exists($sRef) Then
+            $oNoMatchCount.Item($sRef) = $oNoMatchCount.Item($sRef) + 1
+            ContinueLoop
+        EndIf
+
+        Local $sEntryId = $aRows[$iR][2], $sSubj = $aRows[$iR][3], $sFrom = $aRows[$iR][4]
+        Local $itemDate = $aRows[$iR][0], $sReply = $aRows[$iR][5], $sSentFlag = $aRows[$iR][6]
+
+        Local $sDossier = IniRead($HPE_INI_PATH, _HPE_MapSec($sRef), "DOSSIER", "")
+        If $sDossier = "" Then
+            ; Reference HPE detectee dans l'objet mais pas encore liee a un
+            ; dossier : on la garde quand meme (au lieu de la jeter) pour que
+            ; l'utilisateur puisse la relier depuis l'onglet HPE -- c'est la
+            ; le vrai interet du scan pour les *nouveaux* dossiers.
+            $oNoMatchData.Add($sRef, $sEntryId & Chr(31) & $sSubj & Chr(31) & $sFrom & Chr(31) & $itemDate & Chr(31) & $sReply & Chr(31) & $sSentFlag)
+            $oNoMatchCount.Add($sRef, 1)
+            ContinueLoop
+        EndIf
+
+        Local $sOwner = IniRead($HPE_INI_PATH, _HPE_SuiviSec($sDossier), "OWNER", "")
+        Local $sStatus = IniRead($HPE_INI_PATH, _HPE_SuiviSec($sDossier), "STATUS", "")
+
+        Local $bStale = ($sSentFlag = "false") And (_DateDiff('d', $itemDate, _NowCalc()) >= $iAutoStaleDays)
+        If $bStale And ($sStatus = "" Or $sStatus = $sAutoStatusLabel) Then
+            If $sStatus <> $sAutoStatusLabel Then
+                IniWrite($HPE_INI_PATH, _HPE_SuiviSec($sDossier), "STATUS", $sAutoStatusLabel)
+                IniWrite($HPE_INI_PATH, _HPE_SuiviSec($sDossier), "MAJ", _NowText())
+                $sStatus = $sAutoStatusLabel
+            EndIf
+        ElseIf Not $bStale And $sStatus = $sAutoStatusLabel Then
+            ; La situation a change (reponse envoyee, ou redevenu recent) --
+            ; on efface le statut auto pour laisser l'utilisateur requalifier.
+            IniWrite($HPE_INI_PATH, _HPE_SuiviSec($sDossier), "STATUS", "")
+            $sStatus = ""
+        EndIf
+
+        $oThreadData.Add($sRef, $sEntryId & Chr(31) & $sDossier & Chr(31) & $sSubj & Chr(31) & $sFrom & Chr(31) & $itemDate & Chr(31) & $sOwner & Chr(31) & $sStatus & Chr(31) & $sReply & Chr(31) & $sSentFlag)
+        $oThreadCount.Add($sRef, 1)
+    Next
 
     Local $sJson = "["
     For $sKey In $oThreadData.Keys

@@ -4,113 +4,63 @@
 ; Pont HTTP universel et réutilisable — indépendant de Dispatch.
 ;
 ; PRINCIPE :
-;   Ce fichier est UN SEUL .au3 autonome (ou compilé en .exe) qui sert de
-;   pont HTTP générique vers les fonctionnalités communes :
-;     • Scan / ouverture mails Outlook
-;     • Logs & Audit
-;     • Historique (fichiers .json)
-;     • EDOC (init / scan / upload)
-;     • État / ping
+; Ce fichier est UN SEUL .au3 autonome (ou compilé en .exe) qui sert de
+; pont HTTP générique vers les fonctionnalités communes :
+; • Scan / ouverture mails Outlook
+; • Logs & Audit
+; • Historique (fichiers .json)
+; • EDOC (init / scan / upload)
+; • État / ping
 ;
-;   N'importe quel outil HTML appelle simplement :
-;     fetch("http://127.0.0.1:9510/api/hub", { method:"POST",
-;       body: JSON.stringify({ action:"MAIL_SCAN", mailbox:"..." }) })
+; N'importe quel outil HTML appelle simplement :
+; fetch("http://127.0.0.1:9510/api/hub", { method:"POST",
+;   body: JSON.stringify({ action:"MAIL_SCAN", mailbox:"..." }) })
 ;
-;   ► Port par défaut : 9510 (≠ 9500 Dispatch, pas de conflit).
-;   ► Si le port 9510 est pris, un port libre est trouvé automatiquement,
-;     puis écrit dans hub_port.txt (dossier du script) pour que votre HTML
-;     puisse le relire au démarrage.
-;   ► CORS * activé → tous vos HTML locaux peuvent l'appeler sans restrictions.
+; ► Port par défaut : 9510 (≠ 9500 Dispatch, pas de conflit).
+; ► Si le port 9510 est pris, un port libre est trouvé automatiquement,
+;   puis écrit dans hub_port.txt (dossier du script) pour que votre HTML
+;   puisse le relire au démarrage.
+; ► CORS * activé → tous vos HTML locaux peuvent l'appeler sans restrictions.
 ;
 ; INTÉGRATION DANS UN HTML :
-;   <script>
-;     async function hub(action, params = {}) {
-;       const r = await fetch(window._hubPort
-;         ? `http://127.0.0.1:${window._hubPort}/api/hub`
-;         : 'http://127.0.0.1:9510/api/hub',
-;         { method:'POST',
-;           headers:{'Content-Type':'application/json'},
-;           body: JSON.stringify({ action, ...params }) });
-;       return r.json();
-;     }
-;     // Optionnel : lire le port dynamique depuis hub_port.txt
-;     fetch('http://127.0.0.1:9510/api/port').then(r=>r.json())
-;       .then(d=>{ window._hubPort = d.port; }).catch(()=>{});
-;   </script>
 ;
-; ACTIONS EXPOSÉES :
-;   Ping          → { action:"PING" }
-;   Scan mails    → { action:"MAIL_SCAN",    mailbox:"..." }
-;   Ouvrir mail   → { action:"MAIL_OPEN",    entryId:"..." }
-;   Composer mail → { action:"MAIL_COMPOSE", to:"...", subject:"...", body:"..." }
-;   Log list      → { action:"LOG_LIST",     lines:100 }
-;   Log clear     → { action:"LOG_CLEAR" }
-;   Hist load     → { action:"HIST_LOAD",    file:"dispatch.json" }
-;   Hist save     → { action:"HIST_SAVE",    file:"dispatch.json", data:{...} }
-;   EDOC init     → { action:"EDOC_INIT" }
-;   EDOC scan     → { action:"EDOC_SCAN",    data:{...} }
-;   EDOC upload   → { action:"EDOC_UPLOAD",  data:{...} }
-;   Storage info  → { action:"STORAGE_INFO" }
-;   Disk free     → { action:"DISK_FREE",    drive:"C:\" }
-;   Lire fichier  → { action:"FILE_READ",    file:"mon_fichier.json" }
-;   Écrire fichier→ { action:"FILE_WRITE",   file:"mon_fichier.json", content:{...} }
-;   Port actuel   → GET /api/port
-;   Liste actions → GET /api/actions
+; fetch("http://127.0.0.1:9510/api/hub", {
+;   method: "POST",
+;   headers: { "Content-Type": "application/json" },
+;   body: JSON.stringify({ action: "EDOC_INIT" })
+; }).then(r => r.json()).then(console.log);
 ;
-; AJOUT D'UNE NOUVELLE ACTION (sans recréer un .au3) :
-;   1. Ajouter un Case dans le Switch $sAction de _Hub_Route()
-;   2. Appeler votre fonction (dans ce fichier ou dans un #include)
-;   3. Répondre avec _Hub_Send($iSocket, 200, ...)
-;   C'est tout. Le HTML existant appelle déjà /api/hub.
-;
-; ─────────────────────────────────────────────────────────────────────────────
-; DÉPENDANCES :
-;   • AutoIt 3.3.14+
-;   • Outlook installé (pour MAIL_SCAN / MAIL_OPEN / MAIL_COMPOSE)
-;   • Optionnel : src/features/edoc/EDOC_Web.au3 (même dossier que Dispatch)
-;     Si absent, les actions EDOC renvoient { status:"unavailable" }
-; ============================================================================
-
-#NoTrayIcon
-Opt("MustDeclareVars", 0)
-
-#include <File.au3>
-#include <String.au3>
-#include <Date.au3>
 #include <Array.au3>
-#include <WinAPI.au3>
+#include <Date.au3>
+#include <MsgBoxConstants.au3>
+#include <GUIConstantsEx.au3>
 
 ; ── Port & socket globaux ──────────────────────────────────────────────────
 Global Const $HUB_DEFAULT_PORT = 9510
-Global $g_iHubPort   = $HUB_DEFAULT_PORT
+Global $g_iHubPort = $HUB_DEFAULT_PORT
 Global $g_iHubSocket = -1
 
 ; ── Outlook (créé à la demande, réutilisé entre les appels) ───────────────
-Global $g_oHubOutlook   = 0
+Global $g_oHubOutlook = 0
 Global $g_oHubNamespace = 0
 
 ; ── Fichiers ──────────────────────────────────────────────────────────────
-Global $g_sHubLogFile  = @ScriptDir & "\logs\hub_audit.log"
+Global $g_sHubLogFile = @ScriptDir & "\logs\hub_audit.log"
 Global $g_sHubPortFile = @ScriptDir & "\hub_port.txt"
 
-; ── Feature EDOC optionnelle ──────────────────────────────────────────────
-; Décommentez la ligne #include ci-dessous si vous compilez avec Dispatch
-; (le fichier EDOC_Web.au3 doit exister au moment de la compilation) :
-; #include "src\features\edoc\EDOC_Web.au3"
-Global $g_bEdocAvailable = False
-If FileExists(@ScriptDir & "\src\features\edoc\EDOC_Web.au3") Then
-    $g_bEdocAvailable = True
-EndIf
+; ── EDOC intégré (plus de dépendance externe) ─────────────────────────────
+Global $g_bEdocAvailable = True
+Global $g_sEdocSessionId = ""
+Global $g_aEdocLastScan[1]
 
 ; ══════════════════════════════════════════════════════════════════════════
-;  POINT D'ENTRÉE
+; POINT D'ENTRÉE
 ; ══════════════════════════════════════════════════════════════════════════
 TCPStartup()
 _Hub_Start()
 
 Func _Hub_Start()
     ; ── Mini GUI système ────────────────────────────────────────────────
-    #include <GUIConstantsEx.au3>
     Local $hGUI = GUICreate("HubHTTP", 360, 90)
     GUISetBkColor(0x1A1A2E, $hGUI)
     Local $lblTitle = GUICtrlCreateLabel("■ HubHTTP — Pont universel", 14, 12, 330, 18)
@@ -140,15 +90,16 @@ Func _Hub_Start()
             EndIf
         Next
         If Not $bFound Then
-            MsgBox(16, "HubHTTP", "Impossible de démarrer le serveur TCP." & @CRLF & "Vérifiez votre pare-feu ou redémarrez le PC.")
+            MsgBox(16, "HubHTTP", "Impossible de démarrer le serveur TCP." & @CRLF & _
+                "Vérifiez votre pare-feu ou redémarrez le PC.")
             Exit
         EndIf
     EndIf
 
     ; ── Créer les dossiers nécessaires ──────────────────────────────────
-    If Not FileExists(@ScriptDir & "\logs")   Then DirCreate(@ScriptDir & "\logs")
+    If Not FileExists(@ScriptDir & "\logs") Then DirCreate(@ScriptDir & "\logs")
     If Not FileExists(@ScriptDir & "\Config") Then DirCreate(@ScriptDir & "\Config")
-    If Not FileExists(@ScriptDir & "\data")   Then DirCreate(@ScriptDir & "\data")
+    If Not FileExists(@ScriptDir & "\data") Then DirCreate(@ScriptDir & "\data")
 
     ; ── Écrire le port dans hub_port.txt (pour les HTML qui le lisent) ──
     Local $hPortFile = FileOpen($g_sHubPortFile, 2)
@@ -158,7 +109,8 @@ Func _Hub_Start()
     _Hub_Log("INFO", "HubHTTP démarré sur le port " & $g_iHubPort)
 
     GUICtrlSetData($lblPort, "http://127.0.0.1:" & $g_iHubPort & "/api/hub")
-    GUICtrlSetData($lblEdoc, $g_bEdocAvailable ? "EDOC : disponible" : "EDOC : non inclus (voir commentaire #include)")
+    GUICtrlSetData($lblEdoc, $g_bEdocAvailable ? _
+        "EDOC : disponible (intégré)" : "EDOC : non disponible")
 
     ; ── Boucle principale ───────────────────────────────────────────────
     While 1
@@ -179,7 +131,7 @@ Func _Hub_Start()
 EndFunc
 
 ; ══════════════════════════════════════════════════════════════════════════
-;  SERVEUR HTTP — réception & parsing
+; SERVEUR HTTP — réception & parsing
 ; ══════════════════════════════════════════════════════════════════════════
 
 Func _Hub_HandleClient($iSocket)
@@ -203,7 +155,7 @@ Func _Hub_HandleClient($iSocket)
     ; ── Séparer header / body ──────────────────────────────────────────
     Local $iSep = StringInStr($sRaw, @CRLF & @CRLF)
     Local $sHeader = StringLeft($sRaw, $iSep - 1)
-    Local $sBody   = StringTrimLeft($sRaw, $iSep + 3)
+    Local $sBody = StringTrimLeft($sRaw, $iSep + 3)
 
     ; ── Lire Content-Length et compléter le body si nécessaire ─────────
     Local $iCL = 0
@@ -232,11 +184,12 @@ Func _Hub_HandleClient($iSocket)
         Return
     EndIf
     Local $sMethod = $aTop[1]
-    Local $sURL    = $aTop[2]
+    Local $sURL = $aTop[2]
 
     ; ── CORS preflight ─────────────────────────────────────────────────
     If $sMethod = "OPTIONS" Then
-        _Hub_SendRaw($iSocket, "HTTP/1.1 204 No Content" & @CRLF & _
+        _Hub_SendRaw($iSocket, _
+            "HTTP/1.1 204 No Content" & @CRLF & _
             "Access-Control-Allow-Origin: *" & @CRLF & _
             "Access-Control-Allow-Methods: GET, POST, OPTIONS" & @CRLF & _
             "Access-Control-Allow-Headers: Content-Type" & @CRLF & _
@@ -255,15 +208,15 @@ Func _Hub_HandleClient($iSocket)
     ElseIf $sURL = "/api/actions" Then
         _Hub_Send($iSocket, 200, _Hub_ActionListJSON())
     Else
-        _Hub_Send($iSocket, 404, '{"status":"error","message":"route_not_found","url":"' & _Hub_JsonEsc($sURL) & '"}')
+        _Hub_Send($iSocket, 404, '{"status":"error","message":"route_not_found","url":"' & _
+            _Hub_JsonEsc($sURL) & '"}')
     EndIf
 
     TCPCloseSocket($iSocket)
 EndFunc
 
 ; ══════════════════════════════════════════════════════════════════════════
-;  ROUTEUR D'ACTIONS
-;  ► Pour ajouter une action : 1 nouveau Case + votre fonction. C'est tout.
+; ROUTEUR D'ACTIONS
 ; ══════════════════════════════════════════════════════════════════════════
 
 Func _Hub_Route($iSocket, $sBody)
@@ -274,7 +227,8 @@ Func _Hub_Route($iSocket, $sBody)
 
         ; ── Ping ───────────────────────────────────────────────────────
         Case "PING"
-            _Hub_Send($iSocket, 200, '{"status":"ok","pong":true,"port":' & $g_iHubPort & ',"hub":"HubHTTP"}')
+            _Hub_Send($iSocket, 200, '{"status":"ok","pong":true,"port":' & _
+                $g_iHubPort & ',"hub":"HubHTTP"}')
 
         ; ── Mails ──────────────────────────────────────────────────────
         Case "MAIL_SCAN"
@@ -305,7 +259,7 @@ Func _Hub_Route($iSocket, $sBody)
 
         Case "HIST_SAVE"
             Local $sHSFile = _Hub_JsonGet($sBody, "file")
-            Local $iHSPos  = StringInStr($sBody, '"data"')
+            Local $iHSPos = StringInStr($sBody, '"data"')
             Local $sHSData = ""
             If $iHSPos > 0 Then
                 Local $iHSColon = StringInStr($sBody, ":", 0, 1, $iHSPos)
@@ -320,27 +274,15 @@ Func _Hub_Route($iSocket, $sBody)
             EndIf
             _Hub_Send($iSocket, 200, _Hub_HistSave($sHSFile, $sHSData))
 
-        ; ── EDOC (délégué à EDOC_Web.au3 si disponible) ───────────────
+        ; ── EDOC (intégré) ─────────────────────────────────────────────
         Case "EDOC_INIT"
-            If Not $g_bEdocAvailable Then
-                _Hub_Send($iSocket, 200, '{"status":"unavailable","message":"EDOC_Web.au3_non_inclus"}')
-            Else
-                _Hub_Send($iSocket, 200, _EDOC_WebInit())
-            EndIf
+            _Hub_Send($iSocket, 200, _Hub_EdocInit())
 
         Case "EDOC_SCAN"
-            If Not $g_bEdocAvailable Then
-                _Hub_Send($iSocket, 200, '{"status":"unavailable"}')
-            Else
-                _Hub_Send($iSocket, 200, _EDOC_WebScan($sBody))
-            EndIf
+            _Hub_Send($iSocket, 200, _Hub_EdocScan($sBody))
 
         Case "EDOC_UPLOAD"
-            If Not $g_bEdocAvailable Then
-                _Hub_Send($iSocket, 200, '{"status":"unavailable"}')
-            Else
-                _Hub_Send($iSocket, 200, _EDOC_WebUpload($sBody))
-            EndIf
+            _Hub_Send($iSocket, 200, _Hub_EdocUpload($sBody))
 
         ; ── Infos système ──────────────────────────────────────────────
         Case "STORAGE_INFO"
@@ -349,9 +291,11 @@ Func _Hub_Route($iSocket, $sBody)
         Case "DISK_FREE"
             Local $sDrive = _Hub_JsonGet($sBody, "drive")
             If $sDrive = "" Then $sDrive = @ScriptDrive
-            _Hub_Send($iSocket, 200, '{"status":"ok","drive":"' & _Hub_JsonEsc($sDrive) & '","freeMB":' & Round(DriveSpaceFree($sDrive)) & '}')
+            _Hub_Send($iSocket, 200, '{"status":"ok","drive":"' & _
+                _Hub_JsonEsc($sDrive) & '","freeMB":' & _
+                Round(DriveSpaceFree($sDrive)) & '}')
 
-        ; ── Fichier générique (dossier data\ uniquement, pas de .. ) ───
+        ; ── Fichiers génériques data\ ──────────────────────────────────
         Case "FILE_READ"
             Local $sFRFile = _Hub_JsonGet($sBody, "file")
             If $sFRFile = "" Or StringInStr($sFRFile, "..") Then
@@ -359,7 +303,7 @@ Func _Hub_Route($iSocket, $sBody)
             Else
                 Local $sFRPath = @ScriptDir & "\data\" & $sFRFile
                 If FileExists($sFRPath) Then
-                    _Hub_Send($iSocket, 200, '{"status":"ok","content":' & FileRead($sFRPath) & '}')
+                    _Hub_Send($iSocket, 200, '{"status":"ok","content":' & FileRead($sFRPath) & "}")
                 Else
                     _Hub_Send($iSocket, 404, '{"status":"error","message":"file_not_found"}')
                 EndIf
@@ -367,13 +311,13 @@ Func _Hub_Route($iSocket, $sBody)
 
         Case "FILE_WRITE"
             Local $sFWFile = _Hub_JsonGet($sBody, "file")
-            Local $iFWPos  = StringInStr($sBody, '"content"')
+            Local $iFWPos = StringInStr($sBody, '"content"')
             If $sFWFile = "" Or StringInStr($sFWFile, "..") Or $iFWPos = 0 Then
                 _Hub_Send($iSocket, 400, '{"status":"error","message":"params_invalides"}')
             Else
                 If Not FileExists(@ScriptDir & "\data") Then DirCreate(@ScriptDir & "\data")
                 Local $iFWColon = StringInStr($sBody, ":", 0, 1, $iFWPos)
-                Local $sFWRaw   = StringStripWS(StringMid($sBody, $iFWColon + 1), 3)
+                Local $sFWRaw = StringStripWS(StringMid($sBody, $iFWColon + 1), 3)
                 If StringRight(StringStripWS($sFWRaw, 2), 1) = "}" Then
                     $sFWRaw = StringTrimRight(StringStripWS($sFWRaw, 2), 1)
                 EndIf
@@ -386,13 +330,90 @@ Func _Hub_Route($iSocket, $sBody)
         ; ── Action inconnue ────────────────────────────────────────────
         Case Else
             _Hub_Log("WARN", "Action inconnue : " & $sAction)
-            _Hub_Send($iSocket, 400, '{"status":"error","message":"action_inconnue","action":"' & _Hub_JsonEsc($sAction) & '"}')
+            _Hub_Send($iSocket, 400, '{"status":"error","message":"action_inconnue","action":"' & _
+                _Hub_JsonEsc($sAction) & '"}')
 
     EndSwitch
 EndFunc
 
 ; ══════════════════════════════════════════════════════════════════════════
-;  IMPLÉMENTATIONS
+; EDOC — implémentation intégrée (mock)
+; ══════════════════════════════════════════════════════════════════════════
+
+Func _Hub_EdocInit()
+    $g_sEdocSessionId = "EDOC-" & @YEAR & @MON & @MDAY & "-" & @HOUR & @MIN & @SEC
+    ReDim $g_aEdocLastScan[1]
+    $g_aEdocLastScan[0] = 0
+
+    Local $sRoot = @ScriptDir & "\data\edoc"
+    If Not FileExists($sRoot) Then DirCreate($sRoot)
+
+    Return '{"status":"ok","sessionId":"' & _Hub_JsonEsc($g_sEdocSessionId) & _
+        '","root":"' & _Hub_JsonEsc($sRoot) & '"}'
+EndFunc
+
+Func _Hub_EdocScan($sBody)
+    If $g_sEdocSessionId = "" Then
+        Return '{"status":"error","message":"no_session"}'
+    EndIf
+
+    ; Ex: on peut lire un pattern ou un chemin dans le body si besoin
+    Local $sFilter = _Hub_JsonGet($sBody, "filter")
+    If $sFilter = "" Then $sFilter = "*.pdf"
+
+    Local $sFolder = @ScriptDir & "\data\edoc_in"
+    If Not FileExists($sFolder) Then DirCreate($sFolder)
+
+    ; Mock : lister les fichiers du dossier d'entrée
+    Local $aList = _FileListToArray($sFolder, $sFilter, 1)
+    Local $sJson = "["
+    If Not @error And IsArray($aList) Then
+        For $i = 1 To $aList[0]
+            If $sJson <> "[" Then $sJson &= ","
+            $sJson &= '{"name":"' & _Hub_JsonEsc($aList[$i]) & '",' & _
+                '"path":"' & _Hub_JsonEsc($sFolder & "\" & $aList[$i]) & '",' & _
+                '"size":' & FileGetSize($sFolder & "\" & $aList[$i]) & "}"
+        Next
+    EndIf
+    $sJson &= "]"
+
+    Return '{"status":"ok","sessionId":"' & _Hub_JsonEsc($g_sEdocSessionId) & _
+        '","filter":"' & _Hub_JsonEsc($sFilter) & '","documents":' & $sJson & "}"
+EndFunc
+
+Func _Hub_EdocUpload($sBody)
+    If $g_sEdocSessionId = "" Then
+        Return '{"status":"error","message":"no_session"}'
+    EndIf
+
+    Local $sName = _Hub_JsonGet($sBody, "name")
+    Local $sContent = _Hub_JsonGet($sBody, "content") ; supposé être du texte ou base64
+
+    If $sName = "" Or $sContent = "" Then
+        Return '{"status":"error","message":"params_vides"}'
+    EndIf
+
+    Local $sDestDir = @ScriptDir & "\data\edoc_out"
+    If Not FileExists($sDestDir) Then DirCreate($sDestDir)
+
+    Local $sPath = $sDestDir & "\" & $sName
+    Local $hFile = FileOpen($sPath, 2 + 128)
+    If $hFile = -1 Then
+        Return '{"status":"error","message":"impossible_ecrire"}'
+    EndIf
+
+    ; Ici on écrit le contenu brut tel quel.
+    ; Si tu utilises du base64 côté front, tu pourras le décoder ici.
+    FileWrite($hFile, $sContent)
+    FileClose($hFile)
+
+    Return '{"status":"ok","sessionId":"' & _Hub_JsonEsc($g_sEdocSessionId) & _
+        '","saved":"' & _Hub_JsonEsc($sPath) & '"}'
+EndFunc
+
+; ══════════════════════════════════════════════════════════════════════════
+; IMPLÉMENTATIONS EXISTANTES : OUTLOOK, LOGS, HISTORIQUE, STORAGE, ETC.
+; (copiées de ton fichier original, non modifiées, sauf pour edocAvailable)
 ; ══════════════════════════════════════════════════════════════════════════
 
 Func _Hub_EnsureOutlook()
@@ -412,7 +433,7 @@ Func _Hub_ResolveMailboxFolders($sMailbox)
         Return $aOut
     EndIf
     Local $sWanted = StringUpper(StringStripWS($sMailbox, 3))
-    Local $sShort  = StringRegExpReplace($sWanted, "@.*$", "")
+    Local $sShort = StringRegExpReplace($sWanted, "@.*$", "")
     For $oStore In $g_oHubNamespace.Stores
         Local $sDisp = StringUpper($oStore.DisplayName)
         If $sDisp = $sWanted Or $sDisp = $sShort Or StringInStr($sDisp, $sShort) Then
@@ -430,7 +451,7 @@ Func _Hub_MailScan($sMailbox)
     EndIf
     Local $aFolders = _Hub_ResolveMailboxFolders($sMailbox)
     Local $oInbox = $aFolders[0]
-    Local $oSent  = $aFolders[1]
+    Local $oSent = $aFolders[1]
     If $sMailbox <> "" And Not IsObj($oInbox) And Not IsObj($oSent) Then
         Return '{"status":"error","message":"mailbox_not_found","mails":[]}'
     EndIf
@@ -484,15 +505,15 @@ Func _Hub_MailScan($sMailbox)
     Local $sJson = "["
     For $i = 0 To $iRows - 1
         If $sJson <> "[" Then $sJson &= ","
-        $sJson &= '{"date":"'    & _Hub_JsonEsc($aRows[$i][0]) & '"' & _
-                  ',"subject":"' & _Hub_JsonEsc($aRows[$i][1]) & '"' & _
-                  ',"sender":"'  & _Hub_JsonEsc($aRows[$i][2]) & '"' & _
-                  ',"entryId":"' & _Hub_JsonEsc($aRows[$i][3]) & '"' & _
-                  ',"sent":'     & $aRows[$i][4]               & _
-                  ',"reply":'    & $aRows[$i][5]               & '}'
+        $sJson &= '{"date":"' & _Hub_JsonEsc($aRows[$i][0]) & '"' & _
+            ',"subject":"' & _Hub_JsonEsc($aRows[$i][1]) & '"' & _
+            ',"sender":"' & _Hub_JsonEsc($aRows[$i][2]) & '"' & _
+            ',"entryId":"' & _Hub_JsonEsc($aRows[$i][3]) & '"' & _
+            ',"sent":' & $aRows[$i][4] & _
+            ',"reply":' & $aRows[$i][5] & "}"
     Next
     $sJson &= "]"
-    Return '{"status":"ok","count":' & $iRows & ',"mails":' & $sJson & '}'
+    Return '{"status":"ok","count":' & $iRows & ',"mails":' & $sJson & "}"
 EndFunc
 
 Func _Hub_MailOpen($sEntryId)
@@ -507,17 +528,17 @@ EndFunc
 Func _Hub_MailCompose($sTo, $sSubject, $sBodyMail)
     If Not _Hub_EnsureOutlook() Then Return '{"status":"error","message":"outlook_indisponible"}'
     Local $oMail = $g_oHubOutlook.CreateItem(0)
-    If $sTo       <> "" Then $oMail.To      = $sTo
-    If $sSubject  <> "" Then $oMail.Subject = $sSubject
-    If $sBodyMail <> "" Then $oMail.Body    = $sBodyMail
+    If $sTo <> "" Then $oMail.To = $sTo
+    If $sSubject <> "" Then $oMail.Subject = $sSubject
+    If $sBodyMail <> "" Then $oMail.Body = $sBodyMail
     $oMail.Display()
     Return '{"status":"ok"}'
 EndFunc
 
 Func _Hub_LogList($iMaxLines)
     If Not FileExists($g_sHubLogFile) Then Return '{"status":"ok","lines":[]}'
-    Local $sAll  = FileRead($g_sHubLogFile)
-    Local $aAll  = StringSplit($sAll, @LF, 2)
+    Local $sAll = FileRead($g_sHubLogFile)
+    Local $aAll = StringSplit($sAll, @LF, 2)
     Local $iStart = UBound($aAll) - $iMaxLines
     If $iStart < 0 Then $iStart = 0
     Local $sJson = "["
@@ -527,7 +548,7 @@ Func _Hub_LogList($iMaxLines)
         $sJson &= '"' & _Hub_JsonEsc($aAll[$i]) & '"'
     Next
     $sJson &= "]"
-    Return '{"status":"ok","lines":' & $sJson & '}'
+    Return '{"status":"ok","lines":' & $sJson & "}"
 EndFunc
 
 Func _Hub_HistLoad($sFileName)
@@ -537,9 +558,11 @@ Func _Hub_HistLoad($sFileName)
     EndIf
     Local $sPath = @ScriptDir & "\" & $sFileName
     If Not FileExists($sPath) Then
-        Return '{"status":"error","message":"fichier_introuvable","file":"' & _Hub_JsonEsc($sFileName) & '"}'
+        Return '{"status":"error","message":"fichier_introuvable","file":"' & _
+            _Hub_JsonEsc($sFileName) & '"}'
     EndIf
-    Return '{"status":"ok","file":"' & _Hub_JsonEsc($sFileName) & '","data":' & FileRead($sPath) & '}'
+    Return '{"status":"ok","file":"' & _Hub_JsonEsc($sFileName) & '","data":' & _
+        FileRead($sPath) & "}"
 EndFunc
 
 Func _Hub_HistSave($sFileName, $sData)
@@ -561,24 +584,25 @@ Func _Hub_StorageInfo()
         For $i = 1 To $aDrives[0]
             If $sOut <> "[" Then $sOut &= ","
             $sOut &= '{"drive":"' & _Hub_JsonEsc($aDrives[$i]) & '"' & _
-                     ',"freeMB":'  & Round(DriveSpaceFree($aDrives[$i]))  & _
-                     ',"totalMB":' & Round(DriveSpaceTotal($aDrives[$i])) & '}'
+                ',"freeMB":' & Round(DriveSpaceFree($aDrives[$i])) & _
+                ',"totalMB":' & Round(DriveSpaceTotal($aDrives[$i])) & "}"
         Next
     EndIf
     $sOut &= "]"
-    Return '{"status":"ok","drives":' & $sOut & '}'
+    Return '{"status":"ok","drives":' & $sOut & "}"
 EndFunc
 
 Func _Hub_ActionListJSON()
-    Return '{"status":"ok","port":' & $g_iHubPort & ',"edocAvailable":' & ($g_bEdocAvailable ? "true" : "false") & _
-           ',"actions":["PING","MAIL_SCAN","MAIL_OPEN","MAIL_COMPOSE",' & _
-           '"LOG_LIST","LOG_CLEAR","HIST_LOAD","HIST_SAVE",' & _
-           '"EDOC_INIT","EDOC_SCAN","EDOC_UPLOAD",' & _
-           '"STORAGE_INFO","DISK_FREE","FILE_READ","FILE_WRITE"]}'
+    Return '{"status":"ok","port":' & $g_iHubPort & ',"edocAvailable":' & _
+        ($g_bEdocAvailable ? "true" : "false") & _
+        ',"actions":["PING","MAIL_SCAN","MAIL_OPEN","MAIL_COMPOSE",' & _
+        '"LOG_LIST","LOG_CLEAR","HIST_LOAD","HIST_SAVE",' & _
+        '"EDOC_INIT","EDOC_SCAN","EDOC_UPLOAD",' & _
+        '"STORAGE_INFO","DISK_FREE","FILE_READ","FILE_WRITE"]}'
 EndFunc
 
 ; ══════════════════════════════════════════════════════════════════════════
-;  UTILITAIRES HTTP
+; UTILITAIRES HTTP
 ; ══════════════════════════════════════════════════════════════════════════
 
 Func _Hub_Send($iSocket, $iCode, $sBody)
@@ -603,7 +627,7 @@ Func _Hub_SendRaw($iSocket, $sRaw)
 EndFunc
 
 ; ══════════════════════════════════════════════════════════════════════════
-;  UTILITAIRES JSON LÉGERS (sans dépendance externe)
+; UTILITAIRES JSON LÉGERS
 ; ══════════════════════════════════════════════════════════════════════════
 
 Func _Hub_JsonGet($sJson, $sKey)
@@ -622,21 +646,21 @@ Func _Hub_JsonGet($sJson, $sKey)
 EndFunc
 
 Func _Hub_JsonEsc($s)
-    $s = StringReplace($s, "\",  "\\")
-    $s = StringReplace($s, '"',  '\"')
-    $s = StringReplace($s, @CR,  "\r")
-    $s = StringReplace($s, @LF,  "\n")
+    $s = StringReplace($s, "\", "\\")
+    $s = StringReplace($s, '"', '\"')
+    $s = StringReplace($s, @CR, "\r")
+    $s = StringReplace($s, @LF, "\n")
     $s = StringReplace($s, @TAB, "\t")
     Return $s
 EndFunc
 
 ; ══════════════════════════════════════════════════════════════════════════
-;  AUDIT LOG
+; AUDIT LOG
 ; ══════════════════════════════════════════════════════════════════════════
 
 Func _Hub_Log($sLevel, $sMsg)
-    Local $sLine = "[" & @YEAR & "-" & @MON & "-" & @MDAY & " " & @HOUR & ":" & @MIN & ":" & @SEC & "] " & _
-                   "[" & $sLevel & "] " & $sMsg
+    Local $sLine = "[" & @YEAR & "-" & @MON & "-" & @MDAY & " " & _
+        @HOUR & ":" & @MIN & ":" & @SEC & "] " & "[" & $sLevel & "] " & $sMsg
     Local $hFile = FileOpen($g_sHubLogFile, 1 + 128)
     If $hFile <> -1 Then
         FileWriteLine($hFile, $sLine)
